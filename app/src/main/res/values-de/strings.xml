@@ -79,6 +79,65 @@
     <string name="language_changed">Sprache geändert</string>
     <string name="please_restart">Bitte App neu starten für volle Wirkung</string>
 
+    <!-- Trash / Papierkorb -->
+    <string name="trash_title">Papierkorb</string>
+    <string name="trash_info">Gelöschte Bilder werden 30 Tage aufbewahrt und können wiederhergestellt werden.</string>
+    <string name="trash_empty">Papierkorb leeren</string>
+    <string name="trash_empty_state">Papierkorb ist leer</string>
+    <string name="trash_no_items">Keine Elemente im Papierkorb</string>
+    <string name="trash_item_count">%1$d Element(e) im Papierkorb</string>
+    <string name="trash_restore">Wiederherstellen</string>
+    <string name="trash_delete_permanently">Endgültig löschen</string>
+    <string name="trash_deleted_on">Gelöscht am %1$s</string>
+    <string name="trash_size_and_days">%1$s • Noch %2$d Tage</string>
+    <string name="trash_already_empty">Papierkorb ist bereits leer</string>
+    <string name="trash_empty_confirm_title">Papierkorb leeren?</string>
+    <string name="trash_empty_confirm_message">Alle %1$d Elemente werden endgültig gelöscht. Dies kann nicht rückgängig gemacht werden.</string>
+    <string name="trash_emptied">Papierkorb geleert</string>
+    <string name="trash_restore_confirm_title">Wiederherstellen?</string>
+    <string name="trash_restore_confirm_message">\"%1$s\" wird an den ursprünglichen Speicherort wiederhergestellt.</string>
+    <string name="trash_restored">\"%1$s\" wiederhergestellt</string>
+    <string name="trash_restore_failed">Wiederherstellung fehlgeschlagen</string>
+    <string name="trash_delete_confirm_title">Endgültig löschen?</string>
+    <string name="trash_delete_confirm_message">\"%1$s\" wird endgültig gelöscht. Dies kann nicht rückgängig gemacht werden.</string>
+    <string name="trash_deleted_permanently">\"%1$s\" endgültig gelöscht</string>
+    <string name="trash_moved_to_trash">In den Papierkorb verschoben</string>
+    <string name="trash_move_failed">Fehler beim Löschen</string>
+    <string name="btn_open_trash">Papierkorb</string>
+
+    <!-- Laufzeit-Meldungen (Toasts / Status) -->
+    <string name="toast_storage_permission_needed">Speicher-Berechtigung wird benötigt, um Bilder zu speichern.</string>
+    <string name="toast_allow_file_access">Bitte Dateizugriff erlauben, damit Bilder im Pictures-Ordner gespeichert werden.</string>
+    <string name="toast_storage_permission_for_results">Speicher-Berechtigung wird zum Speichern der Ergebnisse benötigt</string>
+    <string name="toast_pick_before_after">Bitte Vorher- und Nachher-Bilder wählen</string>
+    <string name="toast_count_mismatch">Anzahl der Vorher- und Nachher-Bilder muss gleich sein.</string>
+    <string name="toast_analysis_started">Analyse gestartet …</string>
+    <string name="toast_image_open_failed">Konnte Bild nicht öffnen.</string>
+    <string name="toast_media_access_denied">Bilder-Zugriff verweigert</string>
+    <string name="toast_storage_permission_save">Speicher-Berechtigung wird zum Speichern benötigt</string>
+    <string name="toast_photo_saved">%1$s-Bild gespeichert in %2$s</string>
+    <string name="toast_photo_save_error">Fehler beim Speichern</string>
+    <string name="toast_image_imported">Bild importiert in %1$s: %2$s</string>
+    <string name="toast_import_error">Fehler beim Import</string>
+    <string name="chooser_pick_image">Bild auswählen</string>
+    <string name="unnamed">Unbenannt</string>
+    <string name="error_python">Python-Fehler: %1$s</string>
+    <string name="error_analysis_failed">Analyse fehlgeschlagen: %1$s</string>
+    <string name="status_analysis_running">Analyse läuft …</string>
+    <string name="status_analysis_done">Analyse abgeschlossen.</string>
+    <string name="status_analysis_done_pairs">Analyse (%1$d Paare) abgeschlossen.</string>
+    <string name="status_result_parse_error">Fehler beim Lesen der Ergebnisdaten.</string>
+    <string name="mode_label_a">" | Modus A: Ohne Unkrautfilter"</string>
+    <string name="mode_label_b">" | Modus B: Mit Unkrautfilter"</string>
+    <string name="recommendation_less_aggressive">Weniger aggressiv striegeln!</string>
+    <string name="recommendation_more_aggressive">Aggressiver striegeln!</string>
+    <string name="pair_header">Paar %1$d</string>
+    <string name="pair_line_before">Vorher – SW: %1$s | Gef.: %2$s</string>
+    <string name="pair_line_after">Nachher – SW: %1$s | Gef.: %2$s</string>
+    <string name="pair_line_weed">" | Unkr.: %1$s"</string>
+    <string name="pair_line_delta">Δ SW: %1$s | Δ Gef.: %2$s</string>
+    <string name="pair_line_delta_weed">" | Δ Unkr.: %1$s"</string>
+    <string name="pair_line_csc">"CSC: %1$s   Empfehlung: %2$s"</string>
 
     <!-- Login -->
     <string name="login_button_pressed">Button wurde gedrückt</string>

@@ -43,7 +43,7 @@ public class MainActivity extends AppCompatActivity {
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
                 if (!isGranted) {
                     Toast.makeText(this,
-                            "Speicher-Berechtigung wird benötigt, um Bilder zu speichern.",
+                            R.string.toast_storage_permission_needed,
                             Toast.LENGTH_LONG).show();
                 }
             });
@@ -75,7 +75,7 @@ public class MainActivity extends AppCompatActivity {
             // Android 11+: MANAGE_EXTERNAL_STORAGE ueber Einstellungen anfordern
             if (!Environment.isExternalStorageManager()) {
                 Toast.makeText(this,
-                        "Bitte Dateizugriff erlauben, damit Bilder im Pictures-Ordner gespeichert werden.",
+                        R.string.toast_allow_file_access,
                         Toast.LENGTH_LONG).show();
                 Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
                 intent.setData(Uri.parse("package:" + getPackageName()));
@@ -102,10 +102,6 @@ public class MainActivity extends AppCompatActivity {
 
         if (id == R.id.action_language) {
             showLanguageDialog();
-            return true;
-        }
-
-        if (id == R.id.action_settings) {
             return true;
         }
 

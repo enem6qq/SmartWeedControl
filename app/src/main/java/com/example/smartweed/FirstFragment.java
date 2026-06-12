@@ -66,22 +66,26 @@ public class FirstFragment extends Fragment {
         ViewCompat.setElevation(binding.buttonFirst, elevPrimary);
         ViewCompat.setElevation(binding.buttonToMonitoring, elevSecondary);
         ViewCompat.setElevation(binding.buttonToManual, elevSecondary);
+        ViewCompat.setElevation(binding.buttonToTrash, elevSecondary);
 
         // Click Handler
         binding.buttonFirst.setOnClickListener(v -> navigateDebounced(v, R.id.action_FirstFragment_to_SecondFragment));
         binding.buttonToMonitoring.setOnClickListener(v -> navigateDebounced(v, R.id.action_FirstFragment_to_monitoringFragment));
         binding.buttonToManual.setOnClickListener(v -> navigateDebounced(v, R.id.action_FirstFragment_to_manualFragment));
+        binding.buttonToTrash.setOnClickListener(v -> navigateDebounced(v, R.id.action_FirstFragment_to_trashFragment));
 
         // Premium Press Feedback mit Glow-Effekt
         setPremiumPressFeedback(binding.buttonFirst);
         setPremiumPressFeedback(binding.buttonToMonitoring);
         setPremiumPressFeedback(binding.buttonToManual);
+        setPremiumPressFeedback(binding.buttonToTrash);
 
         // Startzustand für Intro-Animation
         prepForIntro(binding.headerCard, -30f, 0f);
         prepForIntro(binding.buttonFirst, 40f, 0.95f);
         prepForIntro(binding.buttonToMonitoring, 50f, 0.95f);
         prepForIntro(binding.buttonToManual, 50f, 0.95f);
+        prepForIntro(binding.buttonToTrash, 50f, 0.95f);
         prepForIntro(binding.infoCard, 35f, 0f);
 
         // Logo Container Animation vorbereiten
@@ -229,7 +233,8 @@ public class FirstFragment extends Fragment {
         animateInPremium(binding.buttonFirst, base + 200, true);
         animateInPremium(binding.buttonToMonitoring, base + 300, true);
         animateInPremium(binding.buttonToManual, base + 380, true);
-        animateInPremium(binding.infoCard, base + 440, false);
+        animateInPremium(binding.buttonToTrash, base + 440, true);
+        animateInPremium(binding.infoCard, base + 500, false);
     }
 
     private void animateInPremium(@NonNull View v, long startDelay, boolean withScale) {

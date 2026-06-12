@@ -65,7 +65,7 @@
     <!-- AnalysisFragment mit Aktion zur Summary-Seite -->
     <fragment
         android:id="@+id/AnalysisFragment"
-        android:name="com.example.smartweed.fragment_analysis"
+        android:name="com.example.smartweed.AnalysisFragment"
         android:label="AnalysisFragment"
         tools:layout="@layout/fragment_analysis">
         <action

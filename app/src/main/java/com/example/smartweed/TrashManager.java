@@ -287,9 +287,10 @@ public class TrashManager {
         }
 
         public String getFormattedSize() {
+            java.util.Locale loc = java.util.Locale.getDefault();
             if (fileSize < 1024) return fileSize + " B";
-            if (fileSize < 1024 * 1024) return String.format("%.1f KB", fileSize / 1024.0);
-            return String.format("%.1f MB", fileSize / (1024.0 * 1024.0));
+            if (fileSize < 1024 * 1024) return String.format(loc, "%.1f KB", fileSize / 1024.0);
+            return String.format(loc, "%.1f MB", fileSize / (1024.0 * 1024.0));
         }
 
         /** Tage bis zur automatischen Loeschung */
@@ -305,11 +306,15 @@ public class TrashManager {
     private JSONObject loadMetadata() {
         try {
             if (!metadataFile.exists()) return new JSONObject();
-            byte[] bytes = new byte[(int) metadataFile.length()];
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
             try (FileInputStream fis = new FileInputStream(metadataFile)) {
-                fis.read(bytes);
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = fis.read(buf)) != -1) {
+                    bos.write(buf, 0, n);
+                }
             }
-            return new JSONObject(new String(bytes, StandardCharsets.UTF_8));
+            return new JSONObject(new String(bos.toByteArray(), StandardCharsets.UTF_8));
         } catch (Exception e) {
             Log.e(TAG, "Error loading metadata", e);
             return new JSONObject();
