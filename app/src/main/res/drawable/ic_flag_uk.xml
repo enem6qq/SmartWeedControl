@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="36dp"
+    android:height="36dp"
+    android:viewportWidth="36"
+    android:viewportHeight="36">
+
+    <!-- Background Circle -->
+    <path
+        android:fillColor="#012169"
+        android:pathData="M18,18m-16,0a16,16 0,1 1,32 0a16,16 0,1 1,-32 0"/>
+
+    <!-- White Diagonals -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M4.5,6L16,14.5V2.5h4v12L31.5,6l2,3L23.5,18l10,9l-2,3L20,21.5v12h-4v-12L4.5,30l-2,-3l10,-9l-10,-9z"/>
+
+    <!-- Red Diagonals -->
+    <path
+        android:fillColor="#C8102E"
+        android:pathData="M22,2.5v10.5l9,-6.5l1.5,2l-8,5.5h9.5v4h-9.5l8,5.5l-1.5,2l-9,-6.5v10.5h-2v-10.5l-9,6.5l-1.5,-2l8,-5.5h-9.5v-4h9.5l-8,-5.5l1.5,-2l9,6.5v-10.5z"/>
+
+    <!-- White Cross -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M15,2h6v13h13v6h-13v13h-6v-13h-13v-6h13z"/>
+
+    <!-- Red Cross -->
+    <path
+        android:fillColor="#C8102E"
+        android:pathData="M16,2h4v15h14v2h-14v15h-4v-15h-14v-2h14z"/>
+
+    <!-- Circle Border -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="0.5"
+        android:pathData="M18,18m-16,0a16,16 0,1 1,32 0a16,16 0,1 1,-32 0"/>
+
+</vector>

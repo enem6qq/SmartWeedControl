@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Outer Glow -->
+    <item
+        android:left="-3dp"
+        android:top="-3dp"
+        android:right="-3dp"
+        android:bottom="-3dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="28dp"/>
+            <solid android:color="#1500E676"/>
+        </shape>
+    </item>
+
+    <!-- Main Background -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="28dp"/>
+            <gradient
+                android:type="linear"
+                android:angle="135"
+                android:startColor="#0D1419"
+                android:centerColor="#111920"
+                android:endColor="#1A2530"/>
+        </shape>
+    </item>
+
+    <!-- Top Highlight -->
+    <item
+        android:top="0dp"
+        android:left="2dp"
+        android:right="2dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="28dp"/>
+            <gradient
+                android:type="linear"
+                android:angle="270"
+                android:startColor="#20FFFFFF"
+                android:centerColor="#08FFFFFF"
+                android:endColor="#00FFFFFF"/>
+            <size android:height="60dp"/>
+        </shape>
+    </item>
+
+    <!-- Border -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="28dp"/>
+            <stroke
+                android:width="1.5dp"
+                android:color="#3000E676"/>
+        </shape>
+    </item>
+
+</layer-list>

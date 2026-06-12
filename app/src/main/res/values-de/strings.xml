@@ -1,0 +1,96 @@
+<resources>
+    <string name="app_name">SmartWeed</string>
+    <string name="action_settings">Einstellungen</string>
+    <string name="action_language">Sprache</string>
+
+    <!-- Navigation -->
+    <string name="first_fragment_label">Start</string>
+    <string name="second_fragment_label">Kamera</string>
+    <string name="next">Weiter</string>
+    <string name="previous">Zurück</string>
+
+    <!-- Language Selection -->
+    <string name="select_language">Sprache auswählen</string>
+    <string name="language_english">English</string>
+    <string name="language_german">Deutsch</string>
+
+    <!-- First Fragment (Home) -->
+    <string name="home_title">SmartWeed Control</string>
+    <string name="home_subtitle">Intelligente Traktor-Steuerung</string>
+    <string name="status_ready">System bereit</string>
+    <string name="btn_open_monitoring">Monitoring öffnen</string>
+    <string name="btn_open_manual">Manual öffnen</string>
+    <string name="footer_info">SmartWeed v1.0 - Intelligente Unkrautbekämpfung</string>
+    <string name="build_hint">Tipp: USB-Debugging aktivieren und Live Update nutzen.</string>
+
+    <!-- Second Fragment (Camera) -->
+    <string name="camera_preview_desc">Kamera-Vorschau</string>
+    <string name="btn_take_photo_before">Foto Vorher aufnehmen</string>
+    <string name="btn_take_photo_after">Foto Nachher aufnehmen</string>
+    <string name="btn_import_image">Bild importieren</string>
+    <string name="btn_start_analysis">Analyse starten</string>
+
+    <!-- Analysis Fragment -->
+    <string name="label_before">Vorher</string>
+    <string name="label_after">Nachher</string>
+    <string name="btn_pick_before">Vorher wählen</string>
+    <string name="btn_pick_after">Nachher wählen</string>
+    <string name="no_image_selected">Kein Bild ausgewählt</string>
+    <string name="selected_before_images">Ausgewählte Vorher-Bilder</string>
+    <string name="selected_after_images">Ausgewählte Nachher-Bilder</string>
+    <string name="btn_run_analysis">Analyse starten</string>
+
+    <!-- Analyse-Modus -->
+    <string name="analysis_mode_title">Analyse</string>
+    <string name="analysis_mode_a">A: Ohne Unkrautfilter</string>
+    <string name="analysis_mode_b">B: Mit Unkrautfilter</string>
+    <string name="analysis_mode_a_desc">Standardanalyse: Deckungsgrad wird aus dem gefilterten Binärbild berechnet.</string>
+    <string name="analysis_mode_b_desc">Unkrautfilter: Kleine, kompakte Objekte (Unkraut) werden vor der Deckungsgrad-Berechnung entfernt.</string>
+
+    <!-- Summary Fragment -->
+    <string name="status_placeholder">Status ...</string>
+    <string name="output_folder">Ausgabeordner: -</string>
+    <string name="before_average">Vorher (Durchschnitt)</string>
+    <string name="after_average">Nachher (Durchschnitt)</string>
+    <string name="label_bw">SW:</string>
+    <string name="label_filtered">Gefiltert:</string>
+    <string name="differences_average">Differenzen (Durchschnitt)</string>
+    <string name="label_delta_bw">Δ SW:</string>
+    <string name="label_delta_filtered">Δ Gefiltert:</string>
+    <string name="label_weed_filtered">Unkrautgef.:</string>
+    <string name="label_delta_weed_filtered">Δ Unkrautgef.:</string>
+    <string name="csc_and_recommendation">CSC und Empfehlung</string>
+    <string name="not_available">n. a.</string>
+    <string name="pair_results_header">Einzelergebnisse pro Paar</string>
+
+    <!-- Monitoring Fragment -->
+    <string name="status_active">Status: Aktiv</string>
+    <string name="angle_format">Winkel: %1$d°</string>
+    <string name="btn_start">Starten</string>
+    <string name="btn_cancel">Abbrechen</string>
+    <string name="settings_desc">Einstellungen</string>
+
+    <!-- Manual Fragment -->
+    <string name="level_low">Niedrig</string>
+    <string name="level_medium">Mittel</string>
+    <string name="level_high">Hoch</string>
+
+    <!-- Toast Messages -->
+    <string name="language_changed">Sprache geändert</string>
+    <string name="please_restart">Bitte App neu starten für volle Wirkung</string>
+
+
+    <!-- Login -->
+    <string name="login_button_pressed">Button wurde gedrückt</string>
+    <string name="login_json_empty">JSON-Datei ist leer oder fehlt!</string>
+    <string name="login_file_error">Fehler beim Lesen der Datei</string>
+    <string name="login_correct_password">Richtiges Passwort</string>
+    <string name="login_wrong_credentials">Falscher Benutzername oder Passwort</string>
+    <string name="login_json_error">Fehler beim Verarbeiten des JSON</string>
+    <string name="btn_login">Anmelden</string>
+    <string name="label_username">Benutzername</string>
+    <string name="label_password">Passwort</string>
+    <string name="hint_username">Benutzername eingeben</string>
+    <string name="hint_password">Passwort eingeben</string>
+
+</resources>

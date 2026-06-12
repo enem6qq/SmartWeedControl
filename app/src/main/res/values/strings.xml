@@ -1,0 +1,122 @@
+<resources>
+    <string name="app_name">SmartWeed</string>
+    <string name="action_settings">Settings</string>
+    <string name="action_language">Language</string>
+
+    <!-- Navigation -->
+    <string name="first_fragment_label">Home</string>
+    <string name="second_fragment_label">Camera</string>
+    <string name="next">Next</string>
+    <string name="previous">Previous</string>
+
+    <!-- Language Selection -->
+    <string name="select_language">Select Language</string>
+    <string name="language_english">English</string>
+    <string name="language_german">Deutsch</string>
+
+    <!-- First Fragment (Home) -->
+    <string name="home_title">SmartWeed Control</string>
+    <string name="home_subtitle">Intelligent Tractor Control</string>
+    <string name="status_ready">System ready</string>
+    <string name="btn_open_monitoring">Open Monitoring</string>
+    <string name="btn_open_manual">Open Manual</string>
+    <string name="footer_info">SmartWeed v1.0 - Intelligent Weed Control</string>
+    <string name="build_hint">Tip: Enable USB debugging and use Live Update.</string>
+
+    <!-- Second Fragment (Camera) -->
+    <string name="camera_preview_desc">Camera Preview</string>
+    <string name="btn_take_photo_before">Take Before Photo</string>
+    <string name="btn_take_photo_after">Take After Photo</string>
+    <string name="btn_import_image">Import Image</string>
+    <string name="btn_start_analysis">Start Analysis</string>
+
+    <!-- Analysis Fragment -->
+    <string name="label_before">Before</string>
+    <string name="label_after">After</string>
+    <string name="btn_pick_before">Select Before</string>
+    <string name="btn_pick_after">Select After</string>
+    <string name="no_image_selected">No image selected</string>
+    <string name="selected_before_images">Selected Before Images</string>
+    <string name="selected_after_images">Selected After Images</string>
+    <string name="btn_run_analysis">Start Analysis</string>
+
+    <!-- Analysis Mode -->
+    <string name="analysis_mode_title">Analysis</string>
+    <string name="analysis_mode_a">A: Without weed filter</string>
+    <string name="analysis_mode_b">B: With weed filter</string>
+    <string name="analysis_mode_a_desc">Standard analysis: Coverage is calculated from the filtered binary image.</string>
+    <string name="analysis_mode_b_desc">Weed filter: Small, compact objects (weeds) are removed before coverage calculation.</string>
+
+    <!-- Summary Fragment -->
+    <string name="status_placeholder">Status ...</string>
+    <string name="output_folder">Output folder: -</string>
+    <string name="before_average">Before (Average)</string>
+    <string name="after_average">After (Average)</string>
+    <string name="label_bw">BW:</string>
+    <string name="label_filtered">Filtered:</string>
+    <string name="differences_average">Differences (Average)</string>
+    <string name="label_delta_bw">Delta BW:</string>
+    <string name="label_delta_filtered">Delta Filtered:</string>
+    <string name="label_weed_filtered">Weed filt.:</string>
+    <string name="label_delta_weed_filtered">Delta Weed filt.:</string>
+    <string name="csc_and_recommendation">CSC and Recommendation</string>
+    <string name="not_available">n/a</string>
+    <string name="pair_results_header">Individual Results per Pair</string>
+
+    <!-- Monitoring Fragment -->
+    <string name="status_active">Status: Active</string>
+    <string name="angle_format">Angle: %1$d°</string>
+    <string name="btn_start">Start</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="settings_desc">Settings</string>
+
+    <!-- Manual Fragment -->
+    <string name="level_low">Low</string>
+    <string name="level_medium">Medium</string>
+    <string name="level_high">High</string>
+
+    <!-- Toast Messages -->
+    <string name="language_changed">Language changed</string>
+    <string name="please_restart">Please restart the app for full effect</string>
+
+    <!-- Trash / Papierkorb -->
+    <string name="trash_title">Papierkorb</string>
+    <string name="trash_info">Geloeschte Bilder werden 30 Tage aufbewahrt und koennen wiederhergestellt werden.</string>
+    <string name="trash_empty">Papierkorb leeren</string>
+    <string name="trash_empty_state">Papierkorb ist leer</string>
+    <string name="trash_no_items">Keine Elemente im Papierkorb</string>
+    <string name="trash_item_count">%d Element(e) im Papierkorb</string>
+    <string name="trash_restore">Wiederherstellen</string>
+    <string name="trash_delete_permanently">Endgueltig loeschen</string>
+    <string name="trash_deleted_on">Geloescht am %s</string>
+    <string name="trash_size_and_days">%s \u2022 Noch %d Tage</string>
+    <string name="trash_already_empty">Papierkorb ist bereits leer</string>
+    <string name="trash_empty_confirm_title">Papierkorb leeren?</string>
+    <string name="trash_empty_confirm_message">Alle %d Elemente werden endgueltig geloescht. Dies kann nicht rueckgaengig gemacht werden.</string>
+    <string name="trash_emptied">Papierkorb geleert</string>
+    <string name="trash_restore_confirm_title">Wiederherstellen?</string>
+    <string name="trash_restore_confirm_message">"%s" wird an den urspruenglichen Speicherort wiederhergestellt.</string>
+    <string name="trash_restored">"%s" wiederhergestellt</string>
+    <string name="trash_restore_failed">Wiederherstellung fehlgeschlagen</string>
+    <string name="trash_delete_confirm_title">Endgueltig loeschen?</string>
+    <string name="trash_delete_confirm_message">"%s" wird endgueltig geloescht. Dies kann nicht rueckgaengig gemacht werden.</string>
+    <string name="trash_deleted_permanently">"%s" endgueltig geloescht</string>
+    <string name="trash_moved_to_trash">In den Papierkorb verschoben</string>
+    <string name="trash_move_failed">Fehler beim Loeschen</string>
+    <string name="btn_open_trash">Papierkorb</string>
+
+
+    <!-- Login -->
+    <string name="login_button_pressed">Button pressed</string>
+    <string name="login_json_empty">JSON file is empty or missing!</string>
+    <string name="login_file_error">Error reading file</string>
+    <string name="login_correct_password">Correct password</string>
+    <string name="login_wrong_credentials">Wrong username or password</string>
+    <string name="login_json_error">Error processing JSON</string>
+    <string name="btn_login">Login</string>
+    <string name="label_username">Username</string>
+    <string name="label_password">Password</string>
+    <string name="hint_username">Enter your username</string>
+    <string name="hint_password">Enter your password</string>
+
+</resources>

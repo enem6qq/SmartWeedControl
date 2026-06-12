@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base Colors -->
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         PREMIUM BRAND COLORS - Vibrant & Modern
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <!-- Primary Brand - Electric Green -->
+    <color name="traktor_green">#00E676</color>
+    <color name="traktor_green_dark">#00C853</color>
+    <color name="traktor_green_light">#69F0AE</color>
+    <color name="traktor_green_neon">#39FF14</color>
+    <color name="traktor_green_surface">#0D3D2E</color>
+    <color name="traktor_green_glow">#1A00E676</color>
+
+    <!-- Premium Gradient Colors -->
+    <color name="gradient_green_start">#00E676</color>
+    <color name="gradient_green_mid">#00C853</color>
+    <color name="gradient_green_end">#00BFA5</color>
+
+    <!-- Accent Colors - Neon Palette -->
+    <color name="traktor_blue">#00E5FF</color>
+    <color name="traktor_blue_dark">#00B8D4</color>
+    <color name="traktor_blue_neon">#18FFFF</color>
+    <color name="monitoring_blue">#00E5FF</color>
+    <color name="manual_orange">#FF9100</color>
+    <color name="manual_orange_light">#FFAB40</color>
+    <color name="warning_red">#FF5252</color>
+    <color name="warning_red_glow">#33FF5252</color>
+    <color name="success_green">#69F0AE</color>
+    <color name="purple_accent">#E040FB</color>
+    <color name="purple_glow">#33E040FB</color>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         PREMIUM DARK THEME - Deep & Rich
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <!-- Background Hierarchy - Ultra Dark -->
+    <color name="background_dark">#050A0E</color>
+    <color name="background_deep">#080D12</color>
+    <color name="background_elevated">#0D1419</color>
+    <color name="card_background_dark">#111920</color>
+    <color name="card_background_glass">#1A2530</color>
+    <color name="surface_dark">#1A232D</color>
+    <color name="surface_light">#243040</color>
+    <color name="surface_hover">#2D3A4A</color>
+
+    <!-- Glassmorphism Colors -->
+    <color name="glass_background">#1A1F2C33</color>
+    <color name="glass_border">#33FFFFFF</color>
+    <color name="glass_highlight">#0DFFFFFF</color>
+    <color name="glass_shadow">#40000000</color>
+
+    <!-- Border Colors - Subtle Glow -->
+    <color name="border_default">#1F3040</color>
+    <color name="border_muted">#152030</color>
+    <color name="border_accent">#00E676</color>
+    <color name="border_accent_subtle">#3300E676</color>
+    <color name="border_glow">#4D00E676</color>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         TYPOGRAPHY COLORS - Clear Hierarchy
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#A0AEBF</color>
+    <color name="text_tertiary">#607080</color>
+    <color name="text_white">#FFFFFF</color>
+    <color name="text_light_gray">#C0D0E0</color>
+    <color name="text_gray">#8090A0</color>
+    <color name="text_glow">#00E676</color>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         INTERACTIVE STATES & EFFECTS
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <color name="ripple_light">#26FFFFFF</color>
+    <color name="ripple_green">#2600E676</color>
+    <color name="ripple_dark">#1A000000</color>
+    <color name="overlay_dark">#99000000</color>
+    <color name="overlay_blur">#80050A0E</color>
+
+    <!-- Glow Effects -->
+    <color name="glow_green">#6600E676</color>
+    <color name="glow_green_strong">#9900E676</color>
+    <color name="glow_blue">#6600E5FF</color>
+    <color name="glow_purple">#66E040FB</color>
+
+    <!-- Gradient Colors -->
+    <color name="gradient_start">#00E676</color>
+    <color name="gradient_end">#00BFA5</color>
+    <color name="gradient_blue_start">#00E5FF</color>
+    <color name="gradient_blue_end">#18FFFF</color>
+    <color name="gradient_purple_start">#E040FB</color>
+    <color name="gradient_purple_end">#7C4DFF</color>
+    <color name="gradient_dark_start">#0D1419</color>
+    <color name="gradient_dark_end">#050A0E</color>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         STATUS COLORS - Vibrant Indicators
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <color name="status_online">#00E676</color>
+    <color name="status_online_glow">#4D00E676</color>
+    <color name="status_warning">#FFB300</color>
+    <color name="status_warning_glow">#4DFFB300</color>
+    <color name="status_error">#FF5252</color>
+    <color name="status_error_glow">#4DFF5252</color>
+    <color name="status_info">#00E5FF</color>
+    <color name="status_info_glow">#4D00E5FF</color>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         DECORATIVE ELEMENTS
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <!-- Orb/Blob Gradient Colors -->
+    <color name="orb_green_center">#2600E676</color>
+    <color name="orb_green_edge">#0000E676</color>
+    <color name="orb_blue_center">#1A00E5FF</color>
+    <color name="orb_blue_edge">#0000E5FF</color>
+    <color name="orb_purple_center">#1AE040FB</color>
+    <color name="orb_purple_edge">#00E040FB</color>
+
+    <!-- Legacy Compatibility -->
+    <color name="background_light">#F6F8FA</color>
+    <color name="text_dark">#24292F</color>
+    <color name="text_light">#57606A</color>
+</resources>

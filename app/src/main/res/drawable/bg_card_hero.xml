@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Outer Neon Glow -->
+    <item
+        android:left="-4dp"
+        android:top="-4dp"
+        android:right="-4dp"
+        android:bottom="-4dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="32dp"/>
+            <solid android:color="#1000E676"/>
+        </shape>
+    </item>
+
+    <!-- Secondary Glow Ring -->
+    <item
+        android:left="-2dp"
+        android:top="-2dp"
+        android:right="-2dp"
+        android:bottom="-2dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="30dp"/>
+            <solid android:color="#0800E5FF"/>
+        </shape>
+    </item>
+
+    <!-- Main Card with Premium Gradient -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="28dp"/>
+            <gradient
+                android:type="linear"
+                android:angle="135"
+                android:startColor="#1A2A35"
+                android:centerColor="#141F28"
+                android:endColor="#0F1820"/>
+        </shape>
+    </item>
+
+    <!-- Animated-like Shimmer Stripe -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="28dp"/>
+            <gradient
+                android:type="linear"
+                android:angle="45"
+                android:startColor="#00FFFFFF"
+                android:centerColor="#08FFFFFF"
+                android:endColor="#00FFFFFF"/>
+        </shape>
+    </item>
+
+    <!-- Top Highlight Reflection -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="28dp"/>
+            <gradient
+                android:type="linear"
+                android:angle="270"
+                android:startColor="#18FFFFFF"
+                android:centerColor="#06FFFFFF"
+                android:endColor="#00FFFFFF"/>
+        </shape>
+    </item>
+
+    <!-- Neon Border -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="28dp"/>
+            <stroke
+                android:width="1.5dp"
+                android:color="#3000E676"/>
+        </shape>
+    </item>
+
+</layer-list>

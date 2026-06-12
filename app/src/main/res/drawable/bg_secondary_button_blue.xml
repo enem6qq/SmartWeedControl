@@ -1,0 +1,24 @@
+<!-- File: res/drawable/bg_secondary_button_blue.xml -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape>
+            <corners android:radius="16dp"/>
+            <gradient
+                android:startColor="#33FFFFFF"
+                android:endColor="#00000000"
+                android:angle="270"/>
+            <solid android:color="@color/traktor_blue"/>
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <corners android:radius="16dp"/>
+            <gradient
+                android:startColor="#22FFFFFF"
+                android:endColor="#00000000"
+                android:angle="270"/>
+            <solid android:color="@color/traktor_blue"/>
+        </shape>
+    </item>
+</selector>
+

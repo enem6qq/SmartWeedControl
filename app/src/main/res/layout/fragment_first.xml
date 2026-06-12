@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/rootScroll"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_screen_gradient"
+    android:fillViewport="true"
+    android:clipToPadding="false"
+    android:clipChildren="false">
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:clipChildren="false"
+        android:clipToPadding="false">
+
+        <!-- Floating Decorative Orbs (Background Layer) -->
+        <View
+            android:id="@+id/floatingOrb1"
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            android:layout_marginTop="80dp"
+            android:layout_marginStart="-40dp"
+            android:background="@drawable/bg_floating_orb"
+            android:alpha="0.6"/>
+
+        <View
+            android:id="@+id/floatingOrb2"
+            android:layout_width="80dp"
+            android:layout_height="80dp"
+            android:layout_gravity="end"
+            android:layout_marginTop="200dp"
+            android:layout_marginEnd="-20dp"
+            android:background="@drawable/bg_floating_orb_blue"
+            android:alpha="0.5"/>
+
+        <View
+            android:id="@+id/floatingOrb3"
+            android:layout_width="60dp"
+            android:layout_height="60dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="450dp"
+            android:background="@drawable/bg_floating_orb"
+            android:alpha="0.4"/>
+
+        <!-- Main Content -->
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
+            android:paddingTop="40dp"
+            android:paddingBottom="32dp"
+            android:clipChildren="false"
+            android:clipToPadding="false">
+
+            <!-- Premium Hero Card -->
+            <LinearLayout
+                android:id="@+id/headerCard"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_card_hero"
+                android:orientation="vertical"
+                android:padding="28dp"
+                android:clipToPadding="false"
+                android:clipChildren="false"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent">
+
+                <!-- Logo Container -->
+                <FrameLayout
+                    android:id="@+id/logoContainer"
+                    android:layout_width="88dp"
+                    android:layout_height="88dp"
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginBottom="20dp">
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@drawable/ic_smartweed_logo"/>
+
+                    <!-- Leaf Icon in Center -->
+                    <ImageView
+                        android:layout_width="44dp"
+                        android:layout_height="44dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_leaf"
+                        android:contentDescription="@string/app_name"
+                        app:tint="@color/traktor_green"/>
+                </FrameLayout>
+
+                <!-- Animated Status Badge -->
+                <LinearLayout
+                    android:id="@+id/status_container"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="18dp"
+                    android:paddingEnd="18dp"
+                    android:background="@drawable/bg_status_chip"
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginBottom="24dp"
+                    android:elevation="8dp">
+
+                    <View
+                        android:id="@+id/statusDot"
+                        android:layout_width="10dp"
+                        android:layout_height="10dp"
+                        android:background="@drawable/bg_status_dot"
+                        android:layout_marginEnd="10dp"/>
+
+                    <TextView
+                        android:id="@+id/status_text"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/status_ready"
+                        android:textStyle="bold"
+                        android:textSize="14sp"
+                        android:textColor="@color/traktor_green"
+                        android:letterSpacing="0.02"/>
+                </LinearLayout>
+
+                <!-- Hero Title with Glow Effect -->
+                <TextView
+                    android:id="@+id/title_header"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/home_title"
+                    android:textSize="32sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text_primary"
+                    android:gravity="center"
+                    android:letterSpacing="-0.02"
+                    android:lineSpacingExtra="-2dp"
+                    android:shadowColor="#4000E676"
+                    android:shadowDx="0"
+                    android:shadowDy="0"
+                    android:shadowRadius="20"/>
+
+                <!-- Decorative Line -->
+                <View
+                    android:layout_width="120dp"
+                    android:layout_height="3dp"
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="16dp"
+                    android:layout_marginBottom="16dp"
+                    android:background="@drawable/bg_decorative_line"/>
+
+                <!-- Subtitle -->
+                <TextView
+                    android:id="@+id/subtitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/home_subtitle"
+                    android:textSize="16sp"
+                    android:textColor="@color/text_secondary"
+                    android:gravity="center"
+                    android:lineSpacingExtra="4dp"/>
+
+            </LinearLayout>
+
+            <!-- Primary Action Button - Camera (Big & Bold) -->
+            <Button
+                android:id="@+id/button_first"
+                android:layout_width="0dp"
+                android:layout_height="68dp"
+                android:layout_marginTop="20dp"
+                android:text="@string/next"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="@color/white"
+                android:letterSpacing="0.02"
+                android:background="@drawable/bg_primary_button"
+                android:foreground="@drawable/ripple_light"
+                android:elevation="12dp"
+                android:stateListAnimator="@null"
+                app:backgroundTint="@null"
+                app:layout_constraintTop_toBottomOf="@id/headerCard"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"/>
+
+            <!-- Secondary Actions Row -->
+            <LinearLayout
+                android:id="@+id/actionsStack"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:baselineAligned="false"
+                android:layout_marginTop="16dp"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                app:layout_constraintTop_toBottomOf="@id/button_first"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent">
+
+                <Button
+                    android:id="@+id/button_to_monitoring"
+                    android:layout_width="0dp"
+                    android:layout_height="72dp"
+                    android:layout_weight="1"
+                    android:text="@string/btn_open_monitoring"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/traktor_green"
+                    android:letterSpacing="0.01"
+                    android:background="@drawable/bg_secondary_button"
+                    android:foreground="@drawable/ripple_light"
+                    android:elevation="6dp"
+                    android:stateListAnimator="@null"
+                    app:backgroundTint="@null"
+                    android:layout_marginEnd="8dp"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp"/>
+
+                <Button
+                    android:id="@+id/button_to_manual"
+                    android:layout_width="0dp"
+                    android:layout_height="72dp"
+                    android:layout_weight="1"
+                    android:text="@string/btn_open_manual"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/traktor_green"
+                    android:letterSpacing="0.01"
+                    android:background="@drawable/bg_secondary_button"
+                    android:foreground="@drawable/ripple_light"
+                    android:elevation="6dp"
+                    android:stateListAnimator="@null"
+                    app:backgroundTint="@null"
+                    android:layout_marginStart="8dp"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp"/>
+            </LinearLayout>
+
+            <!-- Info Card with Premium Styling -->
+            <LinearLayout
+                android:id="@+id/infoCard"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_card_soft"
+                android:padding="24dp"
+                android:layout_marginTop="28dp"
+                app:layout_constraintTop_toBottomOf="@id/actionsStack"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent">
+
+                <!-- Decorative Top Accent -->
+                <View
+                    android:layout_width="40dp"
+                    android:layout_height="3dp"
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginBottom="16dp"
+                    android:background="@drawable/bg_decorative_line"/>
+
+                <TextView
+                    android:id="@+id/footer_info"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/footer_info"
+                    android:textSize="14sp"
+                    android:textColor="@color/text_secondary"
+                    android:gravity="center"
+                    android:lineSpacingExtra="4dp"/>
+
+                <TextView
+                    android:id="@+id/build_hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/build_hint"
+                    android:textSize="12sp"
+                    android:textColor="@color/text_tertiary"
+                    android:gravity="center"
+                    android:layout_marginTop="12dp"
+                    android:alpha="0.8"/>
+            </LinearLayout>
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
+
+    </FrameLayout>
+</androidx.core.widget.NestedScrollView>

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Outer Glow -->
+    <item
+        android:left="-2dp"
+        android:top="-2dp"
+        android:right="-2dp"
+        android:bottom="-2dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="22dp"/>
+            <solid android:color="#1000E5FF"/>
+        </shape>
+    </item>
+
+    <!-- Main Background -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="20dp"/>
+            <solid android:color="#000000"/>
+        </shape>
+    </item>
+
+    <!-- Inner Vignette Effect -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="20dp"/>
+            <gradient
+                android:type="radial"
+                android:gradientRadius="300dp"
+                android:centerX="0.5"
+                android:centerY="0.5"
+                android:startColor="#00000000"
+                android:endColor="#40000000"/>
+        </shape>
+    </item>
+
+    <!-- Neon Border -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="20dp"/>
+            <stroke
+                android:width="2dp"
+                android:color="#3000E5FF"/>
+        </shape>
+    </item>
+
+    <!-- Corner Accent Top-Left -->
+    <item
+        android:top="0dp"
+        android:left="0dp">
+        <shape android:shape="rectangle">
+            <corners
+                android:topLeftRadius="20dp"
+                android:topRightRadius="0dp"
+                android:bottomLeftRadius="0dp"
+                android:bottomRightRadius="0dp"/>
+            <gradient
+                android:type="linear"
+                android:angle="135"
+                android:startColor="#2000E5FF"
+                android:endColor="#00000000"/>
+            <size android:width="60dp" android:height="60dp"/>
+        </shape>
+    </item>
+
+</layer-list>

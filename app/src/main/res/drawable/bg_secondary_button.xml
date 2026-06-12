@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Pressed State -->
+    <item android:state_pressed="true">
+        <layer-list>
+            <!-- Glow on Press -->
+            <item
+                android:left="-2dp"
+                android:top="-2dp"
+                android:right="-2dp"
+                android:bottom="-2dp">
+                <shape android:shape="rectangle">
+                    <corners android:radius="18dp"/>
+                    <solid android:color="#2000E676"/>
+                </shape>
+            </item>
+            <!-- Main Background -->
+            <item>
+                <shape android:shape="rectangle">
+                    <corners android:radius="16dp"/>
+                    <gradient
+                        android:type="linear"
+                        android:angle="135"
+                        android:startColor="#1D2A35"
+                        android:endColor="#152025"/>
+                </shape>
+            </item>
+            <!-- Border Glow -->
+            <item>
+                <shape android:shape="rectangle">
+                    <corners android:radius="16dp"/>
+                    <stroke
+                        android:width="2dp"
+                        android:color="#6000E676"/>
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+
+    <!-- Disabled State -->
+    <item android:state_enabled="false">
+        <shape android:shape="rectangle">
+            <corners android:radius="16dp"/>
+            <solid android:color="@color/surface_dark"/>
+            <stroke
+                android:width="1.5dp"
+                android:color="@color/border_muted"/>
+        </shape>
+    </item>
+
+    <!-- Default State -->
+    <item>
+        <layer-list>
+            <!-- Subtle Outer Glow -->
+            <item
+                android:left="-2dp"
+                android:top="-2dp"
+                android:right="-2dp"
+                android:bottom="-2dp">
+                <shape android:shape="rectangle">
+                    <corners android:radius="18dp"/>
+                    <solid android:color="#0800E676"/>
+                </shape>
+            </item>
+            <!-- Glass Background -->
+            <item>
+                <shape android:shape="rectangle">
+                    <corners android:radius="16dp"/>
+                    <gradient
+                        android:type="linear"
+                        android:angle="135"
+                        android:startColor="#182228"
+                        android:centerColor="#141D24"
+                        android:endColor="#101820"/>
+                </shape>
+            </item>
+            <!-- Top Glass Highlight -->
+            <item>
+                <shape android:shape="rectangle">
+                    <corners android:radius="16dp"/>
+                    <gradient
+                        android:type="linear"
+                        android:angle="270"
+                        android:startColor="#10FFFFFF"
+                        android:endColor="#00FFFFFF"/>
+                </shape>
+            </item>
+            <!-- Neon Border -->
+            <item>
+                <shape android:shape="rectangle">
+                    <corners android:radius="16dp"/>
+                    <stroke
+                        android:width="1.5dp"
+                        android:color="#4000E676"/>
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+
+</selector>

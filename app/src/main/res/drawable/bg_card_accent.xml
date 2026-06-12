@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Outer Accent Glow -->
+    <item
+        android:left="-3dp"
+        android:top="-3dp"
+        android:right="-3dp"
+        android:bottom="-3dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="26dp"/>
+            <solid android:color="#1500E676"/>
+        </shape>
+    </item>
+
+    <!-- Secondary Glow Ring -->
+    <item
+        android:left="-1dp"
+        android:top="-1dp"
+        android:right="-1dp"
+        android:bottom="-1dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="25dp"/>
+            <solid android:color="#0A00E5FF"/>
+        </shape>
+    </item>
+
+    <!-- Main Card Background with Gradient -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="24dp"/>
+            <gradient
+                android:type="linear"
+                android:angle="135"
+                android:startColor="#1A3D2E"
+                android:centerColor="#122820"
+                android:endColor="#0D2018"/>
+        </shape>
+    </item>
+
+    <!-- Top Glass Highlight -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="24dp"/>
+            <gradient
+                android:type="linear"
+                android:angle="270"
+                android:startColor="#18FFFFFF"
+                android:centerColor="#08FFFFFF"
+                android:endColor="#00FFFFFF"/>
+        </shape>
+    </item>
+
+    <!-- Neon Border -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="24dp"/>
+            <stroke
+                android:width="1.5dp"
+                android:color="#4000E676"/>
+        </shape>
+    </item>
+
+</layer-list>

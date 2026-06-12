@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Outer Glow Ring -->
+    <item
+        android:left="-8dp"
+        android:top="-8dp"
+        android:right="-8dp"
+        android:bottom="-8dp">
+        <shape android:shape="oval">
+            <gradient
+                android:type="radial"
+                android:gradientRadius="60dp"
+                android:centerX="0.5"
+                android:centerY="0.5"
+                android:startColor="#2000E676"
+                android:endColor="#0000E676"/>
+        </shape>
+    </item>
+
+    <!-- Secondary Glow Ring -->
+    <item
+        android:left="-4dp"
+        android:top="-4dp"
+        android:right="-4dp"
+        android:bottom="-4dp">
+        <shape android:shape="oval">
+            <gradient
+                android:type="radial"
+                android:gradientRadius="50dp"
+                android:centerX="0.5"
+                android:centerY="0.5"
+                android:startColor="#3000E676"
+                android:endColor="#0000E676"/>
+        </shape>
+    </item>
+
+    <!-- Main Circle Background -->
+    <item>
+        <shape android:shape="oval">
+            <gradient
+                android:type="linear"
+                android:angle="135"
+                android:startColor="#1A2A30"
+                android:centerColor="#152025"
+                android:endColor="#101820"/>
+        </shape>
+    </item>
+
+    <!-- Inner Gradient Highlight -->
+    <item>
+        <shape android:shape="oval">
+            <gradient
+                android:type="linear"
+                android:angle="270"
+                android:startColor="#20FFFFFF"
+                android:centerColor="#08FFFFFF"
+                android:endColor="#00FFFFFF"/>
+        </shape>
+    </item>
+
+    <!-- Neon Border Ring -->
+    <item>
+        <shape android:shape="oval">
+            <stroke
+                android:width="2dp"
+                android:color="#5000E676"/>
+        </shape>
+    </item>
+
+    <!-- Inner Accent Ring -->
+    <item
+        android:left="4dp"
+        android:top="4dp"
+        android:right="4dp"
+        android:bottom="4dp">
+        <shape android:shape="oval">
+            <stroke
+                android:width="1dp"
+                android:color="#2000E5FF"/>
+        </shape>
+    </item>
+
+</layer-list>

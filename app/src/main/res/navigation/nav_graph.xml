@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/FirstFragment">
+
+    <fragment
+        android:id="@+id/FirstFragment"
+        android:name="com.example.smartweed.FirstFragment"
+        android:label="@string/first_fragment_label"
+        tools:layout="@layout/fragment_first">
+
+        <action
+            android:id="@+id/action_FirstFragment_to_SecondFragment"
+            app:destination="@id/SecondFragment" />
+        <action
+            android:id="@+id/action_FirstFragment_to_monitoringFragment"
+            app:destination="@id/monitoringFragment" />
+        <action
+            android:id="@+id/action_FirstFragment_to_manualFragment"
+            app:destination="@id/manualFragment" />
+        <action
+            android:id="@+id/action_FirstFragment_to_trashFragment"
+            app:destination="@id/trashFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/SecondFragment"
+        android:name="com.example.smartweed.SecondFragment"
+        android:label="@string/second_fragment_label"
+        tools:layout="@layout/fragment_second">
+
+        <action
+            android:id="@+id/action_SecondFragment_to_FirstFragment"
+            app:destination="@id/FirstFragment" />
+        <action
+            android:id="@+id/action_SecondFragment_to_monitoringFragment"
+            app:destination="@id/monitoringFragment" />
+        <action
+            android:id="@+id/action_SecondFragment_to_manualFragment"
+            app:destination="@id/manualFragment" />
+        <!-- Weiterleitung auf AnalysisFragment -->
+        <action
+            android:id="@+id/action_SecondFragment_to_AnalysisFragment"
+            app:destination="@id/AnalysisFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/monitoringFragment"
+        android:name="com.example.smartweed.MonitoringFragment"
+        android:label="MonitoringFragment" />
+
+    <fragment
+        android:id="@+id/trashFragment"
+        android:name="com.example.smartweed.TrashFragment"
+        android:label="Papierkorb"
+        tools:layout="@layout/fragment_trash" />
+
+    <fragment
+        android:id="@+id/manualFragment"
+        android:name="com.example.smartweed.ManualFragment"
+        android:label="ManualFragment" />
+
+    <!-- AnalysisFragment mit Aktion zur Summary-Seite -->
+    <fragment
+        android:id="@+id/AnalysisFragment"
+        android:name="com.example.smartweed.fragment_analysis"
+        android:label="AnalysisFragment"
+        tools:layout="@layout/fragment_analysis">
+        <action
+            android:id="@+id/action_AnalysisFragment_to_SummaryFragment"
+            app:destination="@id/SummaryFragment" />
+    </fragment>
+
+    <!-- Neu: SummaryFragment (Ergebnisseite) -->
+    <fragment
+        android:id="@+id/SummaryFragment"
+        android:name="com.example.smartweed.SummaryFragment"
+        android:label="SummaryFragment"
+        tools:layout="@layout/fragment_summary" />
+</navigation>

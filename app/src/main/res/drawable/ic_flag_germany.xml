@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="36dp"
+    android:height="36dp"
+    android:viewportWidth="36"
+    android:viewportHeight="36">
+
+    <!-- Clip circle background -->
+    <clip-path
+        android:pathData="M18,18m-16,0a16,16 0,1 1,32 0a16,16 0,1 1,-32 0"/>
+
+    <!-- Black stripe (top) -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M0,0h36v12h-36z"/>
+
+    <!-- Red stripe (middle) -->
+    <path
+        android:fillColor="#DD0000"
+        android:pathData="M0,12h36v12h-36z"/>
+
+    <!-- Gold stripe (bottom) -->
+    <path
+        android:fillColor="#FFCC00"
+        android:pathData="M0,24h36v12h-36z"/>
+
+    <!-- Circle Border -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#40FFFFFF"
+        android:strokeWidth="0.8"
+        android:pathData="M18,18m-16,0a16,16 0,1 1,32 0a16,16 0,1 1,-32 0"/>
+
+</vector>
