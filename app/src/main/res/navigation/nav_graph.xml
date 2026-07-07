@@ -15,11 +15,8 @@
             android:id="@+id/action_HomeFragment_to_CameraFragment"
             app:destination="@id/CameraFragment" />
         <action
-            android:id="@+id/action_HomeFragment_to_monitoringFragment"
-            app:destination="@id/monitoringFragment" />
-        <action
-            android:id="@+id/action_HomeFragment_to_manualFragment"
-            app:destination="@id/manualFragment" />
+            android:id="@+id/action_HomeFragment_to_sessionsFragment"
+            app:destination="@id/sessionsFragment" />
         <action
             android:id="@+id/action_HomeFragment_to_trashFragment"
             app:destination="@id/trashFragment" />
@@ -34,33 +31,28 @@
         <action
             android:id="@+id/action_CameraFragment_to_HomeFragment"
             app:destination="@id/HomeFragment" />
-        <action
-            android:id="@+id/action_CameraFragment_to_monitoringFragment"
-            app:destination="@id/monitoringFragment" />
-        <action
-            android:id="@+id/action_CameraFragment_to_manualFragment"
-            app:destination="@id/manualFragment" />
         <!-- Weiterleitung auf AnalysisFragment -->
         <action
             android:id="@+id/action_CameraFragment_to_AnalysisFragment"
             app:destination="@id/AnalysisFragment" />
     </fragment>
 
+    <!-- Sessions-Übersicht ("Meine Aufnahmen") -->
     <fragment
-        android:id="@+id/monitoringFragment"
-        android:name="com.example.smartweed.MonitoringFragment"
-        android:label="@string/monitoring_fragment_label" />
+        android:id="@+id/sessionsFragment"
+        android:name="com.example.smartweed.SessionsFragment"
+        android:label="@string/sessions_fragment_label"
+        tools:layout="@layout/fragment_sessions">
+        <action
+            android:id="@+id/action_sessionsFragment_to_AnalysisFragment"
+            app:destination="@id/AnalysisFragment" />
+    </fragment>
 
     <fragment
         android:id="@+id/trashFragment"
         android:name="com.example.smartweed.TrashFragment"
         android:label="@string/trash_title"
         tools:layout="@layout/fragment_trash" />
-
-    <fragment
-        android:id="@+id/manualFragment"
-        android:name="com.example.smartweed.ManualFragment"
-        android:label="@string/manual_fragment_label" />
 
     <!-- AnalysisFragment mit Aktion zur Summary-Seite -->
     <fragment

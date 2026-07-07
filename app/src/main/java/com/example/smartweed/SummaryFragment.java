@@ -15,6 +15,7 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.ImageView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.fragment.app.DialogFragment;
@@ -82,7 +83,28 @@ public class SummaryFragment extends Fragment {
         });
 
         analysisVM.outDir.observe(getViewLifecycleOwner(), path -> {
-            if (!TextUtils.isEmpty(path)) binding.tvOutDir.setText(path);
+            if (!TextUtils.isEmpty(path)) {
+                binding.tvOutDir.setText(path);
+                binding.btnDiscardAnalysis.setVisibility(View.VISIBLE);
+            }
+        });
+
+        // Analyse verwerfen: Ergebnisbilder in den Papierkorb, zurück zur Analyse-Seite
+        binding.btnDiscardAnalysis.setOnClickListener(v -> {
+            String path = analysisVM.outDir.getValue();
+            if (TextUtils.isEmpty(path)) return;
+            new android.app.AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.session_delete_confirm_title)
+                    .setMessage(R.string.analysis_discard_confirm_message)
+                    .setPositiveButton(R.string.session_delete_action, (d, w) -> {
+                        int moved = new TrashManager(requireContext()).moveDirectoryToTrash(new File(path));
+                        Toast.makeText(requireContext(),
+                                getString(R.string.session_deleted, moved),
+                                Toast.LENGTH_SHORT).show();
+                        androidx.navigation.fragment.NavHostFragment.findNavController(this).popBackStack();
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
         });
 
         analysisVM.running.observe(getViewLifecycleOwner(), running -> {
@@ -236,7 +258,7 @@ public class SummaryFragment extends Fragment {
             cscBefore = avgBeforeBw;
             cscAfter  = avgAfterBw;
         }
-        applyCscHero(CscCalculator.compute(cscBefore, cscAfter));
+        applyCscHero(cscBefore, cscAfter);
 
         // --- Einzelwerte + Bilder unten ohne RecyclerView ---
         if (binding.pairsContainer != null) {
@@ -276,10 +298,11 @@ public class SummaryFragment extends Fragment {
                 double cscPairAfter = hasWeedFilter
                         ? (!Double.isNaN(afterWfP) ? afterWfP : afterFlt)
                         : afterBw;
-                Double cscPair = CscCalculator.compute(
-                        Double.isNaN(cscPairBefore) ? null : cscPairBefore,
-                        Double.isNaN(cscPairAfter)  ? null : cscPairAfter);
-                CscCalculator.Recommendation pairReco = CscCalculator.recommend(cscPair,
+                Double pairBefore = Double.isNaN(cscPairBefore) ? null : cscPairBefore;
+                Double pairAfter  = Double.isNaN(cscPairAfter)  ? null : cscPairAfter;
+                Double cscPair = CscCalculator.compute(pairBefore, pairAfter);
+                CscCalculator.Recommendation pairReco = CscCalculator.recommendForCoverage(
+                        pairBefore, pairAfter,
                         analysisSettings.getCscBandLow(), analysisSettings.getCscBandHigh());
                 String recoPair = (pairReco == CscCalculator.Recommendation.NOT_AVAILABLE)
                         ? getString(R.string.not_available)
@@ -341,7 +364,8 @@ public class SummaryFragment extends Fragment {
         }
 
         String modeLabel = getString(hasWeedFilter ? R.string.mode_label_b : R.string.mode_label_a);
-        binding.tvStatus.setText(getString(R.string.status_analysis_done_pairs, n) + modeLabel);
+        binding.tvStatus.setText(getResources().getQuantityString(
+                R.plurals.status_analysis_done_pairs, n, n) + modeLabel);
     }
 
     // ===================================================
@@ -400,7 +424,7 @@ public class SummaryFragment extends Fragment {
         // (Fallback auf Gefiltert, falls keine Unkraut-Werte vorliegen)
         Double cscBefore2 = hasWeedFilter ? (beforeWf != null ? beforeWf : beforeFlt) : beforeBw;
         Double cscAfter2  = hasWeedFilter ? (afterWf  != null ? afterWf  : afterFlt)  : afterBw;
-        applyCscHero(CscCalculator.compute(cscBefore2, cscAfter2));
+        applyCscHero(cscBefore2, cscAfter2);
 
         JSONObject combo = root.optJSONObject("combo");
         loadImages(combo);
@@ -411,14 +435,16 @@ public class SummaryFragment extends Fragment {
     // ===================================================
     // CSC-Hero-Karte (große Empfehlung)
     // ===================================================
-    private void applyCscHero(Double csc) {
+    private void applyCscHero(Double coverageBefore, Double coverageAfter) {
         double bandLow  = analysisSettings.getCscBandLow();
         double bandHigh = analysisSettings.getCscBandHigh();
 
         binding.tvCscTarget.setText(getString(R.string.csc_target_range,
                 trimNumber(bandLow), trimNumber(bandHigh)));
 
-        CscCalculator.Recommendation reco = CscCalculator.recommend(csc, bandLow, bandHigh);
+        Double csc = CscCalculator.compute(coverageBefore, coverageAfter);
+        CscCalculator.Recommendation reco =
+                CscCalculator.recommendForCoverage(coverageBefore, coverageAfter, bandLow, bandHigh);
         binding.tvCsc.setText(csc == null ? getString(R.string.not_available) : toPct(csc));
         binding.tvRecommendation.setText(recommendationText(reco));
         binding.tvRecommendation.setTextColor(recommendationColor(reco));
@@ -430,6 +456,7 @@ public class SummaryFragment extends Fragment {
             case MORE_AGGRESSIVE:  return getString(R.string.recommendation_more_aggressive);
             case LESS_AGGRESSIVE:  return getString(R.string.recommendation_less_aggressive);
             case CHECK_IMAGES:     return getString(R.string.recommendation_check_images);
+            case NO_VEGETATION:    return getString(R.string.recommendation_no_vegetation);
             default:               return "";
         }
     }
@@ -440,7 +467,8 @@ public class SummaryFragment extends Fragment {
             case OPTIMAL:          colorRes = R.color.traktor_green;  break;
             case MORE_AGGRESSIVE:  colorRes = R.color.traktor_blue;   break;
             case LESS_AGGRESSIVE:  colorRes = R.color.warning_red;    break;
-            case CHECK_IMAGES:     colorRes = R.color.status_warning; break;
+            case CHECK_IMAGES:
+            case NO_VEGETATION:    colorRes = R.color.status_warning; break;
             default:               colorRes = R.color.text_secondary;
         }
         return requireContext().getColor(colorRes);

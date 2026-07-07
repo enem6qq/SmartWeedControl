@@ -103,4 +103,40 @@ public class CscCalculatorTest {
         assertEquals(CscCalculator.Recommendation.MORE_AGGRESSIVE, CscCalculator.recommend(4.9, 5.0, 15.0));
         assertEquals(CscCalculator.Recommendation.LESS_AGGRESSIVE, CscCalculator.recommend(15.1, 5.0, 15.0));
     }
+
+    // ---------- recommendForCoverage() ----------
+
+    @Test
+    public void coverage_noVegetation_whenBeforeIsZero() {
+        // Bilder ohne Grünanteil: klare Meldung statt "n. a."
+        assertEquals(CscCalculator.Recommendation.NO_VEGETATION,
+                CscCalculator.recommendForCoverage(0.0, 0.11, 8.0, 12.0));
+        assertEquals(CscCalculator.Recommendation.NO_VEGETATION,
+                CscCalculator.recommendForCoverage(0.05, 0.0, 8.0, 12.0));
+    }
+
+    @Test
+    public void coverage_normalValues_delegateToCsc() {
+        // 20 % → 18 % ist CSC 10 % → optimal
+        assertEquals(CscCalculator.Recommendation.OPTIMAL,
+                CscCalculator.recommendForCoverage(20.0, 18.0, 8.0, 12.0));
+        // 20 % → 25 % ist negativ → Bildpaar prüfen
+        assertEquals(CscCalculator.Recommendation.CHECK_IMAGES,
+                CscCalculator.recommendForCoverage(20.0, 25.0, 8.0, 12.0));
+    }
+
+    @Test
+    public void coverage_nullOrNan_notAvailable() {
+        assertEquals(CscCalculator.Recommendation.NOT_AVAILABLE,
+                CscCalculator.recommendForCoverage(null, 5.0, 8.0, 12.0));
+        assertEquals(CscCalculator.Recommendation.NOT_AVAILABLE,
+                CscCalculator.recommendForCoverage(5.0, Double.NaN, 8.0, 12.0));
+    }
+
+    @Test
+    public void coverage_lowButRealVegetation_isNotFlagged() {
+        // 1 % Bedeckung ist wenig, aber echter Bewuchs (z. B. frühes Stadium)
+        assertEquals(CscCalculator.Recommendation.OPTIMAL,
+                CscCalculator.recommendForCoverage(1.0, 0.9, 8.0, 12.0));
+    }
 }
