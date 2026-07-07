@@ -1,7 +1,8 @@
-// app/src/main/java/com/example/smartweed/fragment_analysis.java
+// app/src/main/java/com/example/smartweed/AnalysisFragment.java
 package com.example.smartweed;
 
 import android.Manifest;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
@@ -10,6 +11,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -52,7 +54,7 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class fragment_analysis extends Fragment {
+public class AnalysisFragment extends Fragment {
 
     private FragmentAnalysisBinding binding;
 
@@ -64,6 +66,7 @@ public class fragment_analysis extends Fragment {
     private String imageDirPath; // optional via Args
 
     private static final String TAG = "AnalysisScreen";
+    private static final String EXTERNAL_STORAGE_PROVIDER = "com.android.externalstorage.documents";
 
     private AnalysisViewModel analysisVM;
 
@@ -72,14 +75,48 @@ public class fragment_analysis extends Fragment {
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
                 if (!isGranted) {
                     Toast.makeText(requireContext(),
-                            "Speicher-Berechtigung wird zum Speichern der Ergebnisse benötigt",
+                            R.string.toast_storage_permission_for_results,
                             Toast.LENGTH_LONG).show();
                 }
             });
 
+    /**
+     * Dokument-Picker, der direkt im SmartWeed-Bilderordner startet,
+     * damit die aufgenommenen Bilder ganz oben angezeigt werden.
+     */
+    private class OpenMultipleImagesInSmartWeedDir extends ActivityResultContracts.OpenMultipleDocuments {
+        @NonNull
+        @Override
+        public Intent createIntent(@NonNull Context context, @NonNull String[] input) {
+            Intent intent = super.createIntent(context, input);
+            Uri initialUri = buildInitialPickerUri();
+            if (initialUri != null) {
+                intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri);
+            }
+            return intent;
+        }
+    }
+
+    /**
+     * Baut eine DocumentsProvider-URI auf den Bilderordner der App
+     * (Session-Ordner, falls von der Kamera-Seite übergeben, sonst Pictures/SmartWeed).
+     */
+    private Uri buildInitialPickerUri() {
+        String docPath = Environment.DIRECTORY_PICTURES + "/SmartWeed";
+        if (imageDirPath != null) {
+            String rootPath = Environment.getExternalStorageDirectory().getAbsolutePath();
+            if (imageDirPath.startsWith(rootPath)) {
+                String rel = imageDirPath.substring(rootPath.length());
+                if (rel.startsWith("/")) rel = rel.substring(1);
+                if (!rel.isEmpty()) docPath = rel;
+            }
+        }
+        return DocumentsContract.buildDocumentUri(EXTERNAL_STORAGE_PROVIDER, "primary:" + docPath);
+    }
+
     // === Multi-Picker ===
     private final ActivityResultLauncher<String[]> pickBeforeImages =
-            registerForActivityResult(new ActivityResultContracts.OpenMultipleDocuments(), uris -> {
+            registerForActivityResult(new OpenMultipleImagesInSmartWeedDir(), uris -> {
                 beforeUris.clear();
                 if (uris != null) {
                     for (Uri u : uris) {
@@ -91,7 +128,7 @@ public class fragment_analysis extends Fragment {
             });
 
     private final ActivityResultLauncher<String[]> pickAfterImages =
-            registerForActivityResult(new ActivityResultContracts.OpenMultipleDocuments(), uris -> {
+            registerForActivityResult(new OpenMultipleImagesInSmartWeedDir(), uris -> {
                 afterUris.clear();
                 if (uris != null) {
                     for (Uri u : uris) {
@@ -154,11 +191,11 @@ public class fragment_analysis extends Fragment {
         // Analyse starten
         binding.buttonRunAnalysis.setOnClickListener(v -> {
             if (beforeUris.isEmpty() || afterUris.isEmpty()) {
-                Toast.makeText(requireContext(), "Bitte Vorher- und Nachher-Bilder wählen", Toast.LENGTH_LONG).show();
+                Toast.makeText(requireContext(), R.string.toast_pick_before_after, Toast.LENGTH_LONG).show();
                 return;
             }
             if (beforeUris.size() != afterUris.size()) {
-                Toast.makeText(requireContext(), "Anzahl Vorher/Nachher muss gleich sein.", Toast.LENGTH_LONG).show();
+                Toast.makeText(requireContext(), R.string.toast_count_mismatch, Toast.LENGTH_LONG).show();
                 return;
             }
 
@@ -208,7 +245,7 @@ public class fragment_analysis extends Fragment {
     }
 
     private String getDisplayName(Uri uri) {
-        String name = "Unbenannt";
+        String name = getString(R.string.unnamed);
         if ("content".equals(uri.getScheme())) {
             try (Cursor c = requireContext().getContentResolver()
                     .query(uri, null, null, null, null)) {
@@ -227,7 +264,8 @@ public class fragment_analysis extends Fragment {
     /** Prüft ob Schreibzugriff auf externen Speicher vorhanden ist */
     private boolean hasWritePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            return true; // Android 11+: MANAGE_EXTERNAL_STORAGE in MainActivity
+            // Android 11+: MANAGE_EXTERNAL_STORAGE wird in MainActivity angefragt
+            return Environment.isExternalStorageManager();
         }
         return ContextCompat.checkSelfPermission(requireContext(),
                 Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
@@ -237,7 +275,13 @@ public class fragment_analysis extends Fragment {
     // Python-Analyse: mehrere Paare
     // ==============================
     private void runPythonAnalysis(@NonNull File outDir, boolean weedFilter) {
-        Toast.makeText(requireContext(), "Analyse gestartet …", Toast.LENGTH_SHORT).show();
+        Toast.makeText(requireContext(), R.string.toast_analysis_started, Toast.LENGTH_SHORT).show();
+
+        // Application-Context und Fehlertexte vorab holen: das Fragment kann während
+        // der Analyse bereits weggeräumt sein, requireContext() würde dann crashen.
+        final Context appContext = requireContext().getApplicationContext();
+        final String errPython = getString(R.string.error_python, "%s");
+        final String errAnalysis = getString(R.string.error_analysis_failed, "%s");
 
         bgExecutor.execute(() -> {
             try {
@@ -247,13 +291,13 @@ public class fragment_analysis extends Fragment {
                 for (int i = 0; i < beforeUris.size(); i++) {
                     Uri bu = beforeUris.get(i);
                     Uri au = afterUris.get(i);
-                    File bf = copyUriToCache(bu, "before_" + i + ".jpg");
-                    File af = copyUriToCache(au, "after_"  + i + ".jpg");
+                    File bf = copyUriToCache(appContext, bu, "before_" + i + ".jpg");
+                    File af = copyUriToCache(appContext, au, "after_"  + i + ".jpg");
                     beforePaths.add(bf.getAbsolutePath());
                     afterPaths.add(af.getAbsolutePath());
                 }
 
-                if (!Python.isStarted()) Python.start(new AndroidPlatform(requireContext()));
+                if (!Python.isStarted()) Python.start(new AndroidPlatform(appContext));
                 Python py = Python.getInstance();
                 PyObject module = py.getModule("analysis");
                 try { module.callAttr("chaquopy_probe"); } catch (Exception ignored) {}
@@ -263,7 +307,7 @@ public class fragment_analysis extends Fragment {
                     result = module.callAttr("analyze_batch", beforePaths, afterPaths, outDir.getAbsolutePath(), weedFilter);
                     Log.i(TAG, "Batch-Analyse (analyze_batch) ausgeführt.");
                 } catch (Exception noBatch) {
-                    Log.w(TAG, "analyze_batch nicht vorhanden. Fallback auf analyze_pair.");
+                    Log.w(TAG, "analyze_batch fehlgeschlagen. Fallback auf analyze_pair.", noBatch);
                     JSONArray jArr = new JSONArray();
                     for (int i = 0; i < beforePaths.size(); i++) {
                         PyObject r = module.callAttr("analyze_pair", beforePaths.get(i), afterPaths.get(i), outDir.getAbsolutePath(), weedFilter);
@@ -276,7 +320,7 @@ public class fragment_analysis extends Fragment {
                 final String json = (result == null) ? "" : result.toString();
                 Log.i(TAG, "analysis result: " + json);
 
-                MediaScannerConnection.scanFile(requireContext(),
+                MediaScannerConnection.scanFile(appContext,
                         new String[]{ outDir.getAbsolutePath() }, null, null);
 
                 analysisVM.resultJson.postValue(json);
@@ -284,10 +328,10 @@ public class fragment_analysis extends Fragment {
                 analysisVM.error.postValue(null);
 
             } catch (PyException pyEx) {
-                analysisVM.error.postValue("Python-Fehler: " + firstLine(pyEx.getMessage()));
+                analysisVM.error.postValue(String.format(errPython, firstLine(pyEx.getMessage())));
                 analysisVM.running.postValue(false);
             } catch (Exception e) {
-                analysisVM.error.postValue("Analyse fehlgeschlagen: " + firstLine(e.getMessage()));
+                analysisVM.error.postValue(String.format(errAnalysis, firstLine(e.getMessage())));
                 analysisVM.running.postValue(false);
             }
         });
@@ -300,9 +344,9 @@ public class fragment_analysis extends Fragment {
     }
 
     /** Kopiert eine content:// URI in eine echte Datei im App-Cache, sodass OpenCV/Chaquopy sie lesen kann */
-    private File copyUriToCache(@NonNull Uri uri, @NonNull String nameHint) throws IOException {
-        File outFile = new File(requireContext().getCacheDir(), nameHint);
-        try (InputStream in = requireContext().getContentResolver().openInputStream(uri);
+    private static File copyUriToCache(@NonNull Context context, @NonNull Uri uri, @NonNull String nameHint) throws IOException {
+        File outFile = new File(context.getCacheDir(), nameHint);
+        try (InputStream in = context.getContentResolver().openInputStream(uri);
              OutputStream out = new FileOutputStream(outFile)) {
             byte[] buf = new byte[8192];
             int n;
@@ -344,7 +388,7 @@ public class fragment_analysis extends Fragment {
                 binding.tvBeforeName.setText(getDisplayName(u));
             } else if (count == 0) {
                 binding.imageBefore.setImageDrawable(null);
-                binding.tvBeforeName.setText("Kein Bild ausgewählt");
+                binding.tvBeforeName.setText(R.string.no_image_selected);
             }
 
         } else {
@@ -371,7 +415,7 @@ public class fragment_analysis extends Fragment {
                 binding.tvAfterName.setText(getDisplayName(u));
             } else if (count == 0) {
                 binding.imageAfter.setImageDrawable(null);
-                binding.tvAfterName.setText("Kein Bild ausgewählt");
+                binding.tvAfterName.setText(R.string.no_image_selected);
             }
         }
     }
@@ -389,10 +433,10 @@ public class fragment_analysis extends Fragment {
 
         img.setOnClickListener(v -> {
             try {
-                File cached = copyUriToCache(uri, cacheName);
+                File cached = copyUriToCache(requireContext(), uri, cacheName);
                 SummaryFragment.FullscreenImageDialog.show(this, cached.getAbsolutePath());
             } catch (Exception e) {
-                Toast.makeText(requireContext(), "Konnte Bild nicht öffnen.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(requireContext(), R.string.toast_image_open_failed, Toast.LENGTH_SHORT).show();
             }
         });
 

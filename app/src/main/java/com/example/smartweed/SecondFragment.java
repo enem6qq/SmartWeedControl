@@ -34,11 +34,6 @@ import androidx.fragment.app.Fragment;
 import com.example.smartweed.databinding.FragmentSecondBinding;
 import com.google.common.util.concurrent.ListenableFuture;
 
-import com.chaquo.python.PyObject;
-import com.chaquo.python.Python;
-import com.chaquo.python.PyException;
-import com.chaquo.python.android.AndroidPlatform;
-
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -54,7 +49,6 @@ public class SecondFragment extends Fragment {
     private FragmentSecondBinding binding;
     private ImageCapture imageCapture;
     private ExecutorService cameraExecutor;
-    private ExecutorService bgExecutor;
 
     private File publicImageDir;
     private File beforeDir;
@@ -79,9 +73,9 @@ public class SecondFragment extends Fragment {
     private final ActivityResultLauncher<String> mediaPermLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
                 if (isGranted) {
-                    runPythonAnalysis();
+                    navigateToAnalysis();
                 } else {
-                    Toast.makeText(requireContext(), "Bilder-Zugriff verweigert", Toast.LENGTH_LONG).show();
+                    Toast.makeText(requireContext(), R.string.toast_media_access_denied, Toast.LENGTH_LONG).show();
                 }
             });
 
@@ -103,7 +97,7 @@ public class SecondFragment extends Fragment {
                     pendingPhotoSubfolder = null;
                     pendingImportUri = null;
                     Toast.makeText(requireContext(),
-                            "Speicher-Berechtigung wird zum Speichern benötigt",
+                            R.string.toast_storage_permission_save,
                             Toast.LENGTH_LONG).show();
                 }
             });
@@ -134,7 +128,6 @@ public class SecondFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
 
         cameraExecutor = Executors.newSingleThreadExecutor();
-        bgExecutor = Executors.newSingleThreadExecutor();
 
         // Session-Ordner mit Timestamp erstellen (jede Kamera-Session bekommt eigenen Ordner)
         sessionDirName = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
@@ -193,7 +186,7 @@ public class SecondFragment extends Fragment {
             Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
             intent.setType("image/*");
             intent.addCategory(Intent.CATEGORY_OPENABLE);
-            pickImageLauncher.launch(Intent.createChooser(intent, "Bild auswählen"));
+            pickImageLauncher.launch(Intent.createChooser(intent, getString(R.string.chooser_pick_image)));
         });
 
         // Analyse starten -> zum AnalysisFragment navigieren (Pfad mitgeben)
@@ -208,11 +201,7 @@ public class SecondFragment extends Fragment {
                     }
                     return;
                 }
-                Bundle args = new Bundle();
-                args.putString("imageDir", publicImageDir.getAbsolutePath());
-                androidx.navigation.NavController nav =
-                        androidx.navigation.Navigation.findNavController(requireView());
-                nav.navigate(R.id.action_SecondFragment_to_AnalysisFragment, args);
+                navigateToAnalysis();
             });
         }
 
@@ -248,10 +237,20 @@ public class SecondFragment extends Fragment {
         }, ContextCompat.getMainExecutor(requireContext()));
     }
 
+    /** Navigiert zur Analyse-Seite und übergibt den Session-Bilderordner */
+    private void navigateToAnalysis() {
+        Bundle args = new Bundle();
+        args.putString("imageDir", publicImageDir.getAbsolutePath());
+        androidx.navigation.NavController nav =
+                androidx.navigation.Navigation.findNavController(requireView());
+        nav.navigate(R.id.action_SecondFragment_to_AnalysisFragment, args);
+    }
+
     /** Prüft ob Schreibzugriff auf externen Speicher vorhanden ist */
     private boolean hasWritePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            return true; // Android 11+: wird über MANAGE_EXTERNAL_STORAGE in MainActivity behandelt
+            // Android 11+: MANAGE_EXTERNAL_STORAGE wird in MainActivity angefragt
+            return Environment.isExternalStorageManager();
         }
         return ContextCompat.checkSelfPermission(requireContext(),
                 Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
@@ -282,7 +281,7 @@ public class SecondFragment extends Fragment {
         File photoFile = new File(targetDir, filename);
         ImageCapture.OutputFileOptions outputOptions = new ImageCapture.OutputFileOptions.Builder(photoFile).build();
 
-        String label = "vorher".equals(subfolder) ? "Vorher" : "Nachher";
+        String label = getString("vorher".equals(subfolder) ? R.string.label_before : R.string.label_after);
         imageCapture.takePicture(
                 outputOptions,
                 ContextCompat.getMainExecutor(requireContext()),
@@ -296,13 +295,14 @@ public class SecondFragment extends Fragment {
                                 null);
                         binding.buttonTakePhotoBefore.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
                         Toast.makeText(requireContext(),
-                                label + "-Bild gespeichert in SmartWeed/" + sessionDirName + "/" + subfolder,
+                                getString(R.string.toast_photo_saved, label,
+                                        "SmartWeed/" + sessionDirName + "/" + subfolder),
                                 Toast.LENGTH_SHORT).show();
                     }
 
                     @Override
                     public void onError(@NonNull ImageCaptureException exception) {
-                        Toast.makeText(requireContext(), "Fehler beim Speichern", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(requireContext(), R.string.toast_photo_save_error, Toast.LENGTH_SHORT).show();
                     }
                 });
     }
@@ -340,11 +340,11 @@ public class SecondFragment extends Fragment {
                     null);
 
             Toast.makeText(requireContext(),
-                    "Bild importiert in SmartWeed/" + sessionDirName + ": " + name,
+                    getString(R.string.toast_image_imported, "SmartWeed/" + sessionDirName, name),
                     Toast.LENGTH_SHORT).show();
 
         } catch (Exception e) {
-            Toast.makeText(requireContext(), "Fehler beim Import", Toast.LENGTH_SHORT).show();
+            Toast.makeText(requireContext(), R.string.toast_import_error, Toast.LENGTH_SHORT).show();
             Log.e("Import", "Fehler beim Kopieren", e);
         }
     }
@@ -360,79 +360,6 @@ public class SecondFragment extends Fragment {
             }
         }
         return result;
-    }
-
-    // ==============================
-    // Python-Analyse (Ordner)
-    // ==============================
-    private void runPythonAnalysis() {
-        if (!publicImageDir.exists()) {
-            Toast.makeText(requireContext(), "Ordner fehlt: " + publicImageDir.getAbsolutePath(), Toast.LENGTH_LONG).show();
-            Log.e("SmartWeedAnalysis", "Folder does not exist: " + publicImageDir.getAbsolutePath());
-            return;
-        }
-        File[] imgs = publicImageDir.listFiles(f ->
-                f.isFile() && hasAnySuffix(f.getName(), ".jpg", ".jpeg", ".png", ".bmp", ".webp"));
-        int count = (imgs == null) ? 0 : imgs.length;
-        if (count == 0) {
-            Toast.makeText(requireContext(), "Keine Bilder in " + publicImageDir.getAbsolutePath(), Toast.LENGTH_LONG).show();
-            Log.w("SmartWeedAnalysis", "No images found in folder: " + publicImageDir.getAbsolutePath());
-            return;
-        }
-
-        Toast.makeText(requireContext(), "Analyse gestartet …", Toast.LENGTH_SHORT).show();
-        Log.i("SmartWeedAnalysis", "Starting analysis in: " + publicImageDir.getAbsolutePath() + " (#images=" + count + ")");
-
-        bgExecutor.execute(() -> {
-            try {
-                if (!Python.isStarted()) {
-                    Python.start(new AndroidPlatform(requireContext()));
-                }
-                Python py = Python.getInstance();
-
-                try {
-                    PyObject sys = py.getModule("sys");
-                    Log.i("SmartWeedAnalysis", "Python version: " + sys.get("version").toString());
-                    Log.i("SmartWeedAnalysis", "sys.path: " + sys.get("path").toString());
-                } catch (Exception ignore) {}
-
-                PyObject module = py.getModule("analysis");
-
-                try { module.callAttr("chaquopy_probe"); } catch (Exception ignored) {}
-
-                PyObject result = module.callAttr("analyze_folder", publicImageDir.getAbsolutePath());
-
-                String json = (result == null) ? "" : result.toString();
-                requireActivity().runOnUiThread(() -> {
-                    Toast.makeText(requireContext(), "Analyse fertig", Toast.LENGTH_SHORT).show();
-                    Log.i("SmartWeedAnalysis", json);
-                });
-
-            } catch (PyException pyEx) {
-                String msg = firstLine(pyEx.getMessage());
-                Log.e("SmartWeedAnalysis", "Python error: " + pyEx.getMessage(), pyEx);
-                requireActivity().runOnUiThread(() ->
-                        Toast.makeText(requireContext(), "Python-Fehler: " + msg, Toast.LENGTH_LONG).show()
-                );
-            } catch (Exception e) {
-                Log.e("SmartWeedAnalysis", "Analyse-Fehler JAVA", e);
-                requireActivity().runOnUiThread(() ->
-                        Toast.makeText(requireContext(), "Analyse fehlgeschlagen: " + firstLine(e.getMessage()), Toast.LENGTH_LONG).show()
-                );
-            }
-        });
-    }
-
-    private static boolean hasAnySuffix(String name, String... exts) {
-        String lower = name.toLowerCase(Locale.ROOT);
-        for (String e : exts) if (lower.endsWith(e)) return true;
-        return false;
-    }
-
-    private static String firstLine(String s) {
-        if (s == null) return "";
-        int i = s.indexOf('\n');
-        return (i >= 0) ? s.substring(0, i) : s;
     }
 
     // ---- Kleine Helfer für Animationen ----
@@ -482,6 +409,5 @@ public class SecondFragment extends Fragment {
         super.onDestroyView();
         binding = null;
         if (cameraExecutor != null) cameraExecutor.shutdown();
-        if (bgExecutor != null) bgExecutor.shutdown();
     }
 }

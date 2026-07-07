@@ -349,6 +349,32 @@ def analyze_pair(before_path: str, after_path: str, out_dir: str = None,
     return json.dumps(result, ensure_ascii=False)
 
 
+# ==========================================================
+# Batch-Analyse: mehrere Vorher/Nachher-Paare in einem Aufruf
+# ==========================================================
+def analyze_batch(before_paths, after_paths, out_dir=None, weed_filter=False) -> str:
+    """
+    Analysiert mehrere Vorher/Nachher-Paare (nutzt analyze_pair pro Paar).
+    - before_paths, after_paths: Listen absoluter Dateipfade gleicher Länge
+    - out_dir: gemeinsamer Zielordner für alle Paare
+    - weed_filter: True = Unkrautfilter aktivieren
+    Rückgabe: JSON-Array-String (ein Objekt pro Paar, Format wie analyze_pair).
+    """
+    befores = [str(p) for p in before_paths]
+    afters = [str(p) for p in after_paths]
+    print("[PY] analyze_batch:", len(befores), "pair(s), weed_filter=", weed_filter)
+
+    if len(befores) != len(afters):
+        raise ValueError(f"before/after count mismatch: {len(befores)} vs {len(afters)}")
+
+    results = []
+    for b, a in zip(befores, afters):
+        results.append(json.loads(analyze_pair(b, a, out_dir, weed_filter)))
+
+    print(f"[PY] DONE analyze_batch -> {len(results)} pair(s)")
+    return json.dumps(results, ensure_ascii=False)
+
+
 # ---------------------------------------------
 # Ordneranalyse (mit Panels & Werten wie zuvor)
 # ---------------------------------------------

@@ -1,6 +1,14 @@
 plugins {
     alias(libs.plugins.android.application)
-    id 'com.chaquo.python'
+    alias(libs.plugins.chaquo.python)
+}
+
+// Optionale, rechnerspezifische Einstellungen aus local.properties lesen
+// (z. B. chaquopy.buildPython=C:/Pfad/zu/Python38/python.exe)
+def localProps = new Properties()
+def localPropsFile = rootProject.file('local.properties')
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { localProps.load(it) }
 }
 
 android {
@@ -28,11 +36,13 @@ android {
             // WICHTIG: Chaquopy-Repo bietet OpenCV-Wheels für cp38 ⇒ Python 3.8 verwenden
             version "3.8"
 
-            // Build-Python MUSS eine echte Python-3.8-Exe sein (kein einzelner String mit Argument).
-            // Ersetze den Pfad unten durch den aus dem obigen cmd-Befehl.
-            buildPython "C:/Users/acer/AppData/Local/Programs/Python/Python38/python.exe"
-            // Alternativ (direkt zur 3.8-Exe, wenn du den Pfad kennst):
-            // buildPython "C:/Users/PC/AppData/Local/Programs/Python/Python38/python.exe"
+            // Build-Python ist rechnerspezifisch und kommt deshalb aus local.properties:
+            //   chaquopy.buildPython=C:/Users/<name>/AppData/Local/Programs/Python/Python38/python.exe
+            // Ohne Eintrag sucht Chaquopy selbst nach einer passenden Python-3.8-Installation.
+            def configuredBuildPython = localProps.getProperty('chaquopy.buildPython')
+            if (configuredBuildPython) {
+                buildPython configuredBuildPython
+            }
 
             pip {
                 // OpenCV Headless – Version, die im Chaquopy-Repo für cp38 vorhanden ist

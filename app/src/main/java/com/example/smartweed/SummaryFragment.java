@@ -30,6 +30,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.util.Locale;
 
 public class SummaryFragment extends Fragment {
 
@@ -82,11 +83,11 @@ public class SummaryFragment extends Fragment {
         analysisVM.running.observe(getViewLifecycleOwner(), running -> {
             if (running != null && running) {
                 binding.progress.setVisibility(View.VISIBLE);
-                binding.tvStatus.setText("Analyse läuft …");
+                binding.tvStatus.setText(R.string.status_analysis_running);
             } else {
                 binding.progress.setVisibility(View.GONE);
                 if (TextUtils.isEmpty(binding.tvStatus.getText())) {
-                    binding.tvStatus.setText("Analyse abgeschlossen.");
+                    binding.tvStatus.setText(R.string.status_analysis_done);
                 }
             }
         });
@@ -117,7 +118,7 @@ public class SummaryFragment extends Fragment {
                     handleSingleResult(new JSONObject(trimmed));
                 }
             } catch (Exception e) {
-                binding.tvStatus.setText("Fehler beim Lesen der Ergebnisdaten.");
+                binding.tvStatus.setText(R.string.status_result_parse_error);
                 binding.tvRecommendation.setText("");
                 Glide.with(binding.ivOriginalPanel).clear(binding.ivOriginalPanel);
                 Glide.with(binding.ivStackedPanels).clear(binding.ivStackedPanels);
@@ -193,8 +194,8 @@ public class SummaryFragment extends Fragment {
         safeSet(binding.tvBeforeFiltered, toPct(avgBeforeFlt));
         safeSet(binding.tvAfterBw,        toPct(avgAfterBw));
         safeSet(binding.tvAfterFiltered,  toPct(avgAfterFlt));
-        safeSet(binding.tvDeltaBw,        String.format("%.2f pp", avgDeltaBw));
-        safeSet(binding.tvDeltaFiltered,  String.format("%.2f pp", avgDeltaFlt));
+        safeSet(binding.tvDeltaBw,        toPp(avgDeltaBw));
+        safeSet(binding.tvDeltaFiltered,  toPp(avgDeltaFlt));
 
         // Unkrautfilter-Werte anzeigen
         if (hasWeedFilter && nWf > 0) {
@@ -203,7 +204,7 @@ public class SummaryFragment extends Fragment {
             double avgDeltaWf  = sumDeltaWf  / nWf;
             safeSet(binding.tvBeforeWeedFiltered, toPct(avgBeforeWf));
             safeSet(binding.tvAfterWeedFiltered,  toPct(avgAfterWf));
-            safeSet(binding.tvDeltaWeedFiltered,  String.format("%.2f pp", avgDeltaWf));
+            safeSet(binding.tvDeltaWeedFiltered,  toPp(avgDeltaWf));
             if (binding.rowBeforeWeedFiltered != null) binding.rowBeforeWeedFiltered.setVisibility(View.VISIBLE);
             if (binding.rowAfterWeedFiltered  != null) binding.rowAfterWeedFiltered.setVisibility(View.VISIBLE);
             if (binding.rowDeltaWeedFiltered  != null) binding.rowDeltaWeedFiltered.setVisibility(View.VISIBLE);
@@ -214,10 +215,12 @@ public class SummaryFragment extends Fragment {
         double cscAfter  = hasWeedFilter ? avgAfterFlt  : avgAfterBw;
         Double cscValue = (cscBefore > 0) ? (cscBefore - cscAfter) / cscBefore * 100.0 : null;
         if (cscValue != null) {
-            binding.tvCsc.setText(String.format("%.2f %%", cscValue));
-            binding.tvRecommendation.setText(cscValue >= 10.0 ? "Weniger aggressiv striegeln!" : "Aggressiver striegeln!");
+            binding.tvCsc.setText(toPct(cscValue));
+            binding.tvRecommendation.setText(cscValue >= 10.0
+                    ? R.string.recommendation_less_aggressive
+                    : R.string.recommendation_more_aggressive);
         } else {
-            binding.tvCsc.setText("n. a.");
+            binding.tvCsc.setText(R.string.not_available);
             binding.tvRecommendation.setText("");
         }
 
@@ -257,8 +260,10 @@ public class SummaryFragment extends Fragment {
                 Double cscPair = (!Double.isNaN(cscPairBefore) && cscPairBefore > 0 && !Double.isNaN(cscPairAfter))
                         ? ((cscPairBefore - cscPairAfter) / cscPairBefore * 100.0)
                         : null;
-                String recoPair = (cscPair == null) ? "n. a."
-                        : (cscPair >= 10.0 ? "Weniger aggressiv striegeln!" : "Aggressiver striegeln!");
+                String recoPair = (cscPair == null) ? getString(R.string.not_available)
+                        : getString(cscPair >= 10.0
+                                ? R.string.recommendation_less_aggressive
+                                : R.string.recommendation_more_aggressive);
 
                 // --- UI-Block ---
                 android.widget.LinearLayout block = new android.widget.LinearLayout(requireContext());
@@ -266,22 +271,22 @@ public class SummaryFragment extends Fragment {
                 block.setPadding(0, dp(10), 0, dp(10));
 
                 android.widget.TextView header = new android.widget.TextView(requireContext());
-                header.setText(String.format("Paar %d", i + 1));
+                header.setText(getString(R.string.pair_header, i + 1));
                 header.setTextSize(15);
                 header.setTypeface(header.getTypeface(), android.graphics.Typeface.BOLD);
                 header.setTextColor(requireContext().getColor(R.color.text_white));
 
                 StringBuilder sb = new StringBuilder();
-                sb.append(String.format("Vorher – SW: %s | Gef.: %s", toPct(beforeBw), toPct(beforeFlt)));
-                if (!Double.isNaN(beforeWfP)) sb.append(String.format(" | Unkr.: %s", toPct(beforeWfP)));
-                sb.append(String.format("\nNachher – SW: %s | Gef.: %s", toPct(afterBw), toPct(afterFlt)));
-                if (!Double.isNaN(afterWfP)) sb.append(String.format(" | Unkr.: %s", toPct(afterWfP)));
-                sb.append(String.format("\nΔ SW: %s | Δ Gef.: %s",
-                        Double.isNaN(dBw)  ? "-" : String.format("%.2f pp", dBw),
-                        Double.isNaN(dFlt) ? "-" : String.format("%.2f pp", dFlt)));
-                if (!Double.isNaN(dWfP)) sb.append(String.format(" | Δ Unkr.: %.2f pp", dWfP));
-                sb.append(String.format("\nCSC: %s   Empfehlung: %s",
-                        (cscPair == null) ? "n. a." : String.format("%.2f %%", cscPair),
+                sb.append(getString(R.string.pair_line_before, toPct(beforeBw), toPct(beforeFlt)));
+                if (!Double.isNaN(beforeWfP)) sb.append(getString(R.string.pair_line_weed, toPct(beforeWfP)));
+                sb.append("\n").append(getString(R.string.pair_line_after, toPct(afterBw), toPct(afterFlt)));
+                if (!Double.isNaN(afterWfP)) sb.append(getString(R.string.pair_line_weed, toPct(afterWfP)));
+                sb.append("\n").append(getString(R.string.pair_line_delta,
+                        Double.isNaN(dBw)  ? "-" : toPp(dBw),
+                        Double.isNaN(dFlt) ? "-" : toPp(dFlt)));
+                if (!Double.isNaN(dWfP)) sb.append(getString(R.string.pair_line_delta_weed, toPp(dWfP)));
+                sb.append("\n").append(getString(R.string.pair_line_csc,
+                        (cscPair == null) ? getString(R.string.not_available) : toPct(cscPair),
                         recoPair));
 
                 android.widget.TextView lines = new android.widget.TextView(requireContext());
@@ -331,8 +336,8 @@ public class SummaryFragment extends Fragment {
 
         }
 
-        String modeLabel = hasWeedFilter ? " | Modus B: Mit Unkrautfilter" : " | Modus A: Ohne Unkrautfilter";
-        binding.tvStatus.setText("Analyse (" + n + " Paare) abgeschlossen." + modeLabel);
+        String modeLabel = getString(hasWeedFilter ? R.string.mode_label_b : R.string.mode_label_a);
+        binding.tvStatus.setText(getString(R.string.status_analysis_done_pairs, n) + modeLabel);
     }
 
     // ===================================================
@@ -379,11 +384,11 @@ public class SummaryFragment extends Fragment {
         double dBw  = (delta != null) ? delta.optDouble("coverage_bw_percent_points", Double.NaN) : Double.NaN;
         double dFlt = (delta != null) ? delta.optDouble("coverage_filtered_percent_points", Double.NaN) : Double.NaN;
         double dWf  = (delta != null) ? delta.optDouble("coverage_weedfiltered_percent_points", Double.NaN) : Double.NaN;
-        safeSet(binding.tvDeltaBw,  Double.isNaN(dBw)  ? "-" : String.format("%.2f pp", dBw));
-        safeSet(binding.tvDeltaFiltered, Double.isNaN(dFlt) ? "-" : String.format("%.2f pp", dFlt));
+        safeSet(binding.tvDeltaBw,  Double.isNaN(dBw)  ? "-" : toPp(dBw));
+        safeSet(binding.tvDeltaFiltered, Double.isNaN(dFlt) ? "-" : toPp(dFlt));
 
         if (hasWeedFilter) {
-            safeSet(binding.tvDeltaWeedFiltered, Double.isNaN(dWf) ? "-" : String.format("%.2f pp", dWf));
+            safeSet(binding.tvDeltaWeedFiltered, Double.isNaN(dWf) ? "-" : toPp(dWf));
             if (binding.rowDeltaWeedFiltered != null) binding.rowDeltaWeedFiltered.setVisibility(View.VISIBLE);
         }
 
@@ -395,19 +400,19 @@ public class SummaryFragment extends Fragment {
             cscValue = (cscBefore2 - cscAfter2) / cscBefore2 * 100.0;
         }
         if (cscValue != null) {
-            binding.tvCsc.setText(String.format("%.2f %%", cscValue));
+            binding.tvCsc.setText(toPct(cscValue));
             binding.tvRecommendation.setText(cscValue >= 10.0
-                    ? "Weniger aggressiv striegeln!"
-                    : "Aggressiver striegeln!");
+                    ? R.string.recommendation_less_aggressive
+                    : R.string.recommendation_more_aggressive);
         } else {
-            binding.tvCsc.setText("n. a.");
+            binding.tvCsc.setText(R.string.not_available);
             binding.tvRecommendation.setText("");
         }
 
         JSONObject combo = root.optJSONObject("combo");
         loadImages(combo);
-        String modeLabel = hasWeedFilter ? " | Modus B: Mit Unkrautfilter" : " | Modus A: Ohne Unkrautfilter";
-        binding.tvStatus.setText("Analyse abgeschlossen." + modeLabel);
+        String modeLabel = getString(hasWeedFilter ? R.string.mode_label_b : R.string.mode_label_a);
+        binding.tvStatus.setText(getString(R.string.status_analysis_done) + modeLabel);
     }
 
     // ===================================================
@@ -488,12 +493,17 @@ public class SummaryFragment extends Fragment {
     }
 
     private static String toPct(Double v) {
-        return (v == null) ? "-" : String.format("%.2f %%", v);
+        return (v == null) ? "-" : String.format(Locale.getDefault(), "%.2f %%", v);
     }
 
     private static String toPct(double v) {
         if (Double.isNaN(v)) return "-";
-        return String.format("%.2f %%", v);
+        return String.format(Locale.getDefault(), "%.2f %%", v);
+    }
+
+    private static String toPp(double v) {
+        if (Double.isNaN(v)) return "-";
+        return String.format(Locale.getDefault(), "%.2f pp", v);
     }
 
     private static void safeSet(android.widget.TextView tv, String txt) {
@@ -507,7 +517,7 @@ public class SummaryFragment extends Fragment {
         safeSet(binding.tvAfterFiltered, "-");
         safeSet(binding.tvDeltaBw, "-");
         safeSet(binding.tvDeltaFiltered, "-");
-        safeSet(binding.tvCsc, "n. a.");
+        safeSet(binding.tvCsc, getString(R.string.not_available));
         safeSet(binding.tvBeforeWeedFiltered, "-");
         safeSet(binding.tvAfterWeedFiltered, "-");
         safeSet(binding.tvDeltaWeedFiltered, "-");
