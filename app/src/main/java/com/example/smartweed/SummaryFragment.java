@@ -36,6 +36,7 @@ public class SummaryFragment extends Fragment {
 
     private FragmentSummaryBinding binding;
     private AnalysisViewModel analysisVM;
+    private AnalysisSettings analysisSettings;
 
     private String lastOriginalPath = null;
     private String lastStackedPath  = null;
@@ -51,10 +52,14 @@ public class SummaryFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
 
         analysisVM = new ViewModelProvider(requireActivity()).get(AnalysisViewModel.class);
+        analysisSettings = new AnalysisSettings(requireContext());
 
         binding.progress.setVisibility(View.GONE);
         binding.tvStatus.setText("");
         binding.tvRecommendation.setText("");
+        binding.tvCscTarget.setText(getString(R.string.csc_target_range,
+                trimNumber(analysisSettings.getCscBandLow()),
+                trimNumber(analysisSettings.getCscBandHigh())));
 
         // Top-Images: Fullscreen
         binding.ivOriginalPanel.setOnClickListener(v -> {
@@ -89,6 +94,13 @@ public class SummaryFragment extends Fragment {
                 if (TextUtils.isEmpty(binding.tvStatus.getText())) {
                     binding.tvStatus.setText(R.string.status_analysis_done);
                 }
+            }
+        });
+
+        // Fortschritt bei mehreren Paaren ("Analysiere Paar 2 von 5 …")
+        analysisVM.progress.observe(getViewLifecycleOwner(), p -> {
+            if (p != null && p.length == 2 && Boolean.TRUE.equals(analysisVM.running.getValue())) {
+                binding.tvStatus.setText(getString(R.string.progress_pair, p[0], p[1]));
             }
         });
 
@@ -210,19 +222,21 @@ public class SummaryFragment extends Fragment {
             if (binding.rowDeltaWeedFiltered  != null) binding.rowDeltaWeedFiltered.setVisibility(View.VISIBLE);
         }
 
-        // Modus A (ohne Unkrautfilter) → BW-Werte, Modus B (mit Unkrautfilter) → Gefiltert-Werte
-        double cscBefore = hasWeedFilter ? avgBeforeFlt : avgBeforeBw;
-        double cscAfter  = hasWeedFilter ? avgAfterFlt  : avgAfterBw;
-        Double cscValue = (cscBefore > 0) ? (cscBefore - cscAfter) / cscBefore * 100.0 : null;
-        if (cscValue != null) {
-            binding.tvCsc.setText(toPct(cscValue));
-            binding.tvRecommendation.setText(cscValue >= 10.0
-                    ? R.string.recommendation_less_aggressive
-                    : R.string.recommendation_more_aggressive);
+        // CSC-Basis: Modus A → SW-Werte, Modus B → unkrautgefilterte Werte
+        // (Fallback auf Gefiltert, falls keine Unkraut-Werte vorliegen)
+        double cscBefore;
+        double cscAfter;
+        if (hasWeedFilter && nWf > 0) {
+            cscBefore = sumBeforeWf / nWf;
+            cscAfter  = sumAfterWf  / nWf;
+        } else if (hasWeedFilter) {
+            cscBefore = avgBeforeFlt;
+            cscAfter  = avgAfterFlt;
         } else {
-            binding.tvCsc.setText(R.string.not_available);
-            binding.tvRecommendation.setText("");
+            cscBefore = avgBeforeBw;
+            cscAfter  = avgAfterBw;
         }
+        applyCscHero(CscCalculator.compute(cscBefore, cscAfter));
 
         // --- Einzelwerte + Bilder unten ohne RecyclerView ---
         if (binding.pairsContainer != null) {
@@ -254,27 +268,31 @@ public class SummaryFragment extends Fragment {
                 double afterWfP  = (afterObj  != null) ? afterObj .optDouble("coverage_weedfiltered_percent", Double.NaN) : Double.NaN;
                 double dWfP = (deltaObj != null) ? deltaObj.optDouble("coverage_weedfiltered_percent_points", Double.NaN) : Double.NaN;
 
-                // CSC pro Paar: Modus A → BW-Werte, Modus B → Gefiltert-Werte
-                double cscPairBefore = hasWeedFilter ? beforeFlt : beforeBw;
-                double cscPairAfter  = hasWeedFilter ? afterFlt  : afterBw;
-                Double cscPair = (!Double.isNaN(cscPairBefore) && cscPairBefore > 0 && !Double.isNaN(cscPairAfter))
-                        ? ((cscPairBefore - cscPairAfter) / cscPairBefore * 100.0)
-                        : null;
-                String recoPair = (cscPair == null) ? getString(R.string.not_available)
-                        : getString(cscPair >= 10.0
-                                ? R.string.recommendation_less_aggressive
-                                : R.string.recommendation_more_aggressive);
+                // CSC pro Paar: Modus A → SW-Werte, Modus B → unkrautgefilterte Werte
+                // (Fallback auf Gefiltert, falls keine Unkraut-Werte vorliegen)
+                double cscPairBefore = hasWeedFilter
+                        ? (!Double.isNaN(beforeWfP) ? beforeWfP : beforeFlt)
+                        : beforeBw;
+                double cscPairAfter = hasWeedFilter
+                        ? (!Double.isNaN(afterWfP) ? afterWfP : afterFlt)
+                        : afterBw;
+                Double cscPair = CscCalculator.compute(
+                        Double.isNaN(cscPairBefore) ? null : cscPairBefore,
+                        Double.isNaN(cscPairAfter)  ? null : cscPairAfter);
+                CscCalculator.Recommendation pairReco = CscCalculator.recommend(cscPair,
+                        analysisSettings.getCscBandLow(), analysisSettings.getCscBandHigh());
+                String recoPair = (pairReco == CscCalculator.Recommendation.NOT_AVAILABLE)
+                        ? getString(R.string.not_available)
+                        : recommendationText(pairReco);
 
-                // --- UI-Block ---
-                android.widget.LinearLayout block = new android.widget.LinearLayout(requireContext());
-                block.setOrientation(android.widget.LinearLayout.VERTICAL);
-                block.setPadding(0, dp(10), 0, dp(10));
+                // --- UI-Block (item_pair_result.xml) ---
+                View pairView = getLayoutInflater().inflate(R.layout.item_pair_result, binding.pairsContainer, false);
+                android.widget.TextView header = pairView.findViewById(R.id.tvPairHeader);
+                android.widget.TextView lines = pairView.findViewById(R.id.tvPairMetrics);
+                ImageView imgOrig = pairView.findViewById(R.id.ivPairOriginal);
+                ImageView imgStacked = pairView.findViewById(R.id.ivPairStacked);
 
-                android.widget.TextView header = new android.widget.TextView(requireContext());
                 header.setText(getString(R.string.pair_header, i + 1));
-                header.setTextSize(15);
-                header.setTypeface(header.getTypeface(), android.graphics.Typeface.BOLD);
-                header.setTextColor(requireContext().getColor(R.color.text_white));
 
                 StringBuilder sb = new StringBuilder();
                 sb.append(getString(R.string.pair_line_before, toPct(beforeBw), toPct(beforeFlt)));
@@ -289,13 +307,7 @@ public class SummaryFragment extends Fragment {
                         (cscPair == null) ? getString(R.string.not_available) : toPct(cscPair),
                         recoPair));
 
-                android.widget.TextView lines = new android.widget.TextView(requireContext());
                 lines.setText(sb.toString());
-                lines.setTextColor(requireContext().getColor(R.color.text_white));
-                lines.setPadding(0, dp(4), 0, dp(0));
-
-                block.addView(header);
-                block.addView(lines);
 
                 // Bilder (Original + Stacked)
                 if (combo != null) {
@@ -303,29 +315,21 @@ public class SummaryFragment extends Fragment {
                     String stacked   = normalizePath(combo.optString("labeled_tripanel_stacked", null));
 
                     if (!TextUtils.isEmpty(origPanel)) {
-                        android.widget.ImageView imgOrig = new android.widget.ImageView(requireContext());
-                        imgOrig.setAdjustViewBounds(true);
-                        imgOrig.setPadding(0, dp(2), 0, dp(2));
+                        imgOrig.setVisibility(View.VISIBLE);
                         loadInto(imgOrig, origPanel);
-
                         final String clickPath = origPanel;
                         imgOrig.setOnClickListener(v -> FullscreenImageDialog.show(SummaryFragment.this, clickPath));
-                        block.addView(imgOrig);
                     }
 
                     if (!TextUtils.isEmpty(stacked)) {
-                        android.widget.ImageView imgStacked = new android.widget.ImageView(requireContext());
-                        imgStacked.setAdjustViewBounds(true);
-                        imgStacked.setPadding(0, dp(2), 0, dp(2));
+                        imgStacked.setVisibility(View.VISIBLE);
                         loadInto(imgStacked, stacked);
-
                         final String clickPath2 = stacked;
                         imgStacked.setOnClickListener(v -> FullscreenImageDialog.show(SummaryFragment.this, clickPath2));
-                        block.addView(imgStacked);
                     }
                 }
 
-                binding.pairsContainer.addView(block);
+                binding.pairsContainer.addView(pairView);
 
                 // Trennlinie (optional)
                 View divider = new View(requireContext());
@@ -392,27 +396,60 @@ public class SummaryFragment extends Fragment {
             if (binding.rowDeltaWeedFiltered != null) binding.rowDeltaWeedFiltered.setVisibility(View.VISIBLE);
         }
 
-        // Modus A (ohne Unkrautfilter) → BW-Werte, Modus B (mit Unkrautfilter) → Gefiltert-Werte
-        Double cscBefore2 = hasWeedFilter ? beforeFlt : beforeBw;
-        Double cscAfter2  = hasWeedFilter ? afterFlt  : afterBw;
-        Double cscValue = null;
-        if (cscBefore2 != null && cscAfter2 != null && cscBefore2 > 0) {
-            cscValue = (cscBefore2 - cscAfter2) / cscBefore2 * 100.0;
-        }
-        if (cscValue != null) {
-            binding.tvCsc.setText(toPct(cscValue));
-            binding.tvRecommendation.setText(cscValue >= 10.0
-                    ? R.string.recommendation_less_aggressive
-                    : R.string.recommendation_more_aggressive);
-        } else {
-            binding.tvCsc.setText(R.string.not_available);
-            binding.tvRecommendation.setText("");
-        }
+        // CSC-Basis: Modus A → SW-Werte, Modus B → unkrautgefilterte Werte
+        // (Fallback auf Gefiltert, falls keine Unkraut-Werte vorliegen)
+        Double cscBefore2 = hasWeedFilter ? (beforeWf != null ? beforeWf : beforeFlt) : beforeBw;
+        Double cscAfter2  = hasWeedFilter ? (afterWf  != null ? afterWf  : afterFlt)  : afterBw;
+        applyCscHero(CscCalculator.compute(cscBefore2, cscAfter2));
 
         JSONObject combo = root.optJSONObject("combo");
         loadImages(combo);
         String modeLabel = getString(hasWeedFilter ? R.string.mode_label_b : R.string.mode_label_a);
         binding.tvStatus.setText(getString(R.string.status_analysis_done) + modeLabel);
+    }
+
+    // ===================================================
+    // CSC-Hero-Karte (große Empfehlung)
+    // ===================================================
+    private void applyCscHero(Double csc) {
+        double bandLow  = analysisSettings.getCscBandLow();
+        double bandHigh = analysisSettings.getCscBandHigh();
+
+        binding.tvCscTarget.setText(getString(R.string.csc_target_range,
+                trimNumber(bandLow), trimNumber(bandHigh)));
+
+        CscCalculator.Recommendation reco = CscCalculator.recommend(csc, bandLow, bandHigh);
+        binding.tvCsc.setText(csc == null ? getString(R.string.not_available) : toPct(csc));
+        binding.tvRecommendation.setText(recommendationText(reco));
+        binding.tvRecommendation.setTextColor(recommendationColor(reco));
+    }
+
+    private String recommendationText(CscCalculator.Recommendation reco) {
+        switch (reco) {
+            case OPTIMAL:          return getString(R.string.recommendation_optimal);
+            case MORE_AGGRESSIVE:  return getString(R.string.recommendation_more_aggressive);
+            case LESS_AGGRESSIVE:  return getString(R.string.recommendation_less_aggressive);
+            case CHECK_IMAGES:     return getString(R.string.recommendation_check_images);
+            default:               return "";
+        }
+    }
+
+    private int recommendationColor(CscCalculator.Recommendation reco) {
+        int colorRes;
+        switch (reco) {
+            case OPTIMAL:          colorRes = R.color.traktor_green;  break;
+            case MORE_AGGRESSIVE:  colorRes = R.color.traktor_blue;   break;
+            case LESS_AGGRESSIVE:  colorRes = R.color.warning_red;    break;
+            case CHECK_IMAGES:     colorRes = R.color.status_warning; break;
+            default:               colorRes = R.color.text_secondary;
+        }
+        return requireContext().getColor(colorRes);
+    }
+
+    /** Formatiert Zahlen ohne unnötige Nachkommastellen (8.0 → "8") */
+    private static String trimNumber(double v) {
+        if (v == Math.rint(v)) return String.valueOf((long) v);
+        return String.format(Locale.getDefault(), "%.1f", v);
     }
 
     // ===================================================

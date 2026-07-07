@@ -1,20 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:padding="10dp"
-    android:orientation="vertical"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content">
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp">
 
     <TextView
-        android:id="@+id/tvHeader"
+        android:id="@+id/tvPairHeader"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="15sp"
         android:textStyle="bold"
-        android:text="Paar 1 – before.jpg  ↔  after.jpg"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"/>
+        android:textColor="@color/text_white"/>
 
     <TextView
-        android:id="@+id/tvMetrics"
-        android:text="Vorher SW: 0.00 %   Vorher Gef.: 0.00 %   Δ: 0.00 pp / 0.00 pp"
+        android:id="@+id/tvPairMetrics"
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content"/>
+        android:layout_height="wrap_content"
+        android:paddingTop="4dp"
+        android:textColor="@color/text_white"/>
+
+    <ImageView
+        android:id="@+id/ivPairOriginal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:adjustViewBounds="true"
+        android:visibility="gone"
+        android:contentDescription="@string/label_before"/>
+
+    <ImageView
+        android:id="@+id/ivPairStacked"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:adjustViewBounds="true"
+        android:visibility="gone"
+        android:contentDescription="@string/label_after"/>
+
 </LinearLayout>

@@ -6,10 +6,14 @@ import numpy as np
 # -------------------------------
 # Konstanten / Parameter
 # -------------------------------
-LOWER_GREEN = np.array([35, 40, 40], dtype=np.uint8)
-UPPER_GREEN = np.array([85, 255, 255], dtype=np.uint8)
-MIN_SIZE    = 50
-IMG_EXTS    = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
+# Hinweis zur Methodik: Die Pflanzensegmentierung nutzt eine HSV-Grünton-Schwelle
+# (H zwischen H_LOW und H_HIGH). Der Businessplan nennt ExG-/ExGR-Farbindizes als
+# Zielmethodik — eine Umstellung sollte mit echten Feldbildern validiert werden.
+H_LOW_DEFAULT  = 35
+H_HIGH_DEFAULT = 85
+SV_MIN         = 40   # Mindest-Sättigung/-Helligkeit für "grün"
+MIN_SIZE       = 50   # Standard: Komponenten kleiner als 50 px werden entfernt
+IMG_EXTS       = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
 
 # NEU: globale Maximalgrößen für RAM-schonende Verarbeitung/Anzeige
 MAX_SIDE_FOR_ANALYSIS = 1600  # längste Bildkante für die Analyse
@@ -77,11 +81,13 @@ def _maybe_downscale_long_side(bgr: np.ndarray, max_side: int) -> np.ndarray:
     new_h = max(1, int(round(h * scale)))
     return cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-def _mask_and_stats(bgr: np.ndarray, weed_filter: bool = False):
+def _mask_and_stats(bgr: np.ndarray, weed_filter: bool = False,
+                    min_size: int = MIN_SIZE,
+                    h_low: int = H_LOW_DEFAULT, h_high: int = H_HIGH_DEFAULT):
     """
     Erzeugt:
       - plant_mask  (Binärmaske grün in HSV)
-      - filtered    (Komponenten < MIN_SIZE entfernt)
+      - filtered    (Komponenten < min_size entfernt)
       - cov_bw      (Bedeckung plant_mask in %)
       - cov_f       (Bedeckung filtered   in %)
       - weed_filtered (optional: zusätzlich Unkraut entfernt)
@@ -90,12 +96,14 @@ def _mask_and_stats(bgr: np.ndarray, weed_filter: bool = False):
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
     hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
 
-    plant_mask = cv2.inRange(hsv, LOWER_GREEN, UPPER_GREEN)
+    lower_green = np.array([h_low, SV_MIN, SV_MIN], dtype=np.uint8)
+    upper_green = np.array([h_high, 255, 255], dtype=np.uint8)
+    plant_mask = cv2.inRange(hsv, lower_green, upper_green)
 
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(plant_mask, connectivity=8)
     filtered = np.zeros_like(plant_mask)
     for i in range(1, num_labels):
-        if stats[i, cv2.CC_STAT_AREA] >= MIN_SIZE:
+        if stats[i, cv2.CC_STAT_AREA] >= min_size:
             filtered[labels == i] = 255
 
     cov_bw = float((plant_mask == 255).sum()) / plant_mask.size * 100.0
@@ -173,12 +181,14 @@ def _make_labeled_panel(bgr, plant_mask, filtered_mask, cov_bw, cov_f,
     return panel
 
 def _process_single_image(path: str, out_dir: str, tag: str = None,
-                          weed_filter: bool = False):
+                          weed_filter: bool = False,
+                          min_size: int = MIN_SIZE,
+                          h_low: int = H_LOW_DEFAULT, h_high: int = H_HIGH_DEFAULT):
     """
     Analysiert ein Bild und speichert:
       - *_original.jpg
       - *_schwarz_weiss.jpg
-      - *_gefiltert_<MIN_SIZE>px.jpg
+      - *_gefiltert_<min_size>px.jpg
       - *_unkrautgefiltert.jpg (nur bei weed_filter=True)
       - *_panel.jpg (mit SW/Gefiltert-Werten oben links, auf MAX_PANEL_HEIGHT skaliert)
     tag: None  -> Dateinamen wie im alten Skript (kein Tag)
@@ -193,14 +203,15 @@ def _process_single_image(path: str, out_dir: str, tag: str = None,
     bgr = _maybe_downscale_long_side(bgr, MAX_SIDE_FOR_ANALYSIS)
 
     plant_mask, filtered_mask, cov_bw, cov_f, weed_filtered_mask, cov_wf = \
-        _mask_and_stats(bgr, weed_filter=weed_filter)
+        _mask_and_stats(bgr, weed_filter=weed_filter,
+                        min_size=min_size, h_low=h_low, h_high=h_high)
 
     base = os.path.splitext(os.path.basename(path))[0]
     prefix = base if not tag else f"{base}_{tag}"
 
     orig_path  = os.path.join(out_dir, f"{prefix}_original.jpg")
     bw_path    = os.path.join(out_dir, f"{prefix}_schwarz_weiss.jpg")
-    fil_path   = os.path.join(out_dir, f"{prefix}_gefiltert_{MIN_SIZE}px.jpg")
+    fil_path   = os.path.join(out_dir, f"{prefix}_gefiltert_{min_size}px.jpg")
     panel_path = os.path.join(out_dir, f"{prefix}_panel.jpg")
 
     # JPEG mit moderater Qualität (kleinere Dateien, weniger RAM beim Decoding)
@@ -243,15 +254,19 @@ def _process_single_image(path: str, out_dir: str, tag: str = None,
 # Vorher/Nachher-Analyse (nutzt exakt die gleiche Pipeline)
 # ==========================================================
 def analyze_pair(before_path: str, after_path: str, out_dir: str = None,
-                 weed_filter: bool = False) -> str:
+                 weed_filter: bool = False,
+                 min_size: int = MIN_SIZE,
+                 h_low: int = H_LOW_DEFAULT, h_high: int = H_HIGH_DEFAULT) -> str:
     """
     Analysiere genau zwei Bilder (Vorher/Nachher).
     - before_path, after_path: absolute Dateipfade (keine content:// URIs)
     - out_dir: optionaler Zielordner (z. B. /DCIM/SmartWeed/ausgabe_pflanzen)
     - weed_filter: True = Unkrautfilter aktivieren
+    - min_size, h_low, h_high: Analyse-Parameter (Experten-Einstellungen der App)
     Rückgabe: JSON-String.
     """
-    print("[PY] analyze_pair:", before_path, after_path, "weed_filter=", weed_filter)
+    print("[PY] analyze_pair:", before_path, after_path, "weed_filter=", weed_filter,
+          "min_size=", min_size, "h=", h_low, "-", h_high)
 
     if not os.path.isfile(before_path):
         raise FileNotFoundError(before_path)
@@ -266,9 +281,11 @@ def analyze_pair(before_path: str, after_path: str, out_dir: str = None,
 
     # Einzelanalysen (mit Panel + Werten wie im alten Skript)
     before_res, before_bw, before_filt, before_bgr, before_panel = \
-        _process_single_image(before_path, out_dir, tag="before", weed_filter=weed_filter)
+        _process_single_image(before_path, out_dir, tag="before", weed_filter=weed_filter,
+                              min_size=min_size, h_low=h_low, h_high=h_high)
     after_res, after_bw, after_filt, after_bgr, after_panel = \
-        _process_single_image(after_path, out_dir, tag="after", weed_filter=weed_filter)
+        _process_single_image(after_path, out_dir, tag="after", weed_filter=weed_filter,
+                              min_size=min_size, h_low=h_low, h_high=h_high)
 
     # Deltas (Prozentpunkte)
     try:
@@ -352,12 +369,15 @@ def analyze_pair(before_path: str, after_path: str, out_dir: str = None,
 # ==========================================================
 # Batch-Analyse: mehrere Vorher/Nachher-Paare in einem Aufruf
 # ==========================================================
-def analyze_batch(before_paths, after_paths, out_dir=None, weed_filter=False) -> str:
+def analyze_batch(before_paths, after_paths, out_dir=None, weed_filter=False,
+                  min_size: int = MIN_SIZE,
+                  h_low: int = H_LOW_DEFAULT, h_high: int = H_HIGH_DEFAULT) -> str:
     """
     Analysiert mehrere Vorher/Nachher-Paare (nutzt analyze_pair pro Paar).
     - before_paths, after_paths: Listen absoluter Dateipfade gleicher Länge
     - out_dir: gemeinsamer Zielordner für alle Paare
     - weed_filter: True = Unkrautfilter aktivieren
+    - min_size, h_low, h_high: Analyse-Parameter (Experten-Einstellungen der App)
     Rückgabe: JSON-Array-String (ein Objekt pro Paar, Format wie analyze_pair).
     """
     befores = [str(p) for p in before_paths]
@@ -369,7 +389,8 @@ def analyze_batch(before_paths, after_paths, out_dir=None, weed_filter=False) ->
 
     results = []
     for b, a in zip(befores, afters):
-        results.append(json.loads(analyze_pair(b, a, out_dir, weed_filter)))
+        results.append(json.loads(analyze_pair(b, a, out_dir, weed_filter,
+                                               min_size=min_size, h_low=h_low, h_high=h_high)))
 
     print(f"[PY] DONE analyze_batch -> {len(results)} pair(s)")
     return json.dumps(results, ensure_ascii=False)

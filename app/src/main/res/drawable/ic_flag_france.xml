@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="36dp"
+    android:height="36dp"
+    android:viewportWidth="36"
+    android:viewportHeight="36">
+
+    <!-- Kreisförmige Flagge (Stil wie ic_flag_uk / ic_flag_germany) -->
+    <group>
+        <clip-path android:pathData="M18,18m-18,0a18,18 0,1 1,36 0a18,18 0,1 1,-36 0" />
+
+        <!-- Blau (links) -->
+        <path
+            android:fillColor="#002395"
+            android:pathData="M0,0h12v36h-12z" />
+
+        <!-- Weiß (Mitte) -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M12,0h12v36h-12z" />
+
+        <!-- Rot (rechts) -->
+        <path
+            android:fillColor="#ED2939"
+            android:pathData="M24,0h12v36h-12z" />
+    </group>
+</vector>

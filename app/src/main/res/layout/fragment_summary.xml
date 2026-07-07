@@ -53,6 +53,58 @@
                 android:textColor="@color/text_tertiary"/>
         </LinearLayout>
 
+        <!-- CSC Hero Card: große, klare Handlungsempfehlung ganz oben -->
+        <LinearLayout
+            android:id="@+id/cscHeroCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/bg_card_hero"
+            android:padding="24dp"
+            android:layout_marginTop="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/csc_hero_title"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textAllCaps="true"
+                android:letterSpacing="0.08"
+                android:textColor="@color/text_tertiary"/>
+
+            <TextView
+                android:id="@+id/tvCsc"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/not_available"
+                android:textSize="48sp"
+                android:textStyle="bold"
+                android:letterSpacing="-0.02"
+                android:textColor="@color/text_primary"/>
+
+            <TextView
+                android:id="@+id/tvCscTarget"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textSize="13sp"
+                android:textColor="@color/text_tertiary"/>
+
+            <TextView
+                android:id="@+id/tvRecommendation"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:gravity="center"
+                android:text=""
+                android:textStyle="bold"
+                android:textSize="20sp"
+                android:textColor="@color/traktor_green"/>
+        </LinearLayout>
+
         <!-- Statistics Cards Row -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -356,43 +408,6 @@
                     android:textColor="@color/traktor_green"
                     android:textStyle="bold"/>
             </LinearLayout>
-        </LinearLayout>
-
-        <!-- CSC & Recommendation Card -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="@drawable/bg_card"
-            android:padding="20dp"
-            android:layout_marginTop="16dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/csc_and_recommendation"
-                android:textStyle="bold"
-                android:textSize="16sp"
-                android:textColor="@color/text_primary"
-                android:layout_marginBottom="8dp"/>
-
-            <TextView
-                android:id="@+id/tvCsc"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/not_available"
-                android:textSize="14sp"
-                android:textColor="@color/text_secondary"/>
-
-            <TextView
-                android:id="@+id/tvRecommendation"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text=""
-                android:textStyle="bold"
-                android:textSize="15sp"
-                android:textColor="@color/traktor_green"
-                android:layout_marginTop="8dp"/>
         </LinearLayout>
 
         <!-- Images Section -->

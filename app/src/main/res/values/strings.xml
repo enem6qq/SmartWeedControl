@@ -4,8 +4,13 @@
     <string name="action_language">Language</string>
 
     <!-- Navigation -->
-    <string name="first_fragment_label">Home</string>
-    <string name="second_fragment_label">Camera</string>
+    <string name="home_fragment_label">Home</string>
+    <string name="camera_fragment_label">Camera</string>
+    <string name="settings_fragment_label">Analysis Settings</string>
+    <string name="monitoring_fragment_label">Monitoring</string>
+    <string name="manual_fragment_label">Manual</string>
+    <string name="analysis_fragment_label">Analysis</string>
+    <string name="summary_fragment_label">Results</string>
     <string name="next">Next</string>
     <string name="previous">Previous</string>
 
@@ -13,15 +18,18 @@
     <string name="select_language">Select Language</string>
     <string name="language_english">English</string>
     <string name="language_german">Deutsch</string>
+    <string name="language_french">Français</string>
+    <string name="language_english_sub">English</string>
+    <string name="language_german_sub">German</string>
+    <string name="language_french_sub">French</string>
 
     <!-- First Fragment (Home) -->
     <string name="home_title">SmartWeed Control</string>
-    <string name="home_subtitle">Intelligent Tractor Control</string>
+    <string name="home_subtitle">Digital decision support for mechanical weed control</string>
     <string name="status_ready">System ready</string>
     <string name="btn_open_monitoring">Open Monitoring</string>
     <string name="btn_open_manual">Open Manual</string>
     <string name="footer_info">SmartWeed v1.0 - Intelligent Weed Control</string>
-    <string name="build_hint">Tip: Enable USB debugging and use Live Update.</string>
 
     <!-- Second Fragment (Camera) -->
     <string name="camera_preview_desc">Camera Preview</string>
@@ -59,16 +67,16 @@
     <string name="label_delta_filtered">Delta Filtered:</string>
     <string name="label_weed_filtered">Weed filt.:</string>
     <string name="label_delta_weed_filtered">Delta Weed filt.:</string>
-    <string name="csc_and_recommendation">CSC and Recommendation</string>
     <string name="not_available">n/a</string>
     <string name="pair_results_header">Individual Results per Pair</string>
 
     <!-- Monitoring Fragment -->
     <string name="status_active">Status: Active</string>
-    <string name="angle_format">Angle: %1$d°</string>
+    <string name="angle_placeholder">30°</string>
     <string name="btn_start">Start</string>
     <string name="btn_cancel">Cancel</string>
     <string name="settings_desc">Settings</string>
+    <string name="planned_badge">Preview – feature in planning</string>
 
     <!-- Manual Fragment -->
     <string name="level_low">Low</string>
@@ -131,6 +139,11 @@
     <string name="mode_label_b">" | Mode B: With weed filter"</string>
     <string name="recommendation_less_aggressive">Harrow less aggressively!</string>
     <string name="recommendation_more_aggressive">Harrow more aggressively!</string>
+    <string name="recommendation_optimal">Optimal harrowing – keep this setting!</string>
+    <string name="recommendation_check_images">Check image pair – before/after images do not appear comparable (negative CSC).</string>
+    <string name="csc_hero_title">Crop Soil Cover (CSC)</string>
+    <string name="csc_target_range">Target range: %1$s–%2$s %%</string>
+    <string name="progress_pair">Analyzing pair %1$d of %2$d …</string>
     <string name="pair_header">Pair %1$d</string>
     <string name="pair_line_before">Before \u2013 BW: %1$s | Filt.: %2$s</string>
     <string name="pair_line_after">After \u2013 BW: %1$s | Filt.: %2$s</string>
@@ -138,6 +151,19 @@
     <string name="pair_line_delta">\u0394 BW: %1$s | \u0394 Filt.: %2$s</string>
     <string name="pair_line_delta_weed">" | \u0394 Weed: %1$s"</string>
     <string name="pair_line_csc">"CSC: %1$s   Recommendation: %2$s"</string>
+
+    <!-- Analysis Settings (expert mode) -->
+    <string name="settings_title">Analysis Settings</string>
+    <string name="settings_info">Expert settings: these values affect the image analysis and the recommendation. Only change them if you know what you are doing.</string>
+    <string name="settings_min_size">Minimum object size (px)</string>
+    <string name="settings_h_low">Green hue – lower bound (0–179)</string>
+    <string name="settings_h_high">Green hue – upper bound (0–179)</string>
+    <string name="settings_csc_low">CSC target range – lower bound (%)</string>
+    <string name="settings_csc_high">CSC target range – upper bound (%)</string>
+    <string name="settings_save">Save</string>
+    <string name="settings_reset">Reset to defaults</string>
+    <string name="settings_saved">Settings saved</string>
+    <string name="settings_invalid">Invalid value – please check the inputs</string>
 
     <!-- Login -->
     <string name="login_button_pressed">Button pressed</string>

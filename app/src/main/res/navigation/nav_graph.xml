@@ -3,80 +3,87 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/nav_graph"
-    app:startDestination="@id/FirstFragment">
+    app:startDestination="@id/HomeFragment">
 
     <fragment
-        android:id="@+id/FirstFragment"
-        android:name="com.example.smartweed.FirstFragment"
-        android:label="@string/first_fragment_label"
-        tools:layout="@layout/fragment_first">
+        android:id="@+id/HomeFragment"
+        android:name="com.example.smartweed.HomeFragment"
+        android:label="@string/home_fragment_label"
+        tools:layout="@layout/fragment_home">
 
         <action
-            android:id="@+id/action_FirstFragment_to_SecondFragment"
-            app:destination="@id/SecondFragment" />
+            android:id="@+id/action_HomeFragment_to_CameraFragment"
+            app:destination="@id/CameraFragment" />
         <action
-            android:id="@+id/action_FirstFragment_to_monitoringFragment"
+            android:id="@+id/action_HomeFragment_to_monitoringFragment"
             app:destination="@id/monitoringFragment" />
         <action
-            android:id="@+id/action_FirstFragment_to_manualFragment"
+            android:id="@+id/action_HomeFragment_to_manualFragment"
             app:destination="@id/manualFragment" />
         <action
-            android:id="@+id/action_FirstFragment_to_trashFragment"
+            android:id="@+id/action_HomeFragment_to_trashFragment"
             app:destination="@id/trashFragment" />
     </fragment>
 
     <fragment
-        android:id="@+id/SecondFragment"
-        android:name="com.example.smartweed.SecondFragment"
-        android:label="@string/second_fragment_label"
-        tools:layout="@layout/fragment_second">
+        android:id="@+id/CameraFragment"
+        android:name="com.example.smartweed.CameraFragment"
+        android:label="@string/camera_fragment_label"
+        tools:layout="@layout/fragment_camera">
 
         <action
-            android:id="@+id/action_SecondFragment_to_FirstFragment"
-            app:destination="@id/FirstFragment" />
+            android:id="@+id/action_CameraFragment_to_HomeFragment"
+            app:destination="@id/HomeFragment" />
         <action
-            android:id="@+id/action_SecondFragment_to_monitoringFragment"
+            android:id="@+id/action_CameraFragment_to_monitoringFragment"
             app:destination="@id/monitoringFragment" />
         <action
-            android:id="@+id/action_SecondFragment_to_manualFragment"
+            android:id="@+id/action_CameraFragment_to_manualFragment"
             app:destination="@id/manualFragment" />
         <!-- Weiterleitung auf AnalysisFragment -->
         <action
-            android:id="@+id/action_SecondFragment_to_AnalysisFragment"
+            android:id="@+id/action_CameraFragment_to_AnalysisFragment"
             app:destination="@id/AnalysisFragment" />
     </fragment>
 
     <fragment
         android:id="@+id/monitoringFragment"
         android:name="com.example.smartweed.MonitoringFragment"
-        android:label="MonitoringFragment" />
+        android:label="@string/monitoring_fragment_label" />
 
     <fragment
         android:id="@+id/trashFragment"
         android:name="com.example.smartweed.TrashFragment"
-        android:label="Papierkorb"
+        android:label="@string/trash_title"
         tools:layout="@layout/fragment_trash" />
 
     <fragment
         android:id="@+id/manualFragment"
         android:name="com.example.smartweed.ManualFragment"
-        android:label="ManualFragment" />
+        android:label="@string/manual_fragment_label" />
 
     <!-- AnalysisFragment mit Aktion zur Summary-Seite -->
     <fragment
         android:id="@+id/AnalysisFragment"
         android:name="com.example.smartweed.AnalysisFragment"
-        android:label="AnalysisFragment"
+        android:label="@string/analysis_fragment_label"
         tools:layout="@layout/fragment_analysis">
         <action
             android:id="@+id/action_AnalysisFragment_to_SummaryFragment"
             app:destination="@id/SummaryFragment" />
     </fragment>
 
-    <!-- Neu: SummaryFragment (Ergebnisseite) -->
+    <!-- SummaryFragment (Ergebnisseite) -->
     <fragment
         android:id="@+id/SummaryFragment"
         android:name="com.example.smartweed.SummaryFragment"
-        android:label="SummaryFragment"
+        android:label="@string/summary_fragment_label"
         tools:layout="@layout/fragment_summary" />
+
+    <!-- Analyse-Einstellungen (Experten-Modus), erreichbar über das Menü -->
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.example.smartweed.SettingsFragment"
+        android:label="@string/settings_fragment_label"
+        tools:layout="@layout/fragment_settings" />
 </navigation>
