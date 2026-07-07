@@ -17,6 +17,7 @@ public class LocaleHelper {
 
     public static final String LANGUAGE_ENGLISH = "en";
     public static final String LANGUAGE_GERMAN = "de";
+    public static final String LANGUAGE_FRENCH = "fr";
 
     /**
      * Set the app language and persist the preference.

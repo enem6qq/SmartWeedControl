@@ -19,11 +19,17 @@ gestriegelt werden, liegt er darüber, sollte die Intensität reduziert werden.
   Bilder importieren
 - **Analyse-Seite:** Mehrere Vorher-/Nachher-Paare auswählen, wahlweise mit
   Unkrautfilter (Modus B), Analyse läuft lokal und offline via Python/OpenCV
-- **Ergebnis-Seite:** Bedeckungsgrade, Differenzen, CSC-Wert und Empfehlung
-  pro Paar und im Durchschnitt, inkl. generierter Vergleichsbilder
+- **Ergebnis-Seite:** Großer CSC-Wert mit farbcodierter Handlungsempfehlung
+  (Zielband standardmäßig 8–12 %: darunter „aggressiver striegeln", im Band
+  „optimal", darüber „weniger aggressiv"; negativer CSC → Hinweis, das
+  Bildpaar zu prüfen), darunter Bedeckungsgrade, Differenzen und Bilder pro
+  Paar; bei mehreren Paaren mit Fortschrittsanzeige
+- **Analyse-Einstellungen (Experten-Modus):** Grünton-Schwellen, minimale
+  Objektgröße und CSC-Zielband sind über das Menü → „Einstellungen"
+  anpassbar (z. B. für Feldtests mit anderen Kulturen)
 - **Papierkorb:** Gelöschte Bilder werden 30 Tage aufbewahrt und können
   wiederhergestellt werden
-- **Mehrsprachig:** Deutsch und Englisch (umschaltbar über das Menü)
+- **Mehrsprachig:** Deutsch, Englisch und Französisch (umschaltbar über das Menü)
 
 ## Technik
 
@@ -55,6 +61,18 @@ Danach normal in Android Studio öffnen und bauen, oder per CLI:
 ./gradlew :app:assembleDebug
 ```
 
+## Tests & CI
+
+Die CSC-Berechnung und die Empfehlungslogik stecken in der eigenständigen
+Klasse `CscCalculator` und sind mit JUnit getestet:
+
+```bash
+./gradlew testDebugUnitTest
+```
+
+Bei jedem Push auf `main` und bei jedem Pull Request laufen die Unit-Tests
+und Android Lint automatisch über GitHub Actions (`.github/workflows/ci.yml`).
+
 ## Hinweise / bekannte Einschränkungen
 
 - Die App fordert auf Android 11+ `MANAGE_EXTERNAL_STORAGE` an, damit die
@@ -68,3 +86,9 @@ Danach normal in Android Studio öffnen und bauen, oder per CLI:
 - Die Beschriftungen in den generierten Ergebnisbildern (z. B. „Vorher“,
   „Gefiltert“) sind fest auf Deutsch, da sie in `analysis.py` ins Bild
   gerendert werden.
+- **Methodik:** Die Pflanzensegmentierung nutzt aktuell eine HSV-Grünton-Schwelle
+  (Standard: H 35–85, per Einstellungen anpassbar). Der Businessplan nennt
+  ExG-/ExGR-Farbindizes als Zielmethodik — eine Umstellung sollte mit echten
+  Feldbildern validiert werden, bevor sie die HSV-Schwelle ersetzt.
+- Die Screens „Monitoring“ und „Manuell“ sind Vorschauen für geplante
+  Funktionen (entsprechend gekennzeichnet, Buttons deaktiviert).

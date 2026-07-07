@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: Lint & Unit-Tests
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: JDK 17 einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # Chaquopy braucht ein Python 3.8 zum Paketieren der Python-Abhängigkeiten
+      - name: Python 3.8 einrichten (für Chaquopy)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.8"
+
+      - name: Chaquopy buildPython konfigurieren
+        run: echo "chaquopy.buildPython=$(which python)" > local.properties
+
+      - name: Gradle Cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit-Tests ausführen
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Android Lint
+        run: ./gradlew lintDebug --no-daemon
+
+      - name: Lint-Report hochladen
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore

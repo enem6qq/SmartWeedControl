@@ -21,11 +21,11 @@ import androidx.core.widget.NestedScrollView;
 import androidx.fragment.app.Fragment;
 import androidx.navigation.fragment.NavHostFragment;
 
-import com.example.smartweed.databinding.FragmentFirstBinding;
+import com.example.smartweed.databinding.FragmentHomeBinding;
 
-public class FirstFragment extends Fragment {
+public class HomeFragment extends Fragment {
 
-    private FragmentFirstBinding binding;
+    private FragmentHomeBinding binding;
 
     // Debounce gegen Doppelklicks
     private static final long MIN_CLICK_INTERVAL_MS = 600L;
@@ -46,7 +46,7 @@ public class FirstFragment extends Fragment {
             @NonNull LayoutInflater inflater, ViewGroup container,
             Bundle savedInstanceState
     ) {
-        binding = FragmentFirstBinding.inflate(inflater, container, false);
+        binding = FragmentHomeBinding.inflate(inflater, container, false);
         return binding.getRoot();
     }
 
@@ -55,10 +55,10 @@ public class FirstFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
 
         // Accessibility
-        binding.titleHeader.setContentDescription("SmartWeed Control – Startseite");
-        binding.subtitle.setContentDescription("Intelligente Traktor-Steuerung");
-        binding.statusContainer.setContentDescription("Systemstatus");
-        binding.footerInfo.setContentDescription("SmartWeed Version 1.0. Intelligente Unkrautbekämpfung.");
+        binding.titleHeader.setContentDescription(getString(R.string.home_title));
+        binding.subtitle.setContentDescription(getString(R.string.home_subtitle));
+        binding.statusContainer.setContentDescription(getString(R.string.status_ready));
+        binding.footerInfo.setContentDescription(getString(R.string.footer_info));
 
         // Premium-Schatten für Buttons
         float elevPrimary = getResources().getDisplayMetrics().density * 12f;
@@ -69,10 +69,10 @@ public class FirstFragment extends Fragment {
         ViewCompat.setElevation(binding.buttonToTrash, elevSecondary);
 
         // Click Handler
-        binding.buttonFirst.setOnClickListener(v -> navigateDebounced(v, R.id.action_FirstFragment_to_SecondFragment));
-        binding.buttonToMonitoring.setOnClickListener(v -> navigateDebounced(v, R.id.action_FirstFragment_to_monitoringFragment));
-        binding.buttonToManual.setOnClickListener(v -> navigateDebounced(v, R.id.action_FirstFragment_to_manualFragment));
-        binding.buttonToTrash.setOnClickListener(v -> navigateDebounced(v, R.id.action_FirstFragment_to_trashFragment));
+        binding.buttonFirst.setOnClickListener(v -> navigateDebounced(v, R.id.action_HomeFragment_to_CameraFragment));
+        binding.buttonToMonitoring.setOnClickListener(v -> navigateDebounced(v, R.id.action_HomeFragment_to_monitoringFragment));
+        binding.buttonToManual.setOnClickListener(v -> navigateDebounced(v, R.id.action_HomeFragment_to_manualFragment));
+        binding.buttonToTrash.setOnClickListener(v -> navigateDebounced(v, R.id.action_HomeFragment_to_trashFragment));
 
         // Premium Press Feedback mit Glow-Effekt
         setPremiumPressFeedback(binding.buttonFirst);

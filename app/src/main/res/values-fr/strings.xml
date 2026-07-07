@@ -1,0 +1,181 @@
+<resources>
+    <string name="app_name">SmartWeed</string>
+    <string name="action_settings">Paramètres</string>
+    <string name="action_language">Langue</string>
+
+    <!-- Navigation -->
+    <string name="home_fragment_label">Accueil</string>
+    <string name="camera_fragment_label">Caméra</string>
+    <string name="settings_fragment_label">Paramètres d\'analyse</string>
+    <string name="monitoring_fragment_label">Monitoring</string>
+    <string name="manual_fragment_label">Manuel</string>
+    <string name="analysis_fragment_label">Analyse</string>
+    <string name="summary_fragment_label">Résultats</string>
+    <string name="next">Suivant</string>
+    <string name="previous">Retour</string>
+
+    <!-- Language Selection -->
+    <string name="select_language">Choisir la langue</string>
+    <string name="language_english">English</string>
+    <string name="language_german">Deutsch</string>
+    <string name="language_french">Français</string>
+    <string name="language_english_sub">Anglais</string>
+    <string name="language_german_sub">Allemand</string>
+    <string name="language_french_sub">Français</string>
+
+    <!-- First Fragment (Home) -->
+    <string name="home_title">SmartWeed Control</string>
+    <string name="home_subtitle">Aide à la décision numérique pour le désherbage mécanique</string>
+    <string name="status_ready">Système prêt</string>
+    <string name="btn_open_monitoring">Ouvrir le monitoring</string>
+    <string name="btn_open_manual">Ouvrir le mode manuel</string>
+    <string name="footer_info">SmartWeed v1.0 - Désherbage intelligent</string>
+
+    <!-- Second Fragment (Camera) -->
+    <string name="camera_preview_desc">Aperçu de la caméra</string>
+    <string name="btn_take_photo_before">Photo avant</string>
+    <string name="btn_take_photo_after">Photo après</string>
+    <string name="btn_import_image">Importer une image</string>
+    <string name="btn_start_analysis">Lancer l\'analyse</string>
+
+    <!-- Analysis Fragment -->
+    <string name="label_before">Avant</string>
+    <string name="label_after">Après</string>
+    <string name="btn_pick_before">Choisir « avant »</string>
+    <string name="btn_pick_after">Choisir « après »</string>
+    <string name="no_image_selected">Aucune image sélectionnée</string>
+    <string name="selected_before_images">Images « avant » sélectionnées</string>
+    <string name="selected_after_images">Images « après » sélectionnées</string>
+    <string name="btn_run_analysis">Lancer l\'analyse</string>
+
+    <!-- Analysis Mode -->
+    <string name="analysis_mode_title">Analyse</string>
+    <string name="analysis_mode_a">A : Sans filtre adventices</string>
+    <string name="analysis_mode_b">B : Avec filtre adventices</string>
+    <string name="analysis_mode_a_desc">Analyse standard : le taux de couverture est calculé à partir de l\'image binaire filtrée.</string>
+    <string name="analysis_mode_b_desc">Filtre adventices : les petits objets compacts (adventices) sont retirés avant le calcul du taux de couverture.</string>
+
+    <!-- Summary Fragment -->
+    <string name="status_placeholder">Statut …</string>
+    <string name="output_folder">Dossier de sortie : -</string>
+    <string name="before_average">Avant (moyenne)</string>
+    <string name="after_average">Après (moyenne)</string>
+    <string name="label_bw">N/B :</string>
+    <string name="label_filtered">Filtré :</string>
+    <string name="differences_average">Différences (moyenne)</string>
+    <string name="label_delta_bw">Δ N/B :</string>
+    <string name="label_delta_filtered">Δ Filtré :</string>
+    <string name="label_weed_filtered">Sans advent. :</string>
+    <string name="label_delta_weed_filtered">Δ Sans advent. :</string>
+    <string name="not_available">n. d.</string>
+    <string name="pair_results_header">Résultats par paire</string>
+
+    <!-- Monitoring Fragment -->
+    <string name="status_active">Statut : Actif</string>
+    <string name="angle_placeholder">30°</string>
+    <string name="btn_start">Démarrer</string>
+    <string name="btn_cancel">Annuler</string>
+    <string name="settings_desc">Paramètres</string>
+    <string name="planned_badge">Aperçu – fonction en préparation</string>
+
+    <!-- Manual Fragment -->
+    <string name="level_low">Faible</string>
+    <string name="level_medium">Moyen</string>
+    <string name="level_high">Élevé</string>
+
+    <!-- Toast Messages -->
+    <string name="language_changed">Langue modifiée</string>
+    <string name="please_restart">Veuillez redémarrer l\'application pour un effet complet</string>
+
+    <!-- Trash / Corbeille -->
+    <string name="trash_title">Corbeille</string>
+    <string name="trash_info">Les images supprimées sont conservées 30 jours et peuvent être restaurées.</string>
+    <string name="trash_empty">Vider la corbeille</string>
+    <string name="trash_empty_state">La corbeille est vide</string>
+    <string name="trash_no_items">Aucun élément dans la corbeille</string>
+    <string name="trash_item_count">%1$d élément(s) dans la corbeille</string>
+    <string name="trash_restore">Restaurer</string>
+    <string name="trash_delete_permanently">Supprimer définitivement</string>
+    <string name="trash_deleted_on">Supprimé le %1$s</string>
+    <string name="trash_size_and_days">%1$s • Encore %2$d jours</string>
+    <string name="trash_already_empty">La corbeille est déjà vide</string>
+    <string name="trash_empty_confirm_title">Vider la corbeille ?</string>
+    <string name="trash_empty_confirm_message">Les %1$d éléments seront supprimés définitivement. Cette action est irréversible.</string>
+    <string name="trash_emptied">Corbeille vidée</string>
+    <string name="trash_restore_confirm_title">Restaurer ?</string>
+    <string name="trash_restore_confirm_message">\"%1$s\" sera restauré à son emplacement d\'origine.</string>
+    <string name="trash_restored">\"%1$s\" restauré</string>
+    <string name="trash_restore_failed">Échec de la restauration</string>
+    <string name="trash_delete_confirm_title">Supprimer définitivement ?</string>
+    <string name="trash_delete_confirm_message">\"%1$s\" sera supprimé définitivement. Cette action est irréversible.</string>
+    <string name="trash_deleted_permanently">\"%1$s\" supprimé définitivement</string>
+    <string name="trash_moved_to_trash">Déplacé vers la corbeille</string>
+    <string name="trash_move_failed">Erreur lors de la suppression</string>
+    <string name="btn_open_trash">Corbeille</string>
+
+    <!-- Messages d'exécution (toasts / statut) -->
+    <string name="toast_storage_permission_needed">L\'autorisation de stockage est nécessaire pour enregistrer les images.</string>
+    <string name="toast_allow_file_access">Veuillez autoriser l\'accès aux fichiers pour enregistrer les images dans le dossier Pictures.</string>
+    <string name="toast_storage_permission_for_results">L\'autorisation de stockage est nécessaire pour enregistrer les résultats</string>
+    <string name="toast_pick_before_after">Veuillez sélectionner des images avant et après</string>
+    <string name="toast_count_mismatch">Le nombre d\'images avant et après doit être identique.</string>
+    <string name="toast_analysis_started">Analyse démarrée …</string>
+    <string name="toast_image_open_failed">Impossible d\'ouvrir l\'image.</string>
+    <string name="toast_media_access_denied">Accès aux images refusé</string>
+    <string name="toast_storage_permission_save">L\'autorisation de stockage est nécessaire pour l\'enregistrement</string>
+    <string name="toast_photo_saved">Image %1$s enregistrée dans %2$s</string>
+    <string name="toast_photo_save_error">Erreur lors de l\'enregistrement</string>
+    <string name="toast_image_imported">Image importée dans %1$s : %2$s</string>
+    <string name="toast_import_error">Échec de l\'importation</string>
+    <string name="chooser_pick_image">Choisir une image</string>
+    <string name="unnamed">Sans nom</string>
+    <string name="error_python">Erreur Python : %1$s</string>
+    <string name="error_analysis_failed">Échec de l\'analyse : %1$s</string>
+    <string name="status_analysis_running">Analyse en cours …</string>
+    <string name="status_analysis_done">Analyse terminée.</string>
+    <string name="status_analysis_done_pairs">Analyse (%1$d paires) terminée.</string>
+    <string name="status_result_parse_error">Erreur lors de la lecture des résultats.</string>
+    <string name="mode_label_a">" | Mode A : sans filtre adventices"</string>
+    <string name="mode_label_b">" | Mode B : avec filtre adventices"</string>
+    <string name="recommendation_less_aggressive">Herser moins agressivement !</string>
+    <string name="recommendation_more_aggressive">Herser plus agressivement !</string>
+    <string name="recommendation_optimal">Hersage optimal – conservez ce réglage !</string>
+    <string name="recommendation_check_images">Vérifiez la paire d\'images – les images avant/après ne semblent pas comparables (CSC négatif).</string>
+    <string name="csc_hero_title">Crop Soil Cover (CSC)</string>
+    <string name="csc_target_range">Plage cible : %1$s–%2$s %%</string>
+    <string name="progress_pair">Analyse de la paire %1$d sur %2$d …</string>
+    <string name="pair_header">Paire %1$d</string>
+    <string name="pair_line_before">Avant – N/B : %1$s | Filt. : %2$s</string>
+    <string name="pair_line_after">Après – N/B : %1$s | Filt. : %2$s</string>
+    <string name="pair_line_weed">" | Advent. : %1$s"</string>
+    <string name="pair_line_delta">Δ N/B : %1$s | Δ Filt. : %2$s</string>
+    <string name="pair_line_delta_weed">" | Δ Advent. : %1$s"</string>
+    <string name="pair_line_csc">"CSC : %1$s   Recommandation : %2$s"</string>
+
+    <!-- Paramètres d'analyse (mode expert) -->
+    <string name="settings_title">Paramètres d\'analyse</string>
+    <string name="settings_info">Paramètres experts : ces valeurs influencent l\'analyse d\'image et la recommandation. Ne les modifiez que si vous savez ce que vous faites.</string>
+    <string name="settings_min_size">Taille minimale des objets (px)</string>
+    <string name="settings_h_low">Teinte verte – limite inférieure (0–179)</string>
+    <string name="settings_h_high">Teinte verte – limite supérieure (0–179)</string>
+    <string name="settings_csc_low">Plage cible CSC – limite inférieure (%)</string>
+    <string name="settings_csc_high">Plage cible CSC – limite supérieure (%)</string>
+    <string name="settings_save">Enregistrer</string>
+    <string name="settings_reset">Rétablir les valeurs par défaut</string>
+    <string name="settings_saved">Paramètres enregistrés</string>
+    <string name="settings_invalid">Valeur invalide – veuillez vérifier les saisies</string>
+
+    <!-- Login -->
+    <string name="login_button_pressed">Bouton appuyé</string>
+    <string name="login_json_empty">Le fichier JSON est vide ou manquant !</string>
+    <string name="login_file_error">Erreur de lecture du fichier</string>
+    <string name="login_correct_password">Mot de passe correct</string>
+    <string name="login_wrong_credentials">Nom d\'utilisateur ou mot de passe incorrect</string>
+    <string name="login_json_error">Erreur de traitement du JSON</string>
+    <string name="btn_login">Connexion</string>
+    <string name="label_username">Nom d\'utilisateur</string>
+    <string name="label_password">Mot de passe</string>
+    <string name="hint_username">Saisissez votre nom d\'utilisateur</string>
+    <string name="hint_password">Saisissez votre mot de passe</string>
+
+</resources>

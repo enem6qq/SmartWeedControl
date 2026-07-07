@@ -16,7 +16,9 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.example.smartweed"
+        // Eindeutige App-ID (com.example.* würde Google Play ablehnen und ist
+        // nach Veröffentlichung nicht mehr änderbar)
+        applicationId "de.smartweedcontrol.app"
         minSdk 28
         targetSdk 35
         versionCode 1

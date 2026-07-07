@@ -1,0 +1,61 @@
+package com.example.smartweed;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+
+/**
+ * Experten-Einstellungen für die Bildanalyse (SharedPreferences).
+ * Die Standardwerte entsprechen den bisher fest kodierten Konstanten
+ * in analysis.py bzw. CscCalculator.
+ */
+public final class AnalysisSettings {
+
+    private static final String PREFS_NAME = "analysis_settings";
+
+    private static final String KEY_MIN_SIZE = "min_size";
+    private static final String KEY_H_LOW = "h_low";
+    private static final String KEY_H_HIGH = "h_high";
+    private static final String KEY_CSC_LOW = "csc_band_low";
+    private static final String KEY_CSC_HIGH = "csc_band_high";
+
+    public static final int DEFAULT_MIN_SIZE = 50;
+    public static final int DEFAULT_H_LOW = 35;
+    public static final int DEFAULT_H_HIGH = 85;
+
+    private final SharedPreferences prefs;
+
+    public AnalysisSettings(Context context) {
+        prefs = context.getApplicationContext()
+                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+    }
+
+    public int getMinSize()   { return prefs.getInt(KEY_MIN_SIZE, DEFAULT_MIN_SIZE); }
+    public int getHueLow()    { return prefs.getInt(KEY_H_LOW, DEFAULT_H_LOW); }
+    public int getHueHigh()   { return prefs.getInt(KEY_H_HIGH, DEFAULT_H_HIGH); }
+    public double getCscBandLow()  { return prefs.getFloat(KEY_CSC_LOW,  (float) CscCalculator.DEFAULT_BAND_LOW); }
+    public double getCscBandHigh() { return prefs.getFloat(KEY_CSC_HIGH, (float) CscCalculator.DEFAULT_BAND_HIGH); }
+
+    /**
+     * Speichert alle Werte, sofern sie plausibel sind.
+     * @return true wenn gespeichert wurde, false bei ungültigen Werten
+     */
+    public boolean save(int minSize, int hueLow, int hueHigh, double cscLow, double cscHigh) {
+        boolean valid = minSize >= 0
+                && hueLow >= 0 && hueHigh <= 179 && hueLow < hueHigh
+                && cscLow >= 0 && cscLow < cscHigh && cscHigh <= 100;
+        if (!valid) return false;
+
+        prefs.edit()
+                .putInt(KEY_MIN_SIZE, minSize)
+                .putInt(KEY_H_LOW, hueLow)
+                .putInt(KEY_H_HIGH, hueHigh)
+                .putFloat(KEY_CSC_LOW, (float) cscLow)
+                .putFloat(KEY_CSC_HIGH, (float) cscHigh)
+                .apply();
+        return true;
+    }
+
+    public void reset() {
+        prefs.edit().clear().apply();
+    }
+}

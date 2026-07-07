@@ -31,7 +31,7 @@ import androidx.core.content.ContextCompat;
 import androidx.core.view.ViewCompat;
 import androidx.fragment.app.Fragment;
 
-import com.example.smartweed.databinding.FragmentSecondBinding;
+import com.example.smartweed.databinding.FragmentCameraBinding;
 import com.google.common.util.concurrent.ListenableFuture;
 
 import java.io.File;
@@ -44,9 +44,9 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class SecondFragment extends Fragment {
+public class CameraFragment extends Fragment {
 
-    private FragmentSecondBinding binding;
+    private FragmentCameraBinding binding;
     private ImageCapture imageCapture;
     private ExecutorService cameraExecutor;
 
@@ -119,7 +119,7 @@ public class SecondFragment extends Fragment {
 
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
-        binding = FragmentSecondBinding.inflate(inflater, container, false);
+        binding = FragmentCameraBinding.inflate(inflater, container, false);
         return binding.getRoot();
     }
 
@@ -243,7 +243,7 @@ public class SecondFragment extends Fragment {
         args.putString("imageDir", publicImageDir.getAbsolutePath());
         androidx.navigation.NavController nav =
                 androidx.navigation.Navigation.findNavController(requireView());
-        nav.navigate(R.id.action_SecondFragment_to_AnalysisFragment, args);
+        nav.navigate(R.id.action_CameraFragment_to_AnalysisFragment, args);
     }
 
     /** Prüft ob Schreibzugriff auf externen Speicher vorhanden ist */

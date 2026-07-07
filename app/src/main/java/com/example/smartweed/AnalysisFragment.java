@@ -277,11 +277,15 @@ public class AnalysisFragment extends Fragment {
     private void runPythonAnalysis(@NonNull File outDir, boolean weedFilter) {
         Toast.makeText(requireContext(), R.string.toast_analysis_started, Toast.LENGTH_SHORT).show();
 
-        // Application-Context und Fehlertexte vorab holen: das Fragment kann während
+        // Application-Context und Einstellungen vorab holen: das Fragment kann während
         // der Analyse bereits weggeräumt sein, requireContext() würde dann crashen.
         final Context appContext = requireContext().getApplicationContext();
         final String errPython = getString(R.string.error_python, "%s");
         final String errAnalysis = getString(R.string.error_analysis_failed, "%s");
+        final AnalysisSettings settings = new AnalysisSettings(appContext);
+        final int minSize = settings.getMinSize();
+        final int hueLow  = settings.getHueLow();
+        final int hueHigh = settings.getHueHigh();
 
         bgExecutor.execute(() -> {
             try {
@@ -302,22 +306,22 @@ public class AnalysisFragment extends Fragment {
                 PyObject module = py.getModule("analysis");
                 try { module.callAttr("chaquopy_probe"); } catch (Exception ignored) {}
 
-                PyObject result;
-                try {
-                    result = module.callAttr("analyze_batch", beforePaths, afterPaths, outDir.getAbsolutePath(), weedFilter);
-                    Log.i(TAG, "Batch-Analyse (analyze_batch) ausgeführt.");
-                } catch (Exception noBatch) {
-                    Log.w(TAG, "analyze_batch fehlgeschlagen. Fallback auf analyze_pair.", noBatch);
-                    JSONArray jArr = new JSONArray();
-                    for (int i = 0; i < beforePaths.size(); i++) {
-                        PyObject r = module.callAttr("analyze_pair", beforePaths.get(i), afterPaths.get(i), outDir.getAbsolutePath(), weedFilter);
-                        String js = (r == null) ? "" : r.toString();
-                        if (js != null && js.trim().startsWith("{")) jArr.put(new JSONObject(js));
-                    }
-                    result = PyObject.fromJava(jArr.toString());
+                // Paar für Paar analysieren, damit der Fortschritt angezeigt werden kann
+                // (analyze_batch bleibt als Python-API für Tests/Skripte erhalten).
+                int total = beforePaths.size();
+                JSONArray jArr = new JSONArray();
+                for (int i = 0; i < total; i++) {
+                    analysisVM.progress.postValue(new int[]{i + 1, total});
+                    PyObject r = module.callAttr("analyze_pair",
+                            beforePaths.get(i), afterPaths.get(i),
+                            outDir.getAbsolutePath(), weedFilter,
+                            minSize, hueLow, hueHigh);
+                    String js = (r == null) ? "" : r.toString();
+                    if (js.trim().startsWith("{")) jArr.put(new JSONObject(js));
                 }
+                analysisVM.progress.postValue(null);
 
-                final String json = (result == null) ? "" : result.toString();
+                final String json = jArr.toString();
                 Log.i(TAG, "analysis result: " + json);
 
                 MediaScannerConnection.scanFile(appContext,

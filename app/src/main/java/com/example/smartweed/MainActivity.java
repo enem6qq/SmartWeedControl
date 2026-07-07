@@ -105,12 +105,17 @@ public class MainActivity extends AppCompatActivity {
             return true;
         }
 
+        if (id == R.id.action_settings) {
+            Navigation.findNavController(this, R.id.nav_host_fragment_content_main)
+                    .navigate(R.id.settingsFragment);
+            return true;
+        }
+
         return super.onOptionsItemSelected(item);
     }
 
     private void showLanguageDialog() {
         String currentLang = LocaleHelper.getLanguage(this);
-        boolean isEnglish = currentLang.equals(LocaleHelper.LANGUAGE_ENGLISH);
 
         Dialog dialog = new Dialog(this);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -137,47 +142,44 @@ public class MainActivity extends AppCompatActivity {
         // Get views
         LinearLayout optionEnglish = dialog.findViewById(R.id.option_english);
         LinearLayout optionGerman = dialog.findViewById(R.id.option_german);
+        LinearLayout optionFrench = dialog.findViewById(R.id.option_french);
         ImageView checkEnglish = dialog.findViewById(R.id.check_english);
         ImageView checkGerman = dialog.findViewById(R.id.check_german);
+        ImageView checkFrench = dialog.findViewById(R.id.check_french);
         View btnCancel = dialog.findViewById(R.id.btn_cancel);
 
         // Set initial selection
-        if (isEnglish) {
+        if (LocaleHelper.LANGUAGE_ENGLISH.equals(currentLang)) {
             optionEnglish.setBackgroundResource(R.drawable.bg_language_item_selected);
             checkEnglish.setVisibility(View.VISIBLE);
+        } else if (LocaleHelper.LANGUAGE_FRENCH.equals(currentLang)) {
+            optionFrench.setBackgroundResource(R.drawable.bg_language_item_selected);
+            checkFrench.setVisibility(View.VISIBLE);
         } else {
             optionGerman.setBackgroundResource(R.drawable.bg_language_item_selected);
             checkGerman.setVisibility(View.VISIBLE);
         }
 
-        // English option click
-        optionEnglish.setOnClickListener(v -> {
-            if (!isEnglish) {
-                LocaleHelper.setLocale(this, LocaleHelper.LANGUAGE_ENGLISH);
-                Toast.makeText(this, R.string.language_changed, Toast.LENGTH_SHORT).show();
-                dialog.dismiss();
-                recreate();
-            } else {
-                dialog.dismiss();
-            }
-        });
-
-        // German option click
-        optionGerman.setOnClickListener(v -> {
-            if (isEnglish) {
-                LocaleHelper.setLocale(this, LocaleHelper.LANGUAGE_GERMAN);
-                Toast.makeText(this, R.string.language_changed, Toast.LENGTH_SHORT).show();
-                dialog.dismiss();
-                recreate();
-            } else {
-                dialog.dismiss();
-            }
-        });
+        optionEnglish.setOnClickListener(v -> applyLanguage(dialog, LocaleHelper.LANGUAGE_ENGLISH, currentLang));
+        optionGerman.setOnClickListener(v -> applyLanguage(dialog, LocaleHelper.LANGUAGE_GERMAN, currentLang));
+        optionFrench.setOnClickListener(v -> applyLanguage(dialog, LocaleHelper.LANGUAGE_FRENCH, currentLang));
 
         // Cancel button click
         btnCancel.setOnClickListener(v -> dialog.dismiss());
 
         dialog.show();
+    }
+
+    /** Wechselt die Sprache (falls anders als aktuell) und startet die Activity neu */
+    private void applyLanguage(Dialog dialog, String newLang, String currentLang) {
+        if (!newLang.equals(currentLang)) {
+            LocaleHelper.setLocale(this, newLang);
+            Toast.makeText(this, R.string.language_changed, Toast.LENGTH_SHORT).show();
+            dialog.dismiss();
+            recreate();
+        } else {
+            dialog.dismiss();
+        }
     }
 
     @Override

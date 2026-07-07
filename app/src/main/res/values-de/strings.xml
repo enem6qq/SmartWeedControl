@@ -4,8 +4,13 @@
     <string name="action_language">Sprache</string>
 
     <!-- Navigation -->
-    <string name="first_fragment_label">Start</string>
-    <string name="second_fragment_label">Kamera</string>
+    <string name="home_fragment_label">Start</string>
+    <string name="camera_fragment_label">Kamera</string>
+    <string name="settings_fragment_label">Analyse-Einstellungen</string>
+    <string name="monitoring_fragment_label">Monitoring</string>
+    <string name="manual_fragment_label">Manuell</string>
+    <string name="analysis_fragment_label">Analyse</string>
+    <string name="summary_fragment_label">Ergebnisse</string>
     <string name="next">Weiter</string>
     <string name="previous">Zurück</string>
 
@@ -13,15 +18,18 @@
     <string name="select_language">Sprache auswählen</string>
     <string name="language_english">English</string>
     <string name="language_german">Deutsch</string>
+    <string name="language_french">Français</string>
+    <string name="language_english_sub">Englisch</string>
+    <string name="language_german_sub">Deutsch</string>
+    <string name="language_french_sub">Französisch</string>
 
     <!-- First Fragment (Home) -->
     <string name="home_title">SmartWeed Control</string>
-    <string name="home_subtitle">Intelligente Traktor-Steuerung</string>
+    <string name="home_subtitle">Digitale Entscheidungsunterstützung für die mechanische Unkrautkontrolle</string>
     <string name="status_ready">System bereit</string>
     <string name="btn_open_monitoring">Monitoring öffnen</string>
     <string name="btn_open_manual">Manual öffnen</string>
     <string name="footer_info">SmartWeed v1.0 - Intelligente Unkrautbekämpfung</string>
-    <string name="build_hint">Tipp: USB-Debugging aktivieren und Live Update nutzen.</string>
 
     <!-- Second Fragment (Camera) -->
     <string name="camera_preview_desc">Kamera-Vorschau</string>
@@ -59,16 +67,16 @@
     <string name="label_delta_filtered">Δ Gefiltert:</string>
     <string name="label_weed_filtered">Unkrautgef.:</string>
     <string name="label_delta_weed_filtered">Δ Unkrautgef.:</string>
-    <string name="csc_and_recommendation">CSC und Empfehlung</string>
     <string name="not_available">n. a.</string>
     <string name="pair_results_header">Einzelergebnisse pro Paar</string>
 
     <!-- Monitoring Fragment -->
     <string name="status_active">Status: Aktiv</string>
-    <string name="angle_format">Winkel: %1$d°</string>
+    <string name="angle_placeholder">30°</string>
     <string name="btn_start">Starten</string>
     <string name="btn_cancel">Abbrechen</string>
     <string name="settings_desc">Einstellungen</string>
+    <string name="planned_badge">Vorschau – Funktion in Planung</string>
 
     <!-- Manual Fragment -->
     <string name="level_low">Niedrig</string>
@@ -131,6 +139,11 @@
     <string name="mode_label_b">" | Modus B: Mit Unkrautfilter"</string>
     <string name="recommendation_less_aggressive">Weniger aggressiv striegeln!</string>
     <string name="recommendation_more_aggressive">Aggressiver striegeln!</string>
+    <string name="recommendation_optimal">Optimal gestriegelt – Einstellung beibehalten!</string>
+    <string name="recommendation_check_images">Bildpaar prüfen – Vorher-/Nachher-Bilder scheinen nicht vergleichbar (negativer CSC).</string>
+    <string name="csc_hero_title">Crop Soil Cover (CSC)</string>
+    <string name="csc_target_range">Zielbereich: %1$s–%2$s %%</string>
+    <string name="progress_pair">Analysiere Paar %1$d von %2$d …</string>
     <string name="pair_header">Paar %1$d</string>
     <string name="pair_line_before">Vorher – SW: %1$s | Gef.: %2$s</string>
     <string name="pair_line_after">Nachher – SW: %1$s | Gef.: %2$s</string>
@@ -138,6 +151,19 @@
     <string name="pair_line_delta">Δ SW: %1$s | Δ Gef.: %2$s</string>
     <string name="pair_line_delta_weed">" | Δ Unkr.: %1$s"</string>
     <string name="pair_line_csc">"CSC: %1$s   Empfehlung: %2$s"</string>
+
+    <!-- Analyse-Einstellungen (Experten-Modus) -->
+    <string name="settings_title">Analyse-Einstellungen</string>
+    <string name="settings_info">Experten-Einstellungen: Diese Werte beeinflussen die Bildanalyse und die Empfehlung. Nur ändern, wenn du weißt, was du tust.</string>
+    <string name="settings_min_size">Minimale Objektgröße (px)</string>
+    <string name="settings_h_low">Grünton – untere Grenze (0–179)</string>
+    <string name="settings_h_high">Grünton – obere Grenze (0–179)</string>
+    <string name="settings_csc_low">CSC-Zielbereich – untere Grenze (%)</string>
+    <string name="settings_csc_high">CSC-Zielbereich – obere Grenze (%)</string>
+    <string name="settings_save">Speichern</string>
+    <string name="settings_reset">Auf Standardwerte zurücksetzen</string>
+    <string name="settings_saved">Einstellungen gespeichert</string>
+    <string name="settings_invalid">Ungültiger Wert – bitte Eingaben prüfen</string>
 
     <!-- Login -->
     <string name="login_button_pressed">Button wurde gedrückt</string>

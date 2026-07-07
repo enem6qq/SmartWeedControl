@@ -41,7 +41,7 @@
                 android:text="@string/btn_pick_before"
                 android:textStyle="bold"
                 android:textSize="15sp"
-                android:textColor="@color/white"
+                android:textColor="@color/text_on_primary"
                 android:background="@drawable/bg_primary_button"
                 android:foreground="@drawable/ripple_light"
                 app:backgroundTint="@null"/>
@@ -124,7 +124,7 @@
                 android:text="@string/btn_pick_after"
                 android:textStyle="bold"
                 android:textSize="15sp"
-                android:textColor="@color/white"
+                android:textColor="@color/text_on_primary"
                 android:background="@drawable/bg_primary_button"
                 android:foreground="@drawable/ripple_light"
                 app:backgroundTint="@null"/>
@@ -248,7 +248,7 @@
             android:text="@string/btn_run_analysis"
             android:textStyle="bold"
             android:textSize="16sp"
-            android:textColor="@color/white"
+            android:textColor="@color/text_on_primary"
             android:background="@drawable/bg_primary_button"
             android:foreground="@drawable/ripple_light"
             app:backgroundTint="@null"/>
