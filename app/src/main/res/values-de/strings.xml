@@ -130,7 +130,7 @@
     <string name="status_analysis_running">Analyse läuft …</string>
     <string name="status_analysis_done">Analyse abgeschlossen.</string>
     <plurals name="status_analysis_done_pairs">
-        <item quantity="one">Analyse (1 Paar) abgeschlossen.</item>
+        <item quantity="one">Analyse (%1$d Paar) abgeschlossen.</item>
         <item quantity="other">Analyse (%1$d Paare) abgeschlossen.</item>
     </plurals>
     <string name="status_result_parse_error">Fehler beim Lesen der Ergebnisdaten.</string>

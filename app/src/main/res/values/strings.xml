@@ -130,7 +130,7 @@
     <string name="status_analysis_running">Analysis running \u2026</string>
     <string name="status_analysis_done">Analysis finished.</string>
     <plurals name="status_analysis_done_pairs">
-        <item quantity="one">Analysis (1 pair) finished.</item>
+        <item quantity="one">Analysis (%1$d pair) finished.</item>
         <item quantity="other">Analysis (%1$d pairs) finished.</item>
     </plurals>
     <string name="status_result_parse_error">Error reading the result data.</string>
