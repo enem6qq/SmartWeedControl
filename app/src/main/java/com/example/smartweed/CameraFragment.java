@@ -129,9 +129,10 @@ public class CameraFragment extends Fragment {
 
         cameraExecutor = Executors.newSingleThreadExecutor();
 
-        // Session-Ordner mit Timestamp erstellen (jede Kamera-Session bekommt eigenen Ordner)
-        sessionDirName = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-        File baseDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "SmartWeed");
+        // Session-Ordner mit lesbarem Timestamp erstellen (Minutengenau: zwei kurz
+        // aufeinanderfolgende Besuche der Kamera-Seite landen in derselben Session)
+        sessionDirName = new SimpleDateFormat(SessionStore.SESSION_NAME_PATTERN, Locale.getDefault()).format(new Date());
+        File baseDir = SessionStore.getBaseDir();
         publicImageDir = new File(baseDir, sessionDirName);
 
         // Getrennte Unterordner für Vorher- und Nachher-Bilder
@@ -142,15 +143,6 @@ public class CameraFragment extends Fragment {
         if (hasWritePermission()) {
             ensureDirectories();
         }
-
-        // Ordner dem MediaScanner melden, damit sie sofort im Picker/Galerie erscheinen
-        MediaScannerConnection.scanFile(requireContext(),
-                new String[]{
-                        baseDir.getAbsolutePath(),
-                        publicImageDir.getAbsolutePath(),
-                        beforeDir.getAbsolutePath(),
-                        afterDir.getAbsolutePath()
-                }, null, null);
 
         // Button-Elevation & kleine Press-Animation
         float elev = getResources().getDisplayMetrics().density * 3f;

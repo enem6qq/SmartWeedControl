@@ -7,10 +7,9 @@
     <string name="home_fragment_label">Accueil</string>
     <string name="camera_fragment_label">Caméra</string>
     <string name="settings_fragment_label">Paramètres d\'analyse</string>
-    <string name="monitoring_fragment_label">Monitoring</string>
-    <string name="manual_fragment_label">Manuel</string>
     <string name="analysis_fragment_label">Analyse</string>
     <string name="summary_fragment_label">Résultats</string>
+    <string name="sessions_fragment_label">Mes sessions</string>
     <string name="next">Suivant</string>
     <string name="previous">Retour</string>
 
@@ -27,9 +26,19 @@
     <string name="home_title">SmartWeed Control</string>
     <string name="home_subtitle">Aide à la décision numérique pour le désherbage mécanique</string>
     <string name="status_ready">Système prêt</string>
-    <string name="btn_open_monitoring">Ouvrir le monitoring</string>
-    <string name="btn_open_manual">Ouvrir le mode manuel</string>
+    <string name="btn_open_sessions">Mes sessions</string>
     <string name="footer_info">SmartWeed v1.0 - Désherbage intelligent</string>
+
+    <!-- Aperçu des sessions -->
+    <string name="sessions_empty">Aucune session pour l\'instant – prenez des photos avant/après sur l\'écran caméra.</string>
+    <string name="session_photo_count">%1$d avant · %2$d après</string>
+    <string name="session_open">Ouvrir</string>
+    <string name="session_delete_confirm_title">Déplacer vers la corbeille ?</string>
+    <string name="session_delete_action">Vers la corbeille</string>
+    <string name="session_delete_confirm_message">Toutes les images de la session \"%1$s\" seront déplacées vers la corbeille.</string>
+    <string name="session_deleted">%1$d image(s) déplacée(s) vers la corbeille</string>
+    <string name="btn_discard_analysis">Supprimer cette analyse</string>
+    <string name="analysis_discard_confirm_message">Les images de résultat générées seront déplacées vers la corbeille.</string>
 
     <!-- Second Fragment (Camera) -->
     <string name="camera_preview_desc">Aperçu de la caméra</string>
@@ -69,19 +78,6 @@
     <string name="label_delta_weed_filtered">Δ Sans advent. :</string>
     <string name="not_available">n. d.</string>
     <string name="pair_results_header">Résultats par paire</string>
-
-    <!-- Monitoring Fragment -->
-    <string name="status_active">Statut : Actif</string>
-    <string name="angle_placeholder">30°</string>
-    <string name="btn_start">Démarrer</string>
-    <string name="btn_cancel">Annuler</string>
-    <string name="settings_desc">Paramètres</string>
-    <string name="planned_badge">Aperçu – fonction en préparation</string>
-
-    <!-- Manual Fragment -->
-    <string name="level_low">Faible</string>
-    <string name="level_medium">Moyen</string>
-    <string name="level_high">Élevé</string>
 
     <!-- Toast Messages -->
     <string name="language_changed">Langue modifiée</string>
@@ -133,7 +129,10 @@
     <string name="error_analysis_failed">Échec de l\'analyse : %1$s</string>
     <string name="status_analysis_running">Analyse en cours …</string>
     <string name="status_analysis_done">Analyse terminée.</string>
-    <string name="status_analysis_done_pairs">Analyse (%1$d paires) terminée.</string>
+    <plurals name="status_analysis_done_pairs">
+        <item quantity="one">Analyse (%1$d paire) terminée.</item>
+        <item quantity="other">Analyse (%1$d paires) terminée.</item>
+    </plurals>
     <string name="status_result_parse_error">Erreur lors de la lecture des résultats.</string>
     <string name="mode_label_a">" | Mode A : sans filtre adventices"</string>
     <string name="mode_label_b">" | Mode B : avec filtre adventices"</string>
@@ -141,6 +140,7 @@
     <string name="recommendation_more_aggressive">Herser plus agressivement !</string>
     <string name="recommendation_optimal">Hersage optimal – conservez ce réglage !</string>
     <string name="recommendation_check_images">Vérifiez la paire d\'images – les images avant/après ne semblent pas comparables (CSC négatif).</string>
+    <string name="recommendation_no_vegetation">Aucune végétation détectée – vérifiez que les photos montrent bien la culture (trop peu de vert dans l\'image).</string>
     <string name="csc_hero_title">Crop Soil Cover (CSC)</string>
     <string name="csc_target_range">Plage cible : %1$s–%2$s %%</string>
     <string name="progress_pair">Analyse de la paire %1$d sur %2$d …</string>

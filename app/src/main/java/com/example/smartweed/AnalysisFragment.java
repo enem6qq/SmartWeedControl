@@ -212,10 +212,17 @@ public class AnalysisFragment extends Fragment {
             analysisVM.error.postValue(null);
             analysisVM.weedFilter.postValue(weedFilter);
 
-            // Ausgabe-Ordner mit Timestamp (jede Analyse bekommt eigenen Ordner)
-            File appStorage = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "SmartWeed");
-            String analyseTimestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-            File outDir = new File(appStorage, "ausgabe_" + analyseTimestamp);
+            // Ausgabe-Ordner INNERHALB der Session: kommt man von der Kamera-Seite,
+            // ist die Session bekannt; sonst wird eine neue Session angelegt.
+            File sessionDir;
+            if (getArguments() != null && getArguments().getString("imageDir") != null) {
+                sessionDir = new File(imageDirPath);
+            } else {
+                String sessionName = new SimpleDateFormat(SessionStore.SESSION_NAME_PATTERN, Locale.getDefault()).format(new Date());
+                sessionDir = new File(SessionStore.getBaseDir(), sessionName);
+            }
+            String analyseTimestamp = new SimpleDateFormat("HH-mm-ss", Locale.getDefault()).format(new Date());
+            File outDir = new File(sessionDir, SessionStore.ANALYSIS_PREFIX + analyseTimestamp);
             if (!outDir.exists()) outDir.mkdirs();
             analysisVM.outDir.postValue(outDir.getAbsolutePath());
 
@@ -324,8 +331,21 @@ public class AnalysisFragment extends Fragment {
                 final String json = jArr.toString();
                 Log.i(TAG, "analysis result: " + json);
 
-                MediaScannerConnection.scanFile(appContext,
-                        new String[]{ outDir.getAbsolutePath() }, null, null);
+                // Nur die fertigen Vergleichsbilder der Galerie melden — Masken und
+                // Einzelbilder liegen versteckt im details/-Unterordner (.nomedia).
+                ArrayList<String> scanFiles = new ArrayList<>();
+                for (int i = 0; i < jArr.length(); i++) {
+                    JSONObject combo = jArr.getJSONObject(i).optJSONObject("combo");
+                    if (combo == null) continue;
+                    String p1 = combo.optString("original_panel", "");
+                    String p2 = combo.optString("labeled_tripanel_stacked", "");
+                    if (!p1.isEmpty()) scanFiles.add(p1);
+                    if (!p2.isEmpty()) scanFiles.add(p2);
+                }
+                if (!scanFiles.isEmpty()) {
+                    MediaScannerConnection.scanFile(appContext,
+                            scanFiles.toArray(new String[0]), null, null);
+                }
 
                 analysisVM.resultJson.postValue(json);
                 analysisVM.running.postValue(false);

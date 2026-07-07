@@ -14,22 +14,45 @@ gestriegelt werden, liegt er darüber, sollte die Intensität reduziert werden.
 
 ## Funktionen
 
-- **Kamera-Seite:** Vorher-/Nachher-Fotos aufnehmen (werden in
-  `Pictures/SmartWeed/<Session-Timestamp>/vorher|nachher` gespeichert) oder
-  Bilder importieren
+- **Kamera-Seite:** Vorher-/Nachher-Fotos aufnehmen oder Bilder importieren
 - **Analyse-Seite:** Mehrere Vorher-/Nachher-Paare auswählen, wahlweise mit
   Unkrautfilter (Modus B), Analyse läuft lokal und offline via Python/OpenCV
 - **Ergebnis-Seite:** Großer CSC-Wert mit farbcodierter Handlungsempfehlung
   (Zielband standardmäßig 8–12 %: darunter „aggressiver striegeln", im Band
   „optimal", darüber „weniger aggressiv"; negativer CSC → Hinweis, das
-  Bildpaar zu prüfen), darunter Bedeckungsgrade, Differenzen und Bilder pro
-  Paar; bei mehreren Paaren mit Fortschrittsanzeige
+  Bildpaar zu prüfen; kein Grünanteil → Hinweis „Kein Pflanzenbewuchs
+  erkannt"), darunter Bedeckungsgrade, Differenzen und Bilder pro Paar;
+  bei mehreren Paaren mit Fortschrittsanzeige; Analysen können in den
+  Papierkorb verworfen werden
+- **Meine Aufnahmen:** Übersicht aller Sessions mit Vorschaubild und
+  Bildanzahl — Antippen öffnet die Session direkt in der Analyse, das
+  Papierkorb-Symbol verschiebt sie (wiederherstellbar) in den Papierkorb
 - **Analyse-Einstellungen (Experten-Modus):** Grünton-Schwellen, minimale
   Objektgröße und CSC-Zielband sind über das Menü → „Einstellungen"
   anpassbar (z. B. für Feldtests mit anderen Kulturen)
 - **Papierkorb:** Gelöschte Bilder werden 30 Tage aufbewahrt und können
   wiederhergestellt werden
 - **Mehrsprachig:** Deutsch, Englisch und Französisch (umschaltbar über das Menü)
+
+## Ablage der Bilder
+
+Eine „Session" entspricht einem Feldeinsatz. Alles zu einer Session liegt
+in einem gemeinsamen Ordner:
+
+```
+Pictures/SmartWeed/
+└── 2026-07-07_18-58/          ← Session (lesbarer Zeitstempel)
+    ├── vorher/                ← eigene Aufnahmen
+    ├── nachher/
+    └── Analyse_18-59-30/      ← Analyse-Ergebnis zur Session
+        ├── *_original_both.jpg / *_panel_both.jpg  (Vergleichsbilder)
+        └── details/           ← Masken & Einzelbilder (.nomedia,
+                                  in der Galerie ausgeblendet)
+```
+
+Der Galerie werden nur die eigenen Fotos und die fertigen Vergleichsbilder
+gemeldet — Zwischenergebnisse bleiben über den Datei-Manager und die App
+zugänglich, verstopfen aber nicht die Galerie.
 
 ## Technik
 
@@ -90,5 +113,6 @@ und Android Lint automatisch über GitHub Actions (`.github/workflows/ci.yml`).
   (Standard: H 35–85, per Einstellungen anpassbar). Der Businessplan nennt
   ExG-/ExGR-Farbindizes als Zielmethodik — eine Umstellung sollte mit echten
   Feldbildern validiert werden, bevor sie die HSV-Schwelle ersetzt.
-- Die Screens „Monitoring“ und „Manuell“ sind Vorschauen für geplante
-  Funktionen (entsprechend gekennzeichnet, Buttons deaktiviert).
+- Die früheren Platzhalter-Screens „Monitoring“ und „Manuell“ (Traktor-/
+  Striegelsteuerung) wurden entfernt — sie hatten keine Funktion. Die
+  Git-Historie enthält sie weiterhin, falls die Idee wieder aufgegriffen wird.

@@ -180,12 +180,27 @@ def _make_labeled_panel(bgr, plant_mask, filtered_mask, cov_bw, cov_f,
     panel = np.concatenate(panels, axis=1)
     return panel
 
+def _ensure_detail_dir(out_dir: str) -> str:
+    """
+    Unterordner 'details' für Masken/Einzelbilder anlegen. Eine .nomedia-Datei
+    sorgt dafür, dass die Galerie diese Zwischenergebnisse nicht anzeigt —
+    im Datei-Manager und in der App bleiben sie zugänglich.
+    """
+    detail_dir = os.path.join(out_dir, "details")
+    os.makedirs(detail_dir, exist_ok=True)
+    nomedia = os.path.join(detail_dir, ".nomedia")
+    if not os.path.exists(nomedia):
+        open(nomedia, "w").close()
+    return detail_dir
+
+
 def _process_single_image(path: str, out_dir: str, tag: str = None,
                           weed_filter: bool = False,
                           min_size: int = MIN_SIZE,
-                          h_low: int = H_LOW_DEFAULT, h_high: int = H_HIGH_DEFAULT):
+                          h_low: int = H_LOW_DEFAULT, h_high: int = H_HIGH_DEFAULT,
+                          detail_dir: str = None):
     """
-    Analysiert ein Bild und speichert:
+    Analysiert ein Bild und speichert (in detail_dir, sonst out_dir):
       - *_original.jpg
       - *_schwarz_weiss.jpg
       - *_gefiltert_<min_size>px.jpg
@@ -195,6 +210,8 @@ def _process_single_image(path: str, out_dir: str, tag: str = None,
          'before'/'after' -> Prefix um <tag> ergänzt
     Rückgabe: (result_dict, plant_mask, filtered_mask, bgr, panel_img)
     """
+    if detail_dir is None:
+        detail_dir = out_dir
     bgr = cv2.imread(path)
     if bgr is None:
         raise FileNotFoundError(f"cannot read image: {path}")
@@ -209,10 +226,10 @@ def _process_single_image(path: str, out_dir: str, tag: str = None,
     base = os.path.splitext(os.path.basename(path))[0]
     prefix = base if not tag else f"{base}_{tag}"
 
-    orig_path  = os.path.join(out_dir, f"{prefix}_original.jpg")
-    bw_path    = os.path.join(out_dir, f"{prefix}_schwarz_weiss.jpg")
-    fil_path   = os.path.join(out_dir, f"{prefix}_gefiltert_{min_size}px.jpg")
-    panel_path = os.path.join(out_dir, f"{prefix}_panel.jpg")
+    orig_path  = os.path.join(detail_dir, f"{prefix}_original.jpg")
+    bw_path    = os.path.join(detail_dir, f"{prefix}_schwarz_weiss.jpg")
+    fil_path   = os.path.join(detail_dir, f"{prefix}_gefiltert_{min_size}px.jpg")
+    panel_path = os.path.join(detail_dir, f"{prefix}_panel.jpg")
 
     # JPEG mit moderater Qualität (kleinere Dateien, weniger RAM beim Decoding)
     cv2.imwrite(orig_path,  bgr,           [int(cv2.IMWRITE_JPEG_QUALITY), 90])
@@ -221,7 +238,7 @@ def _process_single_image(path: str, out_dir: str, tag: str = None,
 
     wf_path = None
     if weed_filter and weed_filtered_mask is not None:
-        wf_path = os.path.join(out_dir, f"{prefix}_unkrautgefiltert.jpg")
+        wf_path = os.path.join(detail_dir, f"{prefix}_unkrautgefiltert.jpg")
         cv2.imwrite(wf_path, weed_filtered_mask, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
 
     panel_img = _make_labeled_panel(bgr, plant_mask, filtered_mask, cov_bw, cov_f,
@@ -279,13 +296,19 @@ def analyze_pair(before_path: str, after_path: str, out_dir: str = None,
     else:
         out_dir = _ensure_outdir(before_path)
 
+    # Masken/Einzelbilder wandern in den versteckten details/-Unterordner,
+    # nur die fertigen Kombibilder bleiben direkt im Ausgabe-Ordner.
+    detail_dir = _ensure_detail_dir(out_dir)
+
     # Einzelanalysen (mit Panel + Werten wie im alten Skript)
     before_res, before_bw, before_filt, before_bgr, before_panel = \
         _process_single_image(before_path, out_dir, tag="before", weed_filter=weed_filter,
-                              min_size=min_size, h_low=h_low, h_high=h_high)
+                              min_size=min_size, h_low=h_low, h_high=h_high,
+                              detail_dir=detail_dir)
     after_res, after_bw, after_filt, after_bgr, after_panel = \
         _process_single_image(after_path, out_dir, tag="after", weed_filter=weed_filter,
-                              min_size=min_size, h_low=h_low, h_high=h_high)
+                              min_size=min_size, h_low=h_low, h_high=h_high,
+                              detail_dir=detail_dir)
 
     # Deltas (Prozentpunkte)
     try:

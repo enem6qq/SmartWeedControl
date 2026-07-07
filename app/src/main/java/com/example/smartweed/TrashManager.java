@@ -79,20 +79,31 @@ public class TrashManager {
         return false;
     }
 
-    /** Einen ganzen Ordner (Session) in den Papierkorb verschieben */
+    /**
+     * Einen ganzen Ordner (Session inkl. Unterordner) in den Papierkorb verschieben.
+     * Bilder werden wiederherstellbar in den Papierkorb gelegt; Hilfsdateien
+     * (.nomedia, summary.json) werden direkt geloescht. Leere Ordner werden entfernt.
+     * @return Anzahl der in den Papierkorb verschobenen Bilder
+     */
     public int moveDirectoryToTrash(File dir) {
         if (dir == null || !dir.isDirectory()) return 0;
         int count = 0;
         File[] files = dir.listFiles();
         if (files != null) {
             for (File f : files) {
-                if (f.isFile() && isImageFile(f.getName())) {
+                if (f.isDirectory()) {
+                    count += moveDirectoryToTrash(f);
+                } else if (isImageFile(f.getName())) {
                     if (moveToTrash(f)) count++;
+                } else {
+                    // Hilfsdateien sind nicht wiederherstellbar -> direkt loeschen
+                    f.delete();
                 }
             }
         }
         // Leeren Ordner aufraeumen
-        if (dir.listFiles() != null && dir.listFiles().length == 0) {
+        File[] remaining = dir.listFiles();
+        if (remaining == null || remaining.length == 0) {
             dir.delete();
         }
         return count;

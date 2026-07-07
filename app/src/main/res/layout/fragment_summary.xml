@@ -473,5 +473,20 @@
                 android:orientation="vertical"/>
         </LinearLayout>
 
+        <!-- Analyse verwerfen (verschiebt Ergebnisbilder in den Papierkorb) -->
+        <Button
+            android:id="@+id/btnDiscardAnalysis"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="20dp"
+            android:text="@string/btn_discard_analysis"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="@color/text_white"
+            android:background="@drawable/bg_trash_button"
+            android:foreground="@drawable/ripple_light"
+            android:stateListAnimator="@null"
+            android:visibility="gone"/>
+
     </LinearLayout>
 </ScrollView>

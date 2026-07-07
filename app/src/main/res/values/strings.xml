@@ -7,10 +7,9 @@
     <string name="home_fragment_label">Home</string>
     <string name="camera_fragment_label">Camera</string>
     <string name="settings_fragment_label">Analysis Settings</string>
-    <string name="monitoring_fragment_label">Monitoring</string>
-    <string name="manual_fragment_label">Manual</string>
     <string name="analysis_fragment_label">Analysis</string>
     <string name="summary_fragment_label">Results</string>
+    <string name="sessions_fragment_label">My Sessions</string>
     <string name="next">Next</string>
     <string name="previous">Previous</string>
 
@@ -27,9 +26,19 @@
     <string name="home_title">SmartWeed Control</string>
     <string name="home_subtitle">Digital decision support for mechanical weed control</string>
     <string name="status_ready">System ready</string>
-    <string name="btn_open_monitoring">Open Monitoring</string>
-    <string name="btn_open_manual">Open Manual</string>
+    <string name="btn_open_sessions">My Sessions</string>
     <string name="footer_info">SmartWeed v1.0 - Intelligent Weed Control</string>
+
+    <!-- Sessions Overview -->
+    <string name="sessions_empty">No sessions yet – take before/after photos on the camera screen.</string>
+    <string name="session_photo_count">%1$d before · %2$d after</string>
+    <string name="session_open">Open</string>
+    <string name="session_delete_confirm_title">Move to recycle bin?</string>
+    <string name="session_delete_action">Move to recycle bin</string>
+    <string name="session_delete_confirm_message">All images of session \"%1$s\" will be moved to the recycle bin.</string>
+    <string name="session_deleted">%1$d image(s) moved to the recycle bin</string>
+    <string name="btn_discard_analysis">Discard this analysis</string>
+    <string name="analysis_discard_confirm_message">The generated result images will be moved to the recycle bin.</string>
 
     <!-- Second Fragment (Camera) -->
     <string name="camera_preview_desc">Camera Preview</string>
@@ -69,19 +78,6 @@
     <string name="label_delta_weed_filtered">Delta Weed filt.:</string>
     <string name="not_available">n/a</string>
     <string name="pair_results_header">Individual Results per Pair</string>
-
-    <!-- Monitoring Fragment -->
-    <string name="status_active">Status: Active</string>
-    <string name="angle_placeholder">30°</string>
-    <string name="btn_start">Start</string>
-    <string name="btn_cancel">Cancel</string>
-    <string name="settings_desc">Settings</string>
-    <string name="planned_badge">Preview – feature in planning</string>
-
-    <!-- Manual Fragment -->
-    <string name="level_low">Low</string>
-    <string name="level_medium">Medium</string>
-    <string name="level_high">High</string>
 
     <!-- Toast Messages -->
     <string name="language_changed">Language changed</string>
@@ -133,7 +129,10 @@
     <string name="error_analysis_failed">Analysis failed: %1$s</string>
     <string name="status_analysis_running">Analysis running \u2026</string>
     <string name="status_analysis_done">Analysis finished.</string>
-    <string name="status_analysis_done_pairs">Analysis (%1$d pairs) finished.</string>
+    <plurals name="status_analysis_done_pairs">
+        <item quantity="one">Analysis (%1$d pair) finished.</item>
+        <item quantity="other">Analysis (%1$d pairs) finished.</item>
+    </plurals>
     <string name="status_result_parse_error">Error reading the result data.</string>
     <string name="mode_label_a">" | Mode A: Without weed filter"</string>
     <string name="mode_label_b">" | Mode B: With weed filter"</string>
@@ -141,6 +140,7 @@
     <string name="recommendation_more_aggressive">Harrow more aggressively!</string>
     <string name="recommendation_optimal">Optimal harrowing – keep this setting!</string>
     <string name="recommendation_check_images">Check image pair – before/after images do not appear comparable (negative CSC).</string>
+    <string name="recommendation_no_vegetation">No vegetation detected – please check whether the photos show the crop (too little green in the image).</string>
     <string name="csc_hero_title">Crop Soil Cover (CSC)</string>
     <string name="csc_target_range">Target range: %1$s–%2$s %%</string>
     <string name="progress_pair">Analyzing pair %1$d of %2$d …</string>
