@@ -1,4 +1,22 @@
 # app/src/main/python/analysis.py
+#
+# Bildanalyse für SmartWeedControl (v1.2)
+#
+# Ablauf: Die App analysiert jedes Bild einzeln (analyze_image) und fasst
+# anschließend alle Vorher-/Nachher-Bilder zu einer Gruppen-Auswertung zusammen
+# (build_group_summary). Vorher- und Nachher-Gruppe dürfen unterschiedlich
+# viele Bilder enthalten — die Bedeckungsgrade werden je Gruppe gemittelt.
+#
+# Segmentierung (Pflanze vs. Boden), wählbar in den Experten-Einstellungen:
+#   - "hsv": fester Grünton-Bereich im HSV-Farbraum (klassisch)
+#   - "exg": Excess-Green-Index (2g−r−b) mit automatischem Otsu-Schwellwert —
+#            robust gegen wechselnde Lichtverhältnisse (Woebbecke 1995,
+#            Meyer & Neto 2008); entspricht der Zielmethodik im Businessplan.
+#
+# Modus C (Reihen-Erkennung): Grün AUF den Saatreihen zählt als Kulturpflanze,
+# Grün ZWISCHEN den Reihen als Unkraut. Wird keine klare Reihenstruktur
+# gefunden, fällt die Analyse ehrlich auf die Gesamtbedeckung zurück
+# (rows_detected=false).
 import os, json
 import cv2
 import numpy as np
@@ -6,53 +24,44 @@ import numpy as np
 # -------------------------------
 # Konstanten / Parameter
 # -------------------------------
-# Hinweis zur Methodik: Die Pflanzensegmentierung nutzt eine HSV-Grünton-Schwelle
-# (H zwischen H_LOW und H_HIGH). Der Businessplan nennt ExG-/ExGR-Farbindizes als
-# Zielmethodik — eine Umstellung sollte mit echten Feldbildern validiert werden.
 H_LOW_DEFAULT  = 35
 H_HIGH_DEFAULT = 85
-SV_MIN         = 40   # Mindest-Sättigung/-Helligkeit für "grün"
-MIN_SIZE       = 50   # Standard: Komponenten kleiner als 50 px werden entfernt
-IMG_EXTS       = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
+SV_MIN         = 40    # Mindest-Sättigung/-Helligkeit für "grün" (nur HSV-Methode)
+MIN_SIZE       = 50    # Komponenten kleiner als 50 px werden entfernt
+EXG_MIN        = 0.05  # ExG-Untergrenze: Grün muss dominieren (verhindert
+                       # Fehl-Detektionen auf reinem Boden)
 
-# NEU: globale Maximalgrößen für RAM-schonende Verarbeitung/Anzeige
-MAX_SIDE_FOR_ANALYSIS = 1600  # längste Bildkante für die Analyse
-MAX_PANEL_HEIGHT      = 720   # Zielhöhe für Panels und Kombis (UI-freundlich)
+METHOD_HSV = "hsv"
+METHOD_EXG = "exg"
 
-# Unkrautfilter-Parameter
+# Maximalgrößen für RAM-schonende Verarbeitung/Anzeige
+MAX_SIDE_FOR_ANALYSIS = 1600
+MAX_PANEL_HEIGHT      = 720
+OVERVIEW_STRIP_HEIGHT = 240
+MAX_OVERVIEW_WIDTH    = 2400
+
+# Unkrautfilter-Parameter (Modus B)
 # Formfaktor = P² / (4π × A)  — 1.0 = perfekter Kreis, >1 = unregelmäßiger
 WEED_FORM_FACTOR_THRESHOLD = 2.0
-# Objekte kleiner als dieser Anteil der Median-Fläche gelten als "deutlich kleiner"
 WEED_SIZE_FRACTION = 0.25
 
-# -------------------------------
-# Hilfsfunktionen
-# -------------------------------
+# Reihen-Erkennung (Modus C)
+ROW_MIN_PEAKS      = 3      # mindestens so viele Reihen im Bild
+ROW_SPACING_CV_MAX = 0.35   # max. Variation der Reihenabstände (Periodizität)
+ROW_BAND_FRACTION  = 0.3    # Bandbreite um jede Reihe (Anteil des Reihenabstands)
+
+# Helligkeits-Warnung: mittlere Grauwert-Differenz Vorher vs. Nachher
+BRIGHTNESS_WARN_DELTA = 40.0
+
+
 def chaquopy_probe():
     print("[PY] chaquopy_probe ok")
 
-def _is_image(fn: str) -> bool:
-    return fn.lower().endswith(IMG_EXTS)
 
-def _ensure_outdir(base_file_or_dir: str) -> str:
-    # nimmt Datei- oder Verzeichnispfad und baut 'ausgabe_pflanzen' darunter
-    base_dir = base_file_or_dir
-    if os.path.isfile(base_file_or_dir):
-        base_dir = os.path.dirname(base_file_or_dir)
-    if not base_dir:
-        base_dir = os.getcwd()
-    out_dir = os.path.join(base_dir, "ausgabe_pflanzen")
-    os.makedirs(out_dir, exist_ok=True)
-    return out_dir
-
-def _to3c(img: np.ndarray) -> np.ndarray:
-    """Sicherstellen, dass Bild 3 Kanäle (BGR) hat."""
-    if img.ndim == 2:
-        return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-    return img
-
-def _resize_to_height(img: np.ndarray, target_h: int) -> np.ndarray:
-    """Proportional auf Zielhöhe skalieren."""
+# -------------------------------
+# Basis-Helfer
+# -------------------------------
+def _resize_to_height(img, target_h):
     h, w = img.shape[:2]
     if h == target_h:
         return img
@@ -61,111 +70,209 @@ def _resize_to_height(img: np.ndarray, target_h: int) -> np.ndarray:
     interp = cv2.INTER_AREA if target_h < h else cv2.INTER_LINEAR
     return cv2.resize(img, (new_w, target_h), interpolation=interp)
 
-def _pad_to_width(img: np.ndarray, target_w: int) -> np.ndarray:
-    """Links-bündig mit Weiß auffüllen, damit Breite = target_w ist (für vertikales Stapeln)."""
-    h, w = img.shape[:2]
-    if w == target_w:
-        return img
-    canvas = np.ones((h, target_w, 3), dtype=np.uint8) * 255
-    canvas[:, :w, :] = img
-    return canvas
 
-def _maybe_downscale_long_side(bgr: np.ndarray, max_side: int) -> np.ndarray:
-    """Skaliert das Bild so, dass die längste Kante <= max_side ist (proportional)."""
+def _maybe_downscale_long_side(bgr, max_side):
     h, w = bgr.shape[:2]
     long_side = max(h, w)
     if long_side <= max_side:
         return bgr
     scale = max_side / float(long_side)
-    new_w = max(1, int(round(w * scale)))
-    new_h = max(1, int(round(h * scale)))
-    return cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    return cv2.resize(bgr, (max(1, int(round(w * scale))), max(1, int(round(h * scale)))),
+                      interpolation=cv2.INTER_AREA)
 
-def _mask_and_stats(bgr: np.ndarray, weed_filter: bool = False,
-                    min_size: int = MIN_SIZE,
-                    h_low: int = H_LOW_DEFAULT, h_high: int = H_HIGH_DEFAULT):
-    """
-    Erzeugt:
-      - plant_mask  (Binärmaske grün in HSV)
-      - filtered    (Komponenten < min_size entfernt)
-      - cov_bw      (Bedeckung plant_mask in %)
-      - cov_f       (Bedeckung filtered   in %)
-      - weed_filtered (optional: zusätzlich Unkraut entfernt)
-      - cov_wf      (optional: Bedeckung weed_filtered in %)
-    """
+
+def _pad_to_width(img, target_w):
+    h, w = img.shape[:2]
+    if w >= target_w:
+        return img
+    canvas = np.ones((h, target_w, 3), dtype=np.uint8) * 255
+    canvas[:, :w, :] = img
+    return canvas
+
+
+def _ensure_detail_dir(out_dir):
+    """details/-Unterordner (.nomedia => Galerie ignoriert die Zwischenbilder)."""
+    detail_dir = os.path.join(out_dir, "details")
+    os.makedirs(detail_dir, exist_ok=True)
+    nomedia = os.path.join(detail_dir, ".nomedia")
+    if not os.path.exists(nomedia):
+        open(nomedia, "w").close()
+    return detail_dir
+
+
+# -------------------------------
+# Segmentierung Pflanze vs. Boden
+# -------------------------------
+def _hsv_mask(bgr, h_low, h_high):
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
     hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
+    lower = np.array([h_low, SV_MIN, SV_MIN], dtype=np.uint8)
+    upper = np.array([h_high, 255, 255], dtype=np.uint8)
+    return cv2.inRange(hsv, lower, upper)
 
-    lower_green = np.array([h_low, SV_MIN, SV_MIN], dtype=np.uint8)
-    upper_green = np.array([h_high, 255, 255], dtype=np.uint8)
-    plant_mask = cv2.inRange(hsv, lower_green, upper_green)
 
-    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(plant_mask, connectivity=8)
-    filtered = np.zeros_like(plant_mask)
+def _exg_otsu_mask(bgr):
+    """Excess Green (auf normalisierten RGB-Werten) + Otsu-Schwellwert.
+    Der Schwellwert passt sich jedem Bild automatisch an => robust gegen
+    Sonne/Wolken/Tageszeit. Zusätzliche Untergrenze EXG_MIN verhindert,
+    dass Otsu auf vegetationsfreien Bildern Bodenrauschen teilt."""
+    f = bgr.astype(np.float32)
+    b, g, r = f[:, :, 0], f[:, :, 1], f[:, :, 2]
+    s = b + g + r
+    s[s == 0] = 1.0
+    exg = 2.0 * g / s - r / s - b / s          # Wertebereich [-1..2]
+    exg8 = np.clip((exg + 1.0) * 127.5, 0, 255).astype(np.uint8)
+    _, otsu = cv2.threshold(exg8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    positive = ((exg > EXG_MIN).astype(np.uint8)) * 255
+    return cv2.bitwise_and(otsu, positive)
+
+
+def _segment_plants(bgr, method, h_low, h_high):
+    if method == METHOD_EXG:
+        mask = _exg_otsu_mask(bgr)
+    else:
+        mask = _hsv_mask(bgr, h_low, h_high)
+    # Morphologisches Aufräumen: Pixelrauschen entfernen, kleine Löcher schließen
+    kernel = np.ones((3, 3), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    return mask
+
+
+def _remove_small_components(mask, min_size):
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    filtered = np.zeros_like(mask)
     for i in range(1, num_labels):
         if stats[i, cv2.CC_STAT_AREA] >= min_size:
             filtered[labels == i] = 255
+    return filtered
 
-    cov_bw = float((plant_mask == 255).sum()) / plant_mask.size * 100.0
-    cov_f  = float((filtered   == 255).sum()) / filtered.size   * 100.0
 
-    weed_filtered = None
-    cov_wf = None
+def _coverage_percent(mask):
+    return round(float((mask == 255).sum()) / mask.size * 100.0, 2)
 
-    if weed_filter:
-        contours, _ = cv2.findContours(filtered.copy(), cv2.RETR_EXTERNAL,
-                                        cv2.CHAIN_APPROX_SIMPLE)
-        if contours:
-            # Fläche und Formfaktor pro Kontur berechnen
-            areas = []
-            form_factors = []
-            for cnt in contours:
-                a = cv2.contourArea(cnt)
-                p = cv2.arcLength(cnt, True)
-                if a > 0 and p > 0:
-                    ff = (p ** 2) / (4.0 * np.pi * a)
-                else:
-                    ff = float('inf')
-                areas.append(a)
-                form_factors.append(ff)
 
-            # Mediangröße als Referenz für Getreidepflanzen
-            median_area = float(np.median(areas)) if areas else 0.0
-            size_threshold = WEED_SIZE_FRACTION * median_area
+# -------------------------------
+# Modus B: Unkrautfilter (Heuristik Größe + Form)
+# -------------------------------
+def _weed_filter_mask(filtered_mask):
+    contours, _ = cv2.findContours(filtered_mask.copy(), cv2.RETR_EXTERNAL,
+                                   cv2.CHAIN_APPROX_SIMPLE)
+    weed_filtered = np.zeros_like(filtered_mask)
+    if not contours:
+        return weed_filtered
 
-            weed_filtered = np.zeros_like(plant_mask)
-            for idx, cnt in enumerate(contours):
-                area = areas[idx]
-                ff   = form_factors[idx]
-                # Entferne: deutlich kleiner als Getreide UND kompakte Form
-                is_weed = (area < size_threshold) and (ff < WEED_FORM_FACTOR_THRESHOLD)
-                if not is_weed:
-                    cv2.drawContours(weed_filtered, [cnt], -1, 255, cv2.FILLED)
-        else:
-            weed_filtered = np.zeros_like(plant_mask)
+    areas, form_factors = [], []
+    for cnt in contours:
+        a = cv2.contourArea(cnt)
+        p = cv2.arcLength(cnt, True)
+        ff = (p ** 2) / (4.0 * np.pi * a) if (a > 0 and p > 0) else float("inf")
+        areas.append(a)
+        form_factors.append(ff)
 
-        cov_wf = float((weed_filtered == 255).sum()) / weed_filtered.size * 100.0
-        cov_wf = round(cov_wf, 2)
+    median_area = float(np.median(areas))
+    size_threshold = WEED_SIZE_FRACTION * median_area
 
-    return plant_mask, filtered, round(cov_bw, 2), round(cov_f, 2), weed_filtered, cov_wf
+    for idx, cnt in enumerate(contours):
+        is_weed = (areas[idx] < size_threshold) and (form_factors[idx] < WEED_FORM_FACTOR_THRESHOLD)
+        if not is_weed:
+            cv2.drawContours(weed_filtered, [cnt], -1, 255, cv2.FILLED)
+    return weed_filtered
 
+
+# -------------------------------
+# Modus C: Reihen-Erkennung
+# -------------------------------
+def _detect_rows(plant_mask):
+    """Findet Saatreihen: beste Drehung (Profil-Peakigkeit) + periodische Peaks
+    im Spaltenprofil. Rotation auf gepolstertem Canvas, damit keine Bildecken
+    verloren gehen. Rückgabe: (ok, band_mask, info)."""
+    h, w = plant_mask.shape
+    pad = int((np.hypot(h, w) - min(h, w)) / 2) + 8
+    padded = cv2.copyMakeBorder(plant_mask, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=0)
+    ph, pw = padded.shape
+
+    scale = 400.0 / max(ph, pw)
+    small = cv2.resize(padded, (max(1, int(pw * scale)), max(1, int(ph * scale))),
+                       interpolation=cv2.INTER_NEAREST)
+    sh, sw = small.shape
+
+    def profile_score(angle):
+        M = cv2.getRotationMatrix2D((sw / 2, sh / 2), angle, 1.0)
+        rot = cv2.warpAffine(small, M, (sw, sh), flags=cv2.INTER_NEAREST)
+        prof = rot.sum(axis=0).astype(np.float32)
+        if prof.sum() == 0:
+            return 0.0
+        return float(prof.std() / (prof.mean() + 1e-6))
+
+    best_angle, best_score = 0.0, -1.0
+    for a in np.arange(-45, 45.1, 1.5):
+        s = profile_score(a)
+        if s > best_score:
+            best_score, best_angle = s, a
+
+    M_full = cv2.getRotationMatrix2D((pw / 2, ph / 2), best_angle, 1.0)
+    rot_full = cv2.warpAffine(padded, M_full, (pw, ph), flags=cv2.INTER_NEAREST)
+    prof = rot_full.sum(axis=0).astype(np.float32)
+    prof_s = cv2.GaussianBlur(prof.reshape(1, -1), (1, 31), 0).flatten()
+
+    active = prof_s > 0
+    thr = prof_s[active].mean() + 0.3 * prof_s[active].std() if active.any() else 0.0
+    peaks = []
+    for x in range(2, pw - 2):
+        if prof_s[x] >= thr and prof_s[x] == prof_s[max(0, x - 15):x + 16].max():
+            if not peaks or x - peaks[-1] > 20:
+                peaks.append(x)
+
+    info = {"angle": round(float(best_angle), 1), "n_peaks": len(peaks)}
+    if len(peaks) < ROW_MIN_PEAKS:
+        return False, None, info
+
+    spacings = np.diff(peaks)
+    cv_spacing = float(spacings.std() / (spacings.mean() + 1e-6))
+    info["spacing_cv"] = round(cv_spacing, 3)
+    if cv_spacing > ROW_SPACING_CV_MAX:
+        return False, None, info
+
+    band_hw = int(ROW_BAND_FRACTION * np.median(spacings))
+    band_rot = np.zeros((ph, pw), np.uint8)
+    for p in peaks:
+        cv2.rectangle(band_rot, (max(0, p - band_hw), 0),
+                      (min(pw - 1, p + band_hw), ph - 1), 255, -1)
+
+    M_inv = cv2.invertAffineTransform(M_full)
+    band_padded = cv2.warpAffine(band_rot, M_inv, (pw, ph), flags=cv2.INTER_NEAREST)
+    band = band_padded[pad:pad + h, pad:pad + w]
+    return True, band, info
+
+
+def _row_overlay(bgr, crop_mask, weed_mask):
+    """Anschauliches Overlay: Kulturpflanze grün, Unkraut rot eingefärbt."""
+    ov = bgr.copy().astype(np.float32)
+    green = np.array([60, 220, 60], np.float32)   # BGR
+    red   = np.array([50, 50, 230], np.float32)
+    cm = crop_mask[..., None] > 0
+    wm = weed_mask[..., None] > 0
+    ov = np.where(cm, 0.45 * ov + 0.55 * green, ov)
+    ov = np.where(wm, 0.45 * ov + 0.55 * red, ov)
+    return np.clip(ov, 0, 255).astype(np.uint8)
+
+
+# -------------------------------
+# Panel (Original | Maske | Gefiltert [+ Unkrautgefiltert])
+# -------------------------------
 def _make_labeled_panel(bgr, plant_mask, filtered_mask, cov_bw, cov_f,
-                        weed_filtered_mask=None, cov_wf=None) -> np.ndarray:
-    """
-    Baut ein 3er-Panel (Original | SW | Gefiltert) mit Text oben links.
-    Bei aktivem Unkrautfilter wird ein 4. Panel (Unkrautgefiltert) angehängt.
-    """
+                        weed_filtered_mask=None, cov_wf=None):
     def to_bgr(x):
         return cv2.cvtColor(x, cv2.COLOR_GRAY2BGR)
 
     left = bgr.copy()
-    mid  = to_bgr(plant_mask)
-    right= to_bgr(filtered_mask)
+    mid = to_bgr(plant_mask)
+    right = to_bgr(filtered_mask)
 
-    # Labels (oben links, identisch zu altem Skript)
     cv2.putText(left,  "Original",                 (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 0, 0), 2)
-    cv2.putText(mid,   f"SW: {cov_bw:.2f}%",       (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0,   0, 255), 2)
-    cv2.putText(right, f"Gefiltert: {cov_f:.2f}%", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0,   0, 255), 2)
+    cv2.putText(mid,   f"SW: {cov_bw:.2f}%",       (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
+    cv2.putText(right, f"Gefiltert: {cov_f:.2f}%", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
 
     gap = 10
     spacer = np.ones((bgr.shape[0], gap, 3), dtype=np.uint8) * 255
@@ -177,277 +284,215 @@ def _make_labeled_panel(bgr, plant_mask, filtered_mask, cov_bw, cov_f,
                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
         panels.extend([spacer.copy(), wf_bgr])
 
-    panel = np.concatenate(panels, axis=1)
-    return panel
-
-def _ensure_detail_dir(out_dir: str) -> str:
-    """
-    Unterordner 'details' für Masken/Einzelbilder anlegen. Eine .nomedia-Datei
-    sorgt dafür, dass die Galerie diese Zwischenergebnisse nicht anzeigt —
-    im Datei-Manager und in der App bleiben sie zugänglich.
-    """
-    detail_dir = os.path.join(out_dir, "details")
-    os.makedirs(detail_dir, exist_ok=True)
-    nomedia = os.path.join(detail_dir, ".nomedia")
-    if not os.path.exists(nomedia):
-        open(nomedia, "w").close()
-    return detail_dir
+    return np.concatenate(panels, axis=1)
 
 
-def _process_single_image(path: str, out_dir: str, tag: str = None,
-                          weed_filter: bool = False,
-                          min_size: int = MIN_SIZE,
-                          h_low: int = H_LOW_DEFAULT, h_high: int = H_HIGH_DEFAULT,
-                          detail_dir: str = None):
+# ==========================================================
+# Einzelbild-Analyse (wird von der App pro Bild aufgerufen)
+# ==========================================================
+def analyze_image(path, out_dir, tag, index,
+                  weed_filter=False, row_mode=False,
+                  min_size=MIN_SIZE, h_low=H_LOW_DEFAULT, h_high=H_HIGH_DEFAULT,
+                  method=METHOD_HSV):
     """
-    Analysiert ein Bild und speichert (in detail_dir, sonst out_dir):
-      - *_original.jpg
-      - *_schwarz_weiss.jpg
-      - *_gefiltert_<min_size>px.jpg
-      - *_unkrautgefiltert.jpg (nur bei weed_filter=True)
-      - *_panel.jpg (mit SW/Gefiltert-Werten oben links, auf MAX_PANEL_HEIGHT skaliert)
-    tag: None  -> Dateinamen wie im alten Skript (kein Tag)
-         'before'/'after' -> Prefix um <tag> ergänzt
-    Rückgabe: (result_dict, plant_mask, filtered_mask, bgr, panel_img)
+    Analysiert EIN Bild und legt die Detailbilder unter <out_dir>/details/ ab.
+    - tag: "before" oder "after", index: Position innerhalb der Gruppe
+    Rückgabe: JSON-String (ein Item für build_group_summary).
     """
-    if detail_dir is None:
-        detail_dir = out_dir
+    path = str(path)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(path)
+    os.makedirs(out_dir, exist_ok=True)
+    detail_dir = _ensure_detail_dir(out_dir)
+
     bgr = cv2.imread(path)
     if bgr is None:
-        raise FileNotFoundError(f"cannot read image: {path}")
-
-    # NEU: vor Analyse verkleinern (beeinflusst Prozente nicht!)
+        raise ValueError(f"cannot read image: {path}")
     bgr = _maybe_downscale_long_side(bgr, MAX_SIDE_FOR_ANALYSIS)
 
-    plant_mask, filtered_mask, cov_bw, cov_f, weed_filtered_mask, cov_wf = \
-        _mask_and_stats(bgr, weed_filter=weed_filter,
-                        min_size=min_size, h_low=h_low, h_high=h_high)
+    brightness = round(float(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY).mean()), 1)
 
-    base = os.path.splitext(os.path.basename(path))[0]
-    prefix = base if not tag else f"{base}_{tag}"
+    plant_mask = _segment_plants(bgr, method, h_low, h_high)
+    filtered = _remove_small_components(plant_mask, min_size)
+    cov_bw = _coverage_percent(plant_mask)
+    cov_f = _coverage_percent(filtered)
 
-    orig_path  = os.path.join(detail_dir, f"{prefix}_original.jpg")
-    bw_path    = os.path.join(detail_dir, f"{prefix}_schwarz_weiss.jpg")
-    fil_path   = os.path.join(detail_dir, f"{prefix}_gefiltert_{min_size}px.jpg")
+    weed_filtered_mask, cov_wf = None, None
+    if weed_filter:
+        weed_filtered_mask = _weed_filter_mask(filtered)
+        cov_wf = _coverage_percent(weed_filtered_mask)
+
+    rows_detected = None
+    cov_crop = cov_weed = None
+    overlay_path = None
+    if row_mode:
+        ok, band, info = _detect_rows(filtered)
+        rows_detected = bool(ok)
+        print(f"[PY] rows {tag}{index}: ok={ok} info={info}")
+        if ok:
+            crop_mask = cv2.bitwise_and(filtered, band)
+            weed_mask = cv2.bitwise_and(filtered, cv2.bitwise_not(band))
+            cov_crop = _coverage_percent(crop_mask)
+            cov_weed = _coverage_percent(weed_mask)
+            overlay = _row_overlay(bgr, crop_mask, weed_mask)
+            overlay = _resize_to_height(overlay, min(MAX_PANEL_HEIGHT, overlay.shape[0]))
+            overlay_path = os.path.join(detail_dir, f"{tag}_{index:02d}_reihen.jpg")
+            cv2.imwrite(overlay_path, overlay, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+
+    # Dateien ablegen: Masken verlustfrei als PNG, Fotos/Panels als JPEG
+    prefix = f"{tag}_{index:02d}"
+    orig_path = os.path.join(detail_dir, f"{prefix}_original.jpg")
+    bw_path = os.path.join(detail_dir, f"{prefix}_maske.png")
+    fil_path = os.path.join(detail_dir, f"{prefix}_gefiltert_{min_size}px.png")
     panel_path = os.path.join(detail_dir, f"{prefix}_panel.jpg")
 
-    # JPEG mit moderater Qualität (kleinere Dateien, weniger RAM beim Decoding)
-    cv2.imwrite(orig_path,  bgr,           [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-    cv2.imwrite(bw_path,    plant_mask,    [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-    cv2.imwrite(fil_path,   filtered_mask, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    cv2.imwrite(orig_path, bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    cv2.imwrite(bw_path, plant_mask)
+    cv2.imwrite(fil_path, filtered)
 
     wf_path = None
-    if weed_filter and weed_filtered_mask is not None:
-        wf_path = os.path.join(detail_dir, f"{prefix}_unkrautgefiltert.jpg")
-        cv2.imwrite(wf_path, weed_filtered_mask, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    if weed_filtered_mask is not None:
+        wf_path = os.path.join(detail_dir, f"{prefix}_unkrautgefiltert.png")
+        cv2.imwrite(wf_path, weed_filtered_mask)
 
-    panel_img = _make_labeled_panel(bgr, plant_mask, filtered_mask, cov_bw, cov_f,
-                                    weed_filtered_mask, cov_wf)
-    # NEU: Panel auf sinnvolle UI-Höhe limitieren
-    panel_img = _resize_to_height(panel_img, MAX_PANEL_HEIGHT)
-    cv2.imwrite(panel_path, panel_img, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    panel = _make_labeled_panel(bgr, plant_mask, filtered, cov_bw, cov_f,
+                                weed_filtered_mask, cov_wf)
+    panel = _resize_to_height(panel, min(MAX_PANEL_HEIGHT, panel.shape[0]))
+    cv2.imwrite(panel_path, panel, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
 
-    result = {
+    item = {
         "file": os.path.basename(path),
-        "file_path": path,
+        "tag": tag,
+        "index": int(index),
+        "brightness": brightness,
         "coverage_bw_percent": cov_bw,
         "coverage_filtered_percent": cov_f,
         "outputs": {
             "original": orig_path,
             "mask_bw": bw_path,
             "filtered": fil_path,
-            "panel": panel_path
+            "panel": panel_path,
+        },
+    }
+    if cov_wf is not None:
+        item["coverage_weedfiltered_percent"] = cov_wf
+        item["outputs"]["weed_filtered"] = wf_path
+    if row_mode:
+        item["rows_detected"] = rows_detected
+        if rows_detected:
+            item["coverage_crop_percent"] = cov_crop
+            item["coverage_weed_percent"] = cov_weed
+            item["outputs"]["row_overlay"] = overlay_path
+
+    print(f"[PY] analyze_image {prefix}: bw={cov_bw}% f={cov_f}% "
+          f"wf={cov_wf} crop={cov_crop} weed={cov_weed} bright={brightness}")
+    return json.dumps(item, ensure_ascii=False)
+
+
+# ==========================================================
+# Gruppen-Auswertung (N Vorher- vs. M Nachher-Bilder)
+# ==========================================================
+def _mean_of(items, key):
+    vals = [i[key] for i in items if key in i and i[key] is not None]
+    return round(float(np.mean(vals)), 2) if vals else None
+
+
+def _build_overview(before_items, after_items, out_dir):
+    """Übersichtsbild: obere Zeile alle Vorher-Originale, untere Zeile Nachher."""
+    def strip(items, label):
+        imgs = []
+        for it in items:
+            p = it.get("outputs", {}).get("original")
+            im = cv2.imread(p) if p else None
+            if im is not None:
+                imgs.append(_resize_to_height(im, OVERVIEW_STRIP_HEIGHT))
+        if not imgs:
+            return None
+        gap = np.ones((OVERVIEW_STRIP_HEIGHT, 8, 3), np.uint8) * 255
+        row = imgs[0]
+        for im in imgs[1:]:
+            row = np.concatenate([row, gap, im], axis=1)
+        cv2.putText(row, label, (14, 34), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 0), 5)
+        cv2.putText(row, label, (14, 34), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+        return row
+
+    top = strip(before_items, f"Vorher ({len(before_items)})")
+    bottom = strip(after_items, f"Nachher ({len(after_items)})")
+    if top is None and bottom is None:
+        return None
+    rows = [r for r in (top, bottom) if r is not None]
+    target_w = max(r.shape[1] for r in rows)
+    rows = [_pad_to_width(r, target_w) for r in rows]
+    gap = np.ones((10, target_w, 3), np.uint8) * 255
+    overview = rows[0]
+    for r in rows[1:]:
+        overview = np.concatenate([overview, gap, r], axis=0)
+    overview = _maybe_downscale_long_side(overview, MAX_OVERVIEW_WIDTH)
+    path = os.path.join(out_dir, "uebersicht_vorher_nachher.jpg")
+    cv2.imwrite(path, overview, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
+    return path
+
+
+def build_group_summary(items_json, out_dir):
+    """
+    Fasst die Einzelbild-Ergebnisse zu einer Gruppen-Auswertung zusammen.
+    - items_json: JSON-Array-String der analyze_image-Ergebnisse
+    Rückgabe: JSON-String mit Mittelwerten, Deltas, Warn-Flags und Übersichtsbild.
+    """
+    items = json.loads(str(items_json))
+    before = [i for i in items if i.get("tag") == "before"]
+    after = [i for i in items if i.get("tag") == "after"]
+
+    def group_avg(group):
+        return {
+            "bw": _mean_of(group, "coverage_bw_percent"),
+            "filtered": _mean_of(group, "coverage_filtered_percent"),
+            "weedfiltered": _mean_of(group, "coverage_weedfiltered_percent"),
+            "crop": _mean_of(group, "coverage_crop_percent"),
+            "weed": _mean_of(group, "coverage_weed_percent"),
+            "brightness": _mean_of(group, "brightness"),
         }
-    }
 
-    if weed_filter and cov_wf is not None:
-        result["coverage_weedfiltered_percent"] = cov_wf
-        if wf_path:
-            result["outputs"]["weed_filtered"] = wf_path
+    avg_b = group_avg(before)
+    avg_a = group_avg(after)
 
-    return result, plant_mask, filtered_mask, bgr, panel_img
+    def delta(key):
+        if avg_b.get(key) is None or avg_a.get(key) is None:
+            return None
+        return round(avg_a[key] - avg_b[key], 2)
 
-# ==========================================================
-# Vorher/Nachher-Analyse (nutzt exakt die gleiche Pipeline)
-# ==========================================================
-def analyze_pair(before_path: str, after_path: str, out_dir: str = None,
-                 weed_filter: bool = False,
-                 min_size: int = MIN_SIZE,
-                 h_low: int = H_LOW_DEFAULT, h_high: int = H_HIGH_DEFAULT) -> str:
-    """
-    Analysiere genau zwei Bilder (Vorher/Nachher).
-    - before_path, after_path: absolute Dateipfade (keine content:// URIs)
-    - out_dir: optionaler Zielordner (z. B. /DCIM/SmartWeed/ausgabe_pflanzen)
-    - weed_filter: True = Unkrautfilter aktivieren
-    - min_size, h_low, h_high: Analyse-Parameter (Experten-Einstellungen der App)
-    Rückgabe: JSON-String.
-    """
-    print("[PY] analyze_pair:", before_path, after_path, "weed_filter=", weed_filter,
-          "min_size=", min_size, "h=", h_low, "-", h_high)
+    row_mode = any("rows_detected" in i for i in items)
+    rows_detected = None
+    if row_mode:
+        rows_detected = all(i.get("rows_detected") for i in items if "rows_detected" in i)
 
-    if not os.path.isfile(before_path):
-        raise FileNotFoundError(before_path)
-    if not os.path.isfile(after_path):
-        raise FileNotFoundError(after_path)
+    brightness_warning = False
+    if avg_b.get("brightness") is not None and avg_a.get("brightness") is not None:
+        brightness_warning = abs(avg_b["brightness"] - avg_a["brightness"]) > BRIGHTNESS_WARN_DELTA
 
-    # Zielordner
-    if out_dir:
-        os.makedirs(out_dir, exist_ok=True)
-    else:
-        out_dir = _ensure_outdir(before_path)
-
-    # Masken/Einzelbilder wandern in den versteckten details/-Unterordner,
-    # nur die fertigen Kombibilder bleiben direkt im Ausgabe-Ordner.
-    detail_dir = _ensure_detail_dir(out_dir)
-
-    # Einzelanalysen (mit Panel + Werten wie im alten Skript)
-    before_res, before_bw, before_filt, before_bgr, before_panel = \
-        _process_single_image(before_path, out_dir, tag="before", weed_filter=weed_filter,
-                              min_size=min_size, h_low=h_low, h_high=h_high,
-                              detail_dir=detail_dir)
-    after_res, after_bw, after_filt, after_bgr, after_panel = \
-        _process_single_image(after_path, out_dir, tag="after", weed_filter=weed_filter,
-                              min_size=min_size, h_low=h_low, h_high=h_high,
-                              detail_dir=detail_dir)
-
-    # Deltas (Prozentpunkte)
-    try:
-        delta_bw  = round(float(after_res["coverage_bw_percent"]) - float(before_res["coverage_bw_percent"]), 2)
-        delta_flt = round(float(after_res["coverage_filtered_percent"]) - float(before_res["coverage_filtered_percent"]), 2)
-    except Exception:
-        delta_bw = delta_flt = 0.0
-
-    delta_wf = None
-    if weed_filter:
-        bwf = before_res.get("coverage_weedfiltered_percent")
-        awf = after_res.get("coverage_weedfiltered_percent")
-        if bwf is not None and awf is not None:
-            delta_wf = round(float(awf) - float(bwf), 2)
-
-    # --- EINDEUTIGE Dateinamen für Kombibilder pro Paar ---
-    # Basisnamen der Eingaben nehmen, Sonderzeichen entschärfen
-    def _base(x: str) -> str:
-        b = os.path.splitext(os.path.basename(x))[0]
-        # sehr einfache Normalisierung, damit Dateinamen safe sind
-        return "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in b)
-
-    bname = _base(before_path)
-    aname = _base(after_path)
-    pair_id = f"{bname}__{aname}"  # Eindeutige Paar-ID
-
-    gap_h = 10
-    before_bgr3 = _to3c(before_bgr)
-    after_bgr3  = _to3c(after_bgr)
-    target_h = min(before_bgr3.shape[0], after_bgr3.shape[0])
-    before_bgr_r = _resize_to_height(before_bgr3, target_h)
-    after_bgr_r  = _resize_to_height(after_bgr3,  target_h)
-
-    cv2.putText(before_bgr_r, "Vorher",  (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255,0,0), 2)
-    cv2.putText(after_bgr_r,  "Nachher", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255,0,0), 2)
-
-    spacer_v = np.ones((target_h, gap_h, 3), dtype=np.uint8) * 255
-    both_orig = np.concatenate([before_bgr_r, spacer_v, after_bgr_r], axis=1)
-    both_orig  = _resize_to_height(both_orig,  MAX_PANEL_HEIGHT)
-
-    # >>> statt immer before_after_original.jpg jetzt pro Paar eindeutig:
-    both_orig_path  = os.path.join(out_dir, f"{pair_id}_original_both.jpg")
-    cv2.imwrite(both_orig_path,  both_orig,  [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-
-    # 2) Vorher/Nachher-Tripanels (mit Prozentwerten) untereinander kombinieren
-    before_panel3 = _to3c(before_panel)
-    after_panel3  = _to3c(after_panel)
-    target_w = max(before_panel3.shape[1], after_panel3.shape[1])
-    before_panel_pad = _pad_to_width(before_panel3, target_w)
-    after_panel_pad  = _pad_to_width(after_panel3,  target_w)
-    spacer_h = np.ones((gap_h, target_w, 3), dtype=np.uint8) * 255
-    both_panel = np.concatenate([before_panel_pad, spacer_h, after_panel_pad], axis=0)
-    both_panel = _resize_to_height(both_panel, MAX_PANEL_HEIGHT * 2)
-
-    # >>> statt immer before_after_panel.jpg jetzt pro Paar eindeutig:
-    both_panel_path = os.path.join(out_dir, f"{pair_id}_panel_both.jpg")
-    cv2.imwrite(both_panel_path, both_panel, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-
-    delta_dict = {
-        "coverage_bw_percent_points": delta_bw,
-        "coverage_filtered_percent_points": delta_flt
-    }
-    if delta_wf is not None:
-        delta_dict["coverage_weedfiltered_percent_points"] = delta_wf
+    overview_path = _build_overview(before, after, out_dir)
 
     result = {
-        "mode": "pair",
-        "weed_filter": weed_filter,
+        "mode": "group",
+        "count_before": len(before),
+        "count_after": len(after),
+        "weed_filter": any("coverage_weedfiltered_percent" in i for i in items),
+        "row_mode": row_mode,
+        "rows_detected": rows_detected,
+        "brightness_warning": brightness_warning,
         "out_dir": out_dir,
-        "items": [before_res, after_res],
-        "delta": delta_dict,
-        "combo": {
-            "original_panel": both_orig_path,
-            "labeled_tripanel_stacked": both_panel_path
-        }
+        "avg_before": avg_b,
+        "avg_after": avg_a,
+        "delta": {
+            "bw": delta("bw"),
+            "filtered": delta("filtered"),
+            "weedfiltered": delta("weedfiltered"),
+            "crop": delta("crop"),
+            "weed": delta("weed"),
+        },
+        "combo": {"overview": overview_path},
+        "items": items,
     }
-    print("[PY] DONE analyze_pair -> out_dir:", out_dir)
+    print(f"[PY] group summary: {len(before)} vorher / {len(after)} nachher, "
+          f"rows={rows_detected}, bright_warn={brightness_warning}")
     return json.dumps(result, ensure_ascii=False)
-
-
-# ==========================================================
-# Batch-Analyse: mehrere Vorher/Nachher-Paare in einem Aufruf
-# ==========================================================
-def analyze_batch(before_paths, after_paths, out_dir=None, weed_filter=False,
-                  min_size: int = MIN_SIZE,
-                  h_low: int = H_LOW_DEFAULT, h_high: int = H_HIGH_DEFAULT) -> str:
-    """
-    Analysiert mehrere Vorher/Nachher-Paare (nutzt analyze_pair pro Paar).
-    - before_paths, after_paths: Listen absoluter Dateipfade gleicher Länge
-    - out_dir: gemeinsamer Zielordner für alle Paare
-    - weed_filter: True = Unkrautfilter aktivieren
-    - min_size, h_low, h_high: Analyse-Parameter (Experten-Einstellungen der App)
-    Rückgabe: JSON-Array-String (ein Objekt pro Paar, Format wie analyze_pair).
-    """
-    befores = [str(p) for p in before_paths]
-    afters = [str(p) for p in after_paths]
-    print("[PY] analyze_batch:", len(befores), "pair(s), weed_filter=", weed_filter)
-
-    if len(befores) != len(afters):
-        raise ValueError(f"before/after count mismatch: {len(befores)} vs {len(afters)}")
-
-    results = []
-    for b, a in zip(befores, afters):
-        results.append(json.loads(analyze_pair(b, a, out_dir, weed_filter,
-                                               min_size=min_size, h_low=h_low, h_high=h_high)))
-
-    print(f"[PY] DONE analyze_batch -> {len(results)} pair(s)")
-    return json.dumps(results, ensure_ascii=False)
-
-
-# ---------------------------------------------
-# Ordneranalyse (mit Panels & Werten wie zuvor)
-# ---------------------------------------------
-def analyze_folder(folder_path: str) -> str:
-    print("[PY] analyze_folder:", folder_path)
-    if not os.path.isdir(folder_path):
-        raise FileNotFoundError(f"Folder not found: {folder_path}")
-
-    out_dir = _ensure_outdir(folder_path)
-    files = [f for f in sorted(os.listdir(folder_path)) if _is_image(f)]
-    print(f"[PY] found {len(files)} image(s)")
-
-    if not files:
-        return json.dumps({"count": 0, "out_dir": out_dir, "items": []}, ensure_ascii=False)
-
-    results = []
-    for name in files:
-        in_path = os.path.join(folder_path, name)
-        try:
-            res, *_ = _process_single_image(in_path, out_dir, tag=None)
-            results.append(res)
-            print(f"[PY] processed {name} cov_bw={res['coverage_bw_percent']:.2f}% "
-                  f"cov_f={res['coverage_filtered_percent']:.2f}%")
-        except Exception as ex:
-            print("[PY] ERROR processing", name, str(ex))
-
-    summary_path = os.path.join(out_dir, "summary.json")
-    with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
-
-    print(f"[PY] DONE -> {len(results)} file(s), out_dir={out_dir}")
-    return json.dumps({"count": len(results), "out_dir": out_dir, "items": results}, ensure_ascii=False)

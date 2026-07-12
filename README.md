@@ -15,8 +15,14 @@ gestriegelt werden, liegt er darüber, sollte die Intensität reduziert werden.
 ## Funktionen
 
 - **Kamera-Seite:** Vorher-/Nachher-Fotos aufnehmen oder Bilder importieren
-- **Analyse-Seite:** Mehrere Vorher-/Nachher-Paare auswählen, wahlweise mit
-  Unkrautfilter (Modus B), Analyse läuft lokal und offline via Python/OpenCV
+- **Analyse-Seite:** Beliebig viele Vorher- und Nachher-Bilder auswählen
+  (Anzahl darf sich unterscheiden — die Bedeckungsgrade werden je Gruppe
+  gemittelt). Drei Modi: A ohne Filter, B mit Unkrautfilter, **C mit
+  Reihen-Erkennung** (trennt Kulturpflanze von Unkraut und liefert einen
+  Kultur-CSC plus Unkraut-Wirkungsgrad). Zwei Segmentierungsverfahren wählbar:
+  **ExG + Otsu** (robust gegen wechselndes Licht, Standard) oder HSV-Farbschwelle.
+  Analyse läuft lokal und offline via Python/OpenCV. Details siehe
+  [METHODIK.md](METHODIK.md).
 - **Ergebnis-Seite:** Großer CSC-Wert mit farbcodierter Handlungsempfehlung
   (Zielband standardmäßig 8–12 %: darunter „aggressiver striegeln", im Band
   „optimal", darüber „weniger aggressiv"; negativer CSC → Hinweis, das

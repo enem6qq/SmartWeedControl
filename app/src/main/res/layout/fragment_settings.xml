@@ -22,6 +22,51 @@
             android:textColor="@color/text_secondary"
             android:lineSpacingExtra="3dp"/>
 
+        <!-- Segmentierungsmethode -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_card"
+            android:padding="20dp"
+            android:layout_marginTop="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_method"
+                android:textStyle="bold"
+                android:textSize="16sp"
+                android:textColor="@color/text_primary"
+                android:layout_marginBottom="12dp"/>
+
+            <RadioGroup
+                android:id="@+id/rgMethod"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <RadioButton
+                    android:id="@+id/rbMethodExg"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_method_exg"
+                    android:textSize="14sp"
+                    android:textColor="@color/text_primary"
+                    android:paddingStart="8dp"
+                    android:layout_marginBottom="8dp"/>
+
+                <RadioButton
+                    android:id="@+id/rbMethodHsv"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_method_hsv"
+                    android:textSize="14sp"
+                    android:textColor="@color/text_primary"
+                    android:paddingStart="8dp"/>
+            </RadioGroup>
+        </LinearLayout>
+
         <!-- Bildanalyse -->
         <LinearLayout
             android:layout_width="match_parent"

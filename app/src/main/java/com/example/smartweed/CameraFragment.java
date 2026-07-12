@@ -265,7 +265,8 @@ public class CameraFragment extends Fragment {
             return;
         }
 
-        String filename = "photo_" + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date()) + ".jpg";
+        // Millisekunden im Namen: zwei Fotos in derselben Sekunde überschreiben sich nicht
+        String filename = "photo_" + new SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.getDefault()).format(new Date()) + ".jpg";
 
         // Direkt in den app-eigenen Session-Unterordner speichern (vorher/nachher)
         File targetDir = "vorher".equals(subfolder) ? beforeDir : afterDir;
@@ -307,14 +308,23 @@ public class CameraFragment extends Fragment {
             return;
         }
 
+        // Ins Session-Schema einsortieren: Vorher- oder Nachher-Bild?
+        new android.app.AlertDialog.Builder(requireContext())
+                .setTitle(R.string.import_target_title)
+                .setPositiveButton(R.string.label_before, (d, w) -> copyImportedImage(uri, beforeDir))
+                .setNegativeButton(R.string.label_after, (d, w) -> copyImportedImage(uri, afterDir))
+                .setNeutralButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void copyImportedImage(Uri uri, File targetDir) {
         try {
             ContentResolver resolver = requireContext().getContentResolver();
             String name = getFileName(uri);
             InputStream inputStream = resolver.openInputStream(uri);
 
-            // Direkt in den app-eigenen Session-Ordner speichern
-            if (!publicImageDir.exists()) publicImageDir.mkdirs();
-            File destFile = new File(publicImageDir, name);
+            if (!targetDir.exists()) targetDir.mkdirs();
+            File destFile = new File(targetDir, name);
             FileOutputStream outputStream = new FileOutputStream(destFile);
 
             byte[] buffer = new byte[4096];
@@ -332,7 +342,8 @@ public class CameraFragment extends Fragment {
                     null);
 
             Toast.makeText(requireContext(),
-                    getString(R.string.toast_image_imported, "SmartWeed/" + sessionDirName, name),
+                    getString(R.string.toast_image_imported,
+                            "SmartWeed/" + sessionDirName + "/" + targetDir.getName(), name),
                     Toast.LENGTH_SHORT).show();
 
         } catch (Exception e) {

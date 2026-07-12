@@ -77,7 +77,7 @@
     <string name="label_weed_filtered">Sans advent. :</string>
     <string name="label_delta_weed_filtered">Δ Sans advent. :</string>
     <string name="not_available">n. d.</string>
-    <string name="pair_results_header">Résultats par paire</string>
+    <string name="pair_results_header">Résultats par image</string>
 
     <!-- Toast Messages -->
     <string name="language_changed">Langue modifiée</string>
@@ -114,7 +114,6 @@
     <string name="toast_allow_file_access">Veuillez autoriser l\'accès aux fichiers pour enregistrer les images dans le dossier Pictures.</string>
     <string name="toast_storage_permission_for_results">L\'autorisation de stockage est nécessaire pour enregistrer les résultats</string>
     <string name="toast_pick_before_after">Veuillez sélectionner des images avant et après</string>
-    <string name="toast_count_mismatch">Le nombre d\'images avant et après doit être identique.</string>
     <string name="toast_analysis_started">Analyse démarrée …</string>
     <string name="toast_image_open_failed">Impossible d\'ouvrir l\'image.</string>
     <string name="toast_media_access_denied">Accès aux images refusé</string>
@@ -129,10 +128,6 @@
     <string name="error_analysis_failed">Échec de l\'analyse : %1$s</string>
     <string name="status_analysis_running">Analyse en cours …</string>
     <string name="status_analysis_done">Analyse terminée.</string>
-    <plurals name="status_analysis_done_pairs">
-        <item quantity="one">Analyse (%1$d paire) terminée.</item>
-        <item quantity="other">Analyse (%1$d paires) terminée.</item>
-    </plurals>
     <string name="status_result_parse_error">Erreur lors de la lecture des résultats.</string>
     <string name="mode_label_a">" | Mode A : sans filtre adventices"</string>
     <string name="mode_label_b">" | Mode B : avec filtre adventices"</string>
@@ -143,14 +138,6 @@
     <string name="recommendation_no_vegetation">Aucune végétation détectée – vérifiez que les photos montrent bien la culture (trop peu de vert dans l\'image).</string>
     <string name="csc_hero_title">Crop Soil Cover (CSC)</string>
     <string name="csc_target_range">Plage cible : %1$s–%2$s %%</string>
-    <string name="progress_pair">Analyse de la paire %1$d sur %2$d …</string>
-    <string name="pair_header">Paire %1$d</string>
-    <string name="pair_line_before">Avant – N/B : %1$s | Filt. : %2$s</string>
-    <string name="pair_line_after">Après – N/B : %1$s | Filt. : %2$s</string>
-    <string name="pair_line_weed">" | Advent. : %1$s"</string>
-    <string name="pair_line_delta">Δ N/B : %1$s | Δ Filt. : %2$s</string>
-    <string name="pair_line_delta_weed">" | Δ Advent. : %1$s"</string>
-    <string name="pair_line_csc">"CSC : %1$s   Recommandation : %2$s"</string>
 
     <!-- Paramètres d'analyse (mode expert) -->
     <string name="settings_title">Paramètres d\'analyse</string>
@@ -178,4 +165,20 @@
     <string name="hint_username">Saisissez votre nom d\'utilisateur</string>
     <string name="hint_password">Saisissez votre mot de passe</string>
 
+
+    <!-- v1.2: Gruppen-Analyse, Reihen-Erkennung, Segmentierung -->
+    <string name="analysis_mode_c">C : Détection des rangs</string>
+    <string name="analysis_mode_c_desc">Détection des rangs : le vert sur les rangs de semis compte comme culture, le vert entre les rangs comme adventice. Le CSC est calculé uniquement sur la culture, avec en plus une efficacité contre les adventices. Nécessite des photos prises à peu près à la verticale avec des rangs visibles.</string>
+    <string name="settings_method">Segmentation</string>
+    <string name="settings_method_exg">ExG + Otsu – seuil automatique, robuste aux variations de lumière (recommandé)</string>
+    <string name="settings_method_hsv">Seuil de couleur HSV – plage de vert fixe (classique)</string>
+    <string name="warning_light">Remarque : la luminosité diffère fortement entre les images avant et après – le résultat peut être biaisé.</string>
+    <string name="warning_rows">Les rangs de semis n\'ont pas pu être détectés de manière fiable – l\'analyse a été effectuée sans séparation des rangs.</string>
+    <string name="label_crop">Culture :</string>
+    <string name="label_weed_cov">Adventices :</string>
+    <string name="weed_efficacy">Efficacité contre les adventices : %1$s</string>
+    <string name="mode_label_c">" | Mode C : détection des rangs"</string>
+    <string name="status_analysis_done_group">Analyse terminée (%1$d avant / %2$d après).</string>
+    <string name="progress_image">Analyse de l\'image %1$d sur %2$d …</string>
+    <string name="import_target_title">Importer comme image avant ou après ?</string>
 </resources>

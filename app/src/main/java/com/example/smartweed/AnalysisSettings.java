@@ -17,10 +17,16 @@ public final class AnalysisSettings {
     private static final String KEY_H_HIGH = "h_high";
     private static final String KEY_CSC_LOW = "csc_band_low";
     private static final String KEY_CSC_HIGH = "csc_band_high";
+    private static final String KEY_METHOD = "segmentation_method";
 
     public static final int DEFAULT_MIN_SIZE = 50;
     public static final int DEFAULT_H_LOW = 35;
     public static final int DEFAULT_H_HIGH = 85;
+
+    /** Segmentierungsmethoden (müssen zu analysis.py passen) */
+    public static final String METHOD_HSV = "hsv";
+    public static final String METHOD_EXG = "exg";
+    public static final String DEFAULT_METHOD = METHOD_EXG;
 
     private final SharedPreferences prefs;
 
@@ -32,6 +38,14 @@ public final class AnalysisSettings {
     public int getMinSize()   { return prefs.getInt(KEY_MIN_SIZE, DEFAULT_MIN_SIZE); }
     public int getHueLow()    { return prefs.getInt(KEY_H_LOW, DEFAULT_H_LOW); }
     public int getHueHigh()   { return prefs.getInt(KEY_H_HIGH, DEFAULT_H_HIGH); }
+
+    public String getMethod() { return prefs.getString(KEY_METHOD, DEFAULT_METHOD); }
+
+    public void setMethod(String method) {
+        if (METHOD_HSV.equals(method) || METHOD_EXG.equals(method)) {
+            prefs.edit().putString(KEY_METHOD, method).apply();
+        }
+    }
     public double getCscBandLow()  { return prefs.getFloat(KEY_CSC_LOW,  (float) CscCalculator.DEFAULT_BAND_LOW); }
     public double getCscBandHigh() { return prefs.getFloat(KEY_CSC_HIGH, (float) CscCalculator.DEFAULT_BAND_HIGH); }
 

@@ -6,6 +6,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.RadioGroup;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -26,6 +27,7 @@ public class SettingsFragment extends Fragment {
     private EditText etHueHigh;
     private EditText etCscLow;
     private EditText etCscHigh;
+    private RadioGroup rgMethod;
 
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
@@ -43,6 +45,7 @@ public class SettingsFragment extends Fragment {
         etHueHigh = view.findViewById(R.id.etHueHigh);
         etCscLow  = view.findViewById(R.id.etCscLow);
         etCscHigh = view.findViewById(R.id.etCscHigh);
+        rgMethod  = view.findViewById(R.id.rgMethod);
         Button save  = view.findViewById(R.id.buttonSaveSettings);
         Button reset = view.findViewById(R.id.buttonResetSettings);
 
@@ -63,6 +66,8 @@ public class SettingsFragment extends Fragment {
         etHueHigh.setText(String.valueOf(settings.getHueHigh()));
         etCscLow.setText(String.format(Locale.US, "%.1f", settings.getCscBandLow()));
         etCscHigh.setText(String.format(Locale.US, "%.1f", settings.getCscBandHigh()));
+        rgMethod.check(AnalysisSettings.METHOD_HSV.equals(settings.getMethod())
+                ? R.id.rbMethodHsv : R.id.rbMethodExg);
     }
 
     private void saveFields() {
@@ -75,6 +80,8 @@ public class SettingsFragment extends Fragment {
             double cscHigh = Double.parseDouble(etCscHigh.getText().toString().trim().replace(',', '.'));
 
             if (settings.save(minSize, hueLow, hueHigh, cscLow, cscHigh)) {
+                settings.setMethod(rgMethod.getCheckedRadioButtonId() == R.id.rbMethodHsv
+                        ? AnalysisSettings.METHOD_HSV : AnalysisSettings.METHOD_EXG);
                 Toast.makeText(requireContext(), R.string.settings_saved, Toast.LENGTH_SHORT).show();
             } else {
                 Toast.makeText(requireContext(), R.string.settings_invalid, Toast.LENGTH_LONG).show();
