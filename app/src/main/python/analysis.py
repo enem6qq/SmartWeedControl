@@ -45,11 +45,15 @@ MAX_OVERVIEW_WIDTH    = 2400
 WEED_FORM_FACTOR_THRESHOLD = 2.0
 WEED_SIZE_FRACTION = 0.25
 
-# Reihen-Erkennung (Modus C)
-ROW_MIN_PEAKS      = 3      # mindestens so viele Reihen im Bild
-ROW_SPACING_CV_MAX = 0.35   # max. Variation der Reihenabstände (Periodizität)
+# Reihen-Erkennung (Modus C) — Autokorrelations-Methode
+# An echten Feldbildern kalibriert: reale Reihen sind oft eingewachsen und
+# unregelmäßig, deshalb wird die Periodizität über die Autokorrelation des
+# Spaltenprofils gemessen (robuster als reine Peak-Abstände).
+ROW_MIN_COVERAGE   = 0.3    # Mindest-Bedeckung (%) — darunter keine Reihensuche
+ROW_MIN_STRENGTH   = 0.35   # Mindest-Autokorrelation am Reihenraster (0..1)
+ROW_MAX_ROWS       = 15     # höchstens so viele Reihen im Bild (setzt Mindestabstand)
+ROW_MIN_LAG        = 40     # absoluter kleinster Reihenabstand (px)
 ROW_BAND_FRACTION  = 0.3    # Bandbreite um jede Reihe (Anteil des Reihenabstands)
-ROW_MIN_COVERAGE   = 0.1    # Mindest-Bedeckung (%) — darunter keine Reihensuche
 
 # Helligkeits-Warnung: mittlere Grauwert-Differenz Vorher vs. Nachher
 BRIGHTNESS_WARN_DELTA = 40.0
@@ -185,13 +189,17 @@ def _weed_filter_mask(filtered_mask):
 # Modus C: Reihen-Erkennung
 # -------------------------------
 def _detect_rows(plant_mask):
-    """Findet Saatreihen: beste Drehung (Profil-Peakigkeit) + periodische Peaks
-    im Spaltenprofil. Rotation auf gepolstertem Canvas, damit keine Bildecken
-    verloren gehen. Rückgabe: (ok, band_mask, info)."""
+    """Findet Saatreihen über die Autokorrelation des Spaltenprofils.
+
+    Ablauf: (1) beste Drehung suchen, sodass das Spaltenprofil maximal
+    "gestreift" ist; (2) Autokorrelation des Profils bestimmen — eine klare
+    Spitze bei Lag L bedeutet ein regelmäßiges Reihenraster mit Abstand L;
+    (3) phasenrichtig einen Kamm aus Bändern um die Reihen legen. Rotation
+    auf gepolstertem Canvas, damit keine Bildecken verloren gehen.
+    Rückgabe: (ok, band_mask, info)."""
     h, w = plant_mask.shape
 
-    # Schutz: Auf (fast) leeren Masken würde das Null-Profil regelmäßige
-    # Geister-Peaks erzeugen und Reihen "erkennen", wo keine sind.
+    # Schutz: Auf (fast) leeren Masken kann keine Reihenstruktur bestehen.
     coverage = float((plant_mask > 0).mean()) * 100.0
     if coverage < ROW_MIN_COVERAGE:
         return False, None, {"reason": "too_little_vegetation", "coverage": round(coverage, 2)}
@@ -222,34 +230,50 @@ def _detect_rows(plant_mask):
     M_full = cv2.getRotationMatrix2D((pw / 2, ph / 2), best_angle, 1.0)
     rot_full = cv2.warpAffine(padded, M_full, (pw, ph), flags=cv2.INTER_NEAREST)
     prof = rot_full.sum(axis=0).astype(np.float32)
-    prof_s = cv2.GaussianBlur(prof.reshape(1, -1), (1, 31), 0).flatten()
 
-    active = prof_s > 0
-    if not active.any():
-        return False, None, {"reason": "empty_profile"}
-    thr = prof_s[active].mean() + 0.3 * prof_s[active].std()
-    peaks = []
-    for x in range(2, pw - 2):
-        # prof_s[x] > 0: Peaks müssen echte Vegetation enthalten (keine Geister-Peaks)
-        if prof_s[x] > 0 and prof_s[x] >= thr and prof_s[x] == prof_s[max(0, x - 15):x + 16].max():
-            if not peaks or x - peaks[-1] > 20:
-                peaks.append(x)
+    # Nur den vegetationsbedeckten Profilabschnitt betrachten
+    nz = np.nonzero(prof)[0]
+    if len(nz) < 100:
+        return False, None, {"reason": "profile_too_narrow"}
+    seg = prof[nz[0]:nz[-1] + 1].astype(np.float64)
+    seg = seg - seg.mean()
+    m = len(seg)
 
-    info = {"angle": round(float(best_angle), 1), "n_peaks": len(peaks)}
-    if len(peaks) < ROW_MIN_PEAKS:
+    ac = np.correlate(seg, seg, mode="full")[m - 1:]
+    if ac[0] <= 0:
+        return False, None, {"reason": "flat_profile"}
+    ac = ac / ac[0]
+
+    # Realistischer Reihenabstand: mindestens ROW_MIN_LAG px und so groß, dass
+    # höchstens ROW_MAX_ROWS Reihen ins Bild passen (verhindert, dass feine
+    # Textur als "Reihen alle paar Pixel" fehlinterpretiert wird).
+    lo = max(ROW_MIN_LAG, m // ROW_MAX_ROWS)
+    hi = max(lo + 2, m // 3)          # mind. ~3 Reihen im sichtbaren Bereich
+    if hi <= lo + 2:
+        return False, None, {"reason": "profile_too_narrow"}
+
+    lag = lo + int(np.argmax(ac[lo:hi]))
+    strength = float(ac[lag])
+    info = {"angle": round(float(best_angle), 1), "period": int(lag),
+            "strength": round(strength, 3)}
+    if strength < ROW_MIN_STRENGTH:
         return False, None, info
 
-    spacings = np.diff(peaks)
-    cv_spacing = float(spacings.std() / (spacings.mean() + 1e-6))
-    info["spacing_cv"] = round(cv_spacing, 3)
-    if cv_spacing > ROW_SPACING_CV_MAX:
-        return False, None, info
+    # Phase: Verschiebung mit der höchsten aufsummierten Vegetation auf dem Raster
+    origin = nz[0]
+    best_phase = max(range(lag),
+                     key=lambda p: float(prof[origin + p::lag].sum()) if origin + p < len(prof) else 0.0)
 
-    band_hw = int(ROW_BAND_FRACTION * np.median(spacings))
+    band_hw = max(4, int(ROW_BAND_FRACTION * lag))
     band_rot = np.zeros((ph, pw), np.uint8)
-    for p in peaks:
-        cv2.rectangle(band_rot, (max(0, p - band_hw), 0),
-                      (min(pw - 1, p + band_hw), ph - 1), 255, -1)
+    pos = origin + best_phase
+    n_rows = 0
+    while pos < nz[-1]:
+        cv2.rectangle(band_rot, (max(0, pos - band_hw), 0),
+                      (min(pw - 1, pos + band_hw), ph - 1), 255, -1)
+        pos += lag
+        n_rows += 1
+    info["n_rows"] = n_rows
 
     M_inv = cv2.invertAffineTransform(M_full)
     band_padded = cv2.warpAffine(band_rot, M_inv, (pw, ph), flags=cv2.INTER_NEAREST)
