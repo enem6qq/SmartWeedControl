@@ -325,6 +325,13 @@ public class CameraFragment extends Fragment {
 
             if (!targetDir.exists()) targetDir.mkdirs();
             File destFile = new File(targetDir, name);
+            // Kollision vermeiden: existiert der Name schon, eindeutig machen
+            if (destFile.exists()) {
+                int dot = name.lastIndexOf('.');
+                String base = (dot > 0) ? name.substring(0, dot) : name;
+                String ext = (dot > 0) ? name.substring(dot) : "";
+                destFile = new File(targetDir, base + "_" + System.currentTimeMillis() + ext);
+            }
             FileOutputStream outputStream = new FileOutputStream(destFile);
 
             byte[] buffer = new byte[4096];
@@ -343,7 +350,7 @@ public class CameraFragment extends Fragment {
 
             Toast.makeText(requireContext(),
                     getString(R.string.toast_image_imported,
-                            "SmartWeed/" + sessionDirName + "/" + targetDir.getName(), name),
+                            "SmartWeed/" + sessionDirName + "/" + targetDir.getName(), destFile.getName()),
                     Toast.LENGTH_SHORT).show();
 
         } catch (Exception e) {

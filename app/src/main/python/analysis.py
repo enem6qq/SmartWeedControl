@@ -49,6 +49,7 @@ WEED_SIZE_FRACTION = 0.25
 ROW_MIN_PEAKS      = 3      # mindestens so viele Reihen im Bild
 ROW_SPACING_CV_MAX = 0.35   # max. Variation der Reihenabstände (Periodizität)
 ROW_BAND_FRACTION  = 0.3    # Bandbreite um jede Reihe (Anteil des Reihenabstands)
+ROW_MIN_COVERAGE   = 0.1    # Mindest-Bedeckung (%) — darunter keine Reihensuche
 
 # Helligkeits-Warnung: mittlere Grauwert-Differenz Vorher vs. Nachher
 BRIGHTNESS_WARN_DELTA = 40.0
@@ -188,6 +189,13 @@ def _detect_rows(plant_mask):
     im Spaltenprofil. Rotation auf gepolstertem Canvas, damit keine Bildecken
     verloren gehen. Rückgabe: (ok, band_mask, info)."""
     h, w = plant_mask.shape
+
+    # Schutz: Auf (fast) leeren Masken würde das Null-Profil regelmäßige
+    # Geister-Peaks erzeugen und Reihen "erkennen", wo keine sind.
+    coverage = float((plant_mask > 0).mean()) * 100.0
+    if coverage < ROW_MIN_COVERAGE:
+        return False, None, {"reason": "too_little_vegetation", "coverage": round(coverage, 2)}
+
     pad = int((np.hypot(h, w) - min(h, w)) / 2) + 8
     padded = cv2.copyMakeBorder(plant_mask, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=0)
     ph, pw = padded.shape
@@ -217,10 +225,13 @@ def _detect_rows(plant_mask):
     prof_s = cv2.GaussianBlur(prof.reshape(1, -1), (1, 31), 0).flatten()
 
     active = prof_s > 0
-    thr = prof_s[active].mean() + 0.3 * prof_s[active].std() if active.any() else 0.0
+    if not active.any():
+        return False, None, {"reason": "empty_profile"}
+    thr = prof_s[active].mean() + 0.3 * prof_s[active].std()
     peaks = []
     for x in range(2, pw - 2):
-        if prof_s[x] >= thr and prof_s[x] == prof_s[max(0, x - 15):x + 16].max():
+        # prof_s[x] > 0: Peaks müssen echte Vegetation enthalten (keine Geister-Peaks)
+        if prof_s[x] > 0 and prof_s[x] >= thr and prof_s[x] == prof_s[max(0, x - 15):x + 16].max():
             if not peaks or x - peaks[-1] > 20:
                 peaks.append(x)
 
@@ -490,7 +501,9 @@ def build_group_summary(items_json, out_dir):
             "crop": delta("crop"),
             "weed": delta("weed"),
         },
-        "combo": {"overview": overview_path},
+        # Schlüssel weglassen statt None: Androids JSONObject.optString würde
+        # aus einem JSON-null den String "null" machen
+        "combo": {"overview": overview_path} if overview_path else {},
         "items": items,
     }
     print(f"[PY] group summary: {len(before)} vorher / {len(after)} nachher, "
