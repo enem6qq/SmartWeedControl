@@ -103,7 +103,31 @@
                 android:textStyle="bold"
                 android:textSize="20sp"
                 android:textColor="@color/traktor_green"/>
+
+            <!-- Unkraut-Wirkungsgrad (nur Modus C: Reihen-Erkennung) -->
+            <TextView
+                android:id="@+id/tvWeedEfficacy"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="center"
+                android:textStyle="bold"
+                android:textSize="15sp"
+                android:textColor="@color/traktor_blue"
+                android:visibility="gone"/>
         </LinearLayout>
+
+        <!-- Plausibilitäts-Warnungen (Licht, Reihen nicht erkannt) -->
+        <TextView
+            android:id="@+id/tvAnalysisWarning"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_card_soft"
+            android:padding="14dp"
+            android:textSize="13sp"
+            android:textColor="@color/status_warning"
+            android:visibility="gone"/>
 
         <!-- Statistics Cards Row -->
         <LinearLayout

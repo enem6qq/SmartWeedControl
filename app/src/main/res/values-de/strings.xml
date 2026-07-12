@@ -77,7 +77,7 @@
     <string name="label_weed_filtered">Unkrautgef.:</string>
     <string name="label_delta_weed_filtered">Δ Unkrautgef.:</string>
     <string name="not_available">n. a.</string>
-    <string name="pair_results_header">Einzelergebnisse pro Paar</string>
+    <string name="pair_results_header">Einzelergebnisse pro Bild</string>
 
     <!-- Toast Messages -->
     <string name="language_changed">Sprache geändert</string>
@@ -114,7 +114,6 @@
     <string name="toast_allow_file_access">Bitte Dateizugriff erlauben, damit Bilder im Pictures-Ordner gespeichert werden.</string>
     <string name="toast_storage_permission_for_results">Speicher-Berechtigung wird zum Speichern der Ergebnisse benötigt</string>
     <string name="toast_pick_before_after">Bitte Vorher- und Nachher-Bilder wählen</string>
-    <string name="toast_count_mismatch">Anzahl der Vorher- und Nachher-Bilder muss gleich sein.</string>
     <string name="toast_analysis_started">Analyse gestartet …</string>
     <string name="toast_image_open_failed">Konnte Bild nicht öffnen.</string>
     <string name="toast_media_access_denied">Bilder-Zugriff verweigert</string>
@@ -129,10 +128,6 @@
     <string name="error_analysis_failed">Analyse fehlgeschlagen: %1$s</string>
     <string name="status_analysis_running">Analyse läuft …</string>
     <string name="status_analysis_done">Analyse abgeschlossen.</string>
-    <plurals name="status_analysis_done_pairs">
-        <item quantity="one">Analyse (%1$d Paar) abgeschlossen.</item>
-        <item quantity="other">Analyse (%1$d Paare) abgeschlossen.</item>
-    </plurals>
     <string name="status_result_parse_error">Fehler beim Lesen der Ergebnisdaten.</string>
     <string name="mode_label_a">" | Modus A: Ohne Unkrautfilter"</string>
     <string name="mode_label_b">" | Modus B: Mit Unkrautfilter"</string>
@@ -143,14 +138,6 @@
     <string name="recommendation_no_vegetation">Kein Pflanzenbewuchs erkannt – bitte prüfen, ob die Aufnahmen den Bestand zeigen (zu wenig Grün im Bild).</string>
     <string name="csc_hero_title">Crop Soil Cover (CSC)</string>
     <string name="csc_target_range">Zielbereich: %1$s–%2$s %%</string>
-    <string name="progress_pair">Analysiere Paar %1$d von %2$d …</string>
-    <string name="pair_header">Paar %1$d</string>
-    <string name="pair_line_before">Vorher – SW: %1$s | Gef.: %2$s</string>
-    <string name="pair_line_after">Nachher – SW: %1$s | Gef.: %2$s</string>
-    <string name="pair_line_weed">" | Unkr.: %1$s"</string>
-    <string name="pair_line_delta">Δ SW: %1$s | Δ Gef.: %2$s</string>
-    <string name="pair_line_delta_weed">" | Δ Unkr.: %1$s"</string>
-    <string name="pair_line_csc">"CSC: %1$s   Empfehlung: %2$s"</string>
 
     <!-- Analyse-Einstellungen (Experten-Modus) -->
     <string name="settings_title">Analyse-Einstellungen</string>
@@ -178,4 +165,20 @@
     <string name="hint_username">Benutzername eingeben</string>
     <string name="hint_password">Passwort eingeben</string>
 
+
+    <!-- v1.2: Gruppen-Analyse, Reihen-Erkennung, Segmentierung -->
+    <string name="analysis_mode_c">C: Reihen-Erkennung</string>
+    <string name="analysis_mode_c_desc">Reihen-Erkennung: Grün auf den Saatreihen zählt als Kulturpflanze, Grün zwischen den Reihen als Unkraut. Der CSC wird nur aus der Kulturpflanze berechnet, zusätzlich gibt es einen Unkraut-Wirkungsgrad. Voraussetzung: Fotos ungefähr senkrecht von oben mit sichtbaren Reihen.</string>
+    <string name="settings_method">Segmentierung</string>
+    <string name="settings_method_exg">ExG + Otsu – automatischer Schwellwert, robust bei wechselndem Licht (empfohlen)</string>
+    <string name="settings_method_hsv">HSV-Farbschwelle – fester Grünbereich (klassisch)</string>
+    <string name="warning_light">Hinweis: Die Lichtverhältnisse der Vorher- und Nachher-Bilder unterscheiden sich deutlich – das Ergebnis kann verzerrt sein.</string>
+    <string name="warning_rows">Saatreihen konnten nicht sicher erkannt werden – die Analyse lief ohne Reihen-Trennung.</string>
+    <string name="label_crop">Kultur:</string>
+    <string name="label_weed_cov">Unkraut:</string>
+    <string name="weed_efficacy">Unkraut-Wirkungsgrad: %1$s</string>
+    <string name="mode_label_c">" | Modus C: Reihen-Erkennung"</string>
+    <string name="status_analysis_done_group">Analyse abgeschlossen (%1$d vorher / %2$d nachher).</string>
+    <string name="progress_image">Analysiere Bild %1$d von %2$d …</string>
+    <string name="import_target_title">Als Vorher- oder Nachher-Bild importieren?</string>
 </resources>

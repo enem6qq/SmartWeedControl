@@ -77,7 +77,7 @@
     <string name="label_weed_filtered">Weed filt.:</string>
     <string name="label_delta_weed_filtered">Delta Weed filt.:</string>
     <string name="not_available">n/a</string>
-    <string name="pair_results_header">Individual Results per Pair</string>
+    <string name="pair_results_header">Results per Image</string>
 
     <!-- Toast Messages -->
     <string name="language_changed">Language changed</string>
@@ -114,7 +114,6 @@
     <string name="toast_allow_file_access">Please allow file access so images can be saved in the Pictures folder.</string>
     <string name="toast_storage_permission_for_results">Storage permission is required to save the results</string>
     <string name="toast_pick_before_after">Please select before and after images</string>
-    <string name="toast_count_mismatch">The number of before and after images must match.</string>
     <string name="toast_analysis_started">Analysis started \u2026</string>
     <string name="toast_image_open_failed">Could not open image.</string>
     <string name="toast_media_access_denied">Image access denied</string>
@@ -129,10 +128,6 @@
     <string name="error_analysis_failed">Analysis failed: %1$s</string>
     <string name="status_analysis_running">Analysis running \u2026</string>
     <string name="status_analysis_done">Analysis finished.</string>
-    <plurals name="status_analysis_done_pairs">
-        <item quantity="one">Analysis (%1$d pair) finished.</item>
-        <item quantity="other">Analysis (%1$d pairs) finished.</item>
-    </plurals>
     <string name="status_result_parse_error">Error reading the result data.</string>
     <string name="mode_label_a">" | Mode A: Without weed filter"</string>
     <string name="mode_label_b">" | Mode B: With weed filter"</string>
@@ -143,14 +138,6 @@
     <string name="recommendation_no_vegetation">No vegetation detected – please check whether the photos show the crop (too little green in the image).</string>
     <string name="csc_hero_title">Crop Soil Cover (CSC)</string>
     <string name="csc_target_range">Target range: %1$s–%2$s %%</string>
-    <string name="progress_pair">Analyzing pair %1$d of %2$d …</string>
-    <string name="pair_header">Pair %1$d</string>
-    <string name="pair_line_before">Before \u2013 BW: %1$s | Filt.: %2$s</string>
-    <string name="pair_line_after">After \u2013 BW: %1$s | Filt.: %2$s</string>
-    <string name="pair_line_weed">" | Weed: %1$s"</string>
-    <string name="pair_line_delta">\u0394 BW: %1$s | \u0394 Filt.: %2$s</string>
-    <string name="pair_line_delta_weed">" | \u0394 Weed: %1$s"</string>
-    <string name="pair_line_csc">"CSC: %1$s   Recommendation: %2$s"</string>
 
     <!-- Analysis Settings (expert mode) -->
     <string name="settings_title">Analysis Settings</string>
@@ -178,4 +165,20 @@
     <string name="hint_username">Enter your username</string>
     <string name="hint_password">Enter your password</string>
 
+
+    <!-- v1.2: Gruppen-Analyse, Reihen-Erkennung, Segmentierung -->
+    <string name="analysis_mode_c">C: Row detection</string>
+    <string name="analysis_mode_c_desc">Row detection: green on the seed rows counts as crop, green between the rows as weed. The CSC is computed from the crop only, plus a weed efficacy value. Requires photos taken roughly straight down with visible rows.</string>
+    <string name="settings_method">Segmentation</string>
+    <string name="settings_method_exg">ExG + Otsu – automatic threshold, robust against changing light (recommended)</string>
+    <string name="settings_method_hsv">HSV color threshold – fixed green range (classic)</string>
+    <string name="warning_light">Note: lighting differs strongly between the before and after images – the result may be biased.</string>
+    <string name="warning_rows">Seed rows could not be detected reliably – the analysis ran without row separation.</string>
+    <string name="label_crop">Crop:</string>
+    <string name="label_weed_cov">Weed:</string>
+    <string name="weed_efficacy">Weed efficacy: %1$s</string>
+    <string name="mode_label_c">" | Mode C: Row detection"</string>
+    <string name="status_analysis_done_group">Analysis finished (%1$d before / %2$d after).</string>
+    <string name="progress_image">Analyzing image %1$d of %2$d …</string>
+    <string name="import_target_title">Import as before or after image?</string>
 </resources>

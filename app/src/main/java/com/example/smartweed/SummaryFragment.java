@@ -119,10 +119,10 @@ public class SummaryFragment extends Fragment {
             }
         });
 
-        // Fortschritt bei mehreren Paaren ("Analysiere Paar 2 von 5 …")
+        // Fortschritt ("Analysiere Bild 2 von 12 …")
         analysisVM.progress.observe(getViewLifecycleOwner(), p -> {
             if (p != null && p.length == 2 && Boolean.TRUE.equals(analysisVM.running.getValue())) {
-                binding.tvStatus.setText(getString(R.string.progress_pair, p[0], p[1]));
+                binding.tvStatus.setText(getString(R.string.progress_image, p[0], p[1]));
             }
         });
 
@@ -145,12 +145,7 @@ public class SummaryFragment extends Fragment {
         analysisVM.resultJson.observe(getViewLifecycleOwner(), json -> {
             if (TextUtils.isEmpty(json)) return;
             try {
-                String trimmed = json.trim();
-                if (trimmed.startsWith("[")) {
-                    handleMultiResult(new JSONArray(trimmed));
-                } else {
-                    handleSingleResult(new JSONObject(trimmed));
-                }
+                handleGroupResult(new JSONObject(json.trim()));
             } catch (Exception e) {
                 binding.tvStatus.setText(R.string.status_result_parse_error);
                 binding.tvRecommendation.setText("");
@@ -164,272 +159,175 @@ public class SummaryFragment extends Fragment {
         });
     }
 
-    // ===================================================
-    // Mehrere Ergebnisse -> Durchschnitt + UI-Liste + Bilder pro Paar
-    // ===================================================
-    private void handleMultiResult(@NonNull JSONArray arr) {
-        if (arr.length() == 0) return;
+    // ==================================================================
+    // Gruppen-Ergebnis: N Vorher- vs. M Nachher-Bilder (Mittelwerte)
+    // ==================================================================
+    private void handleGroupResult(@NonNull JSONObject root) {
+        JSONObject avgB = root.optJSONObject("avg_before");
+        JSONObject avgA = root.optJSONObject("avg_after");
+        if (avgB == null || avgA == null) return;
 
-        double sumBeforeBw = 0, sumBeforeFlt = 0, sumAfterBw = 0, sumAfterFlt = 0;
-        double sumBeforeWf = 0, sumAfterWf = 0;
-        double sumDeltaBw = 0, sumDeltaFlt = 0, sumDeltaWf = 0;
-        int n = 0;
-        int nWf = 0;
-        boolean hasWeedFilter = false;
+        boolean weedFilter = root.optBoolean("weed_filter", false);
+        boolean rowMode = root.optBoolean("row_mode", false);
+        boolean rowsDetected = rowMode && root.optBoolean("rows_detected", false);
+        int nBefore = root.optInt("count_before", 0);
+        int nAfter = root.optInt("count_after", 0);
 
-        for (int i = 0; i < arr.length(); i++) {
-            JSONObject pair = arr.optJSONObject(i);
-            if (pair == null) continue;
+        Double bBw = asDouble(avgB, "bw");
+        Double bFlt = asDouble(avgB, "filtered");
+        Double bWf = asDouble(avgB, "weedfiltered");
+        Double bCrop = asDouble(avgB, "crop");
+        Double bWeed = asDouble(avgB, "weed");
+        Double aBw = asDouble(avgA, "bw");
+        Double aFlt = asDouble(avgA, "filtered");
+        Double aWf = asDouble(avgA, "weedfiltered");
+        Double aCrop = asDouble(avgA, "crop");
+        Double aWeed = asDouble(avgA, "weed");
 
-            if (pair.optBoolean("weed_filter", false)) hasWeedFilter = true;
-
-            JSONArray items = pair.optJSONArray("items");
-            JSONObject beforeObj = (items != null && items.length() > 0) ? items.optJSONObject(0) : null;
-            JSONObject afterObj  = (items != null && items.length() > 1) ? items.optJSONObject(1) : null;
-            JSONObject deltaObj  = pair.optJSONObject("delta");
-
-            Double beforeBw  = asDouble(beforeObj, "coverage_bw_percent");
-            Double beforeFlt = asDouble(beforeObj, "coverage_filtered_percent");
-            Double afterBw   = asDouble(afterObj,  "coverage_bw_percent");
-            Double afterFlt  = asDouble(afterObj,  "coverage_filtered_percent");
-
-            Double beforeWf  = asDouble(beforeObj, "coverage_weedfiltered_percent");
-            Double afterWf   = asDouble(afterObj,  "coverage_weedfiltered_percent");
-
-            double dBw  = (deltaObj != null) ? deltaObj.optDouble("coverage_bw_percent_points", Double.NaN) : Double.NaN;
-            double dFlt = (deltaObj != null) ? deltaObj.optDouble("coverage_filtered_percent_points", Double.NaN) : Double.NaN;
-            double dWf  = (deltaObj != null) ? deltaObj.optDouble("coverage_weedfiltered_percent_points", Double.NaN) : Double.NaN;
-
-            if (beforeBw  != null) sumBeforeBw  += beforeBw;
-            if (beforeFlt != null) sumBeforeFlt += beforeFlt;
-            if (afterBw   != null) sumAfterBw   += afterBw;
-            if (afterFlt  != null) sumAfterFlt  += afterFlt;
-            if (!Double.isNaN(dBw))  sumDeltaBw  += dBw;
-            if (!Double.isNaN(dFlt)) sumDeltaFlt += dFlt;
-
-            if (beforeWf != null) sumBeforeWf += beforeWf;
-            if (afterWf  != null) sumAfterWf  += afterWf;
-            if (!Double.isNaN(dWf)) sumDeltaWf += dWf;
-            if (beforeWf != null || afterWf != null) nWf++;
-
-            n++;
-        }
-
-        if (n == 0) return;
-
-        double avgBeforeBw   = sumBeforeBw   / n;
-        double avgBeforeFlt  = sumBeforeFlt  / n;
-        double avgAfterBw    = sumAfterBw    / n;
-        double avgAfterFlt   = sumAfterFlt   / n;
-        double avgDeltaBw    = sumDeltaBw    / n;
-        double avgDeltaFlt   = sumDeltaFlt   / n;
-
-        safeSet(binding.tvBeforeBw,       toPct(avgBeforeBw));
-        safeSet(binding.tvBeforeFiltered, toPct(avgBeforeFlt));
-        safeSet(binding.tvAfterBw,        toPct(avgAfterBw));
-        safeSet(binding.tvAfterFiltered,  toPct(avgAfterFlt));
-        safeSet(binding.tvDeltaBw,        toPp(avgDeltaBw));
-        safeSet(binding.tvDeltaFiltered,  toPp(avgDeltaFlt));
-
-        // Unkrautfilter-Werte anzeigen
-        if (hasWeedFilter && nWf > 0) {
-            double avgBeforeWf = sumBeforeWf / nWf;
-            double avgAfterWf  = sumAfterWf  / nWf;
-            double avgDeltaWf  = sumDeltaWf  / nWf;
-            safeSet(binding.tvBeforeWeedFiltered, toPct(avgBeforeWf));
-            safeSet(binding.tvAfterWeedFiltered,  toPct(avgAfterWf));
-            safeSet(binding.tvDeltaWeedFiltered,  toPp(avgDeltaWf));
-            if (binding.rowBeforeWeedFiltered != null) binding.rowBeforeWeedFiltered.setVisibility(View.VISIBLE);
-            if (binding.rowAfterWeedFiltered  != null) binding.rowAfterWeedFiltered.setVisibility(View.VISIBLE);
-            if (binding.rowDeltaWeedFiltered  != null) binding.rowDeltaWeedFiltered.setVisibility(View.VISIBLE);
-        }
-
-        // CSC-Basis: Modus A → SW-Werte, Modus B → unkrautgefilterte Werte
-        // (Fallback auf Gefiltert, falls keine Unkraut-Werte vorliegen)
-        double cscBefore;
-        double cscAfter;
-        if (hasWeedFilter && nWf > 0) {
-            cscBefore = sumBeforeWf / nWf;
-            cscAfter  = sumAfterWf  / nWf;
-        } else if (hasWeedFilter) {
-            cscBefore = avgBeforeFlt;
-            cscAfter  = avgAfterFlt;
-        } else {
-            cscBefore = avgBeforeBw;
-            cscAfter  = avgAfterBw;
-        }
-        applyCscHero(cscBefore, cscAfter);
-
-        // --- Einzelwerte + Bilder unten ohne RecyclerView ---
-        if (binding.pairsContainer != null) {
-            binding.pairsContainer.removeAllViews();
-            if (binding.tvPairsHeader != null) binding.tvPairsHeader.setVisibility(View.VISIBLE);
-
-            for (int i = 0; i < arr.length(); i++) {
-                JSONObject pair = arr.optJSONObject(i);
-                if (pair == null) continue;
-
-                JSONArray items = pair.optJSONArray("items");
-                JSONObject beforeObj = (items != null && items.length() > 0) ? items.optJSONObject(0) : null;
-                JSONObject afterObj  = (items != null && items.length() > 1) ? items.optJSONObject(1) : null;
-                JSONObject deltaObj  = pair.optJSONObject("delta");
-                JSONObject combo     = pair.optJSONObject("combo");
-
-                double beforeBw  = (beforeObj != null) ? beforeObj.optDouble("coverage_bw_percent", Double.NaN) : Double.NaN;
-                double beforeFlt = (beforeObj != null) ? beforeObj.optDouble("coverage_filtered_percent", Double.NaN) : Double.NaN;
-                double afterBw   = (afterObj  != null) ? afterObj .optDouble("coverage_bw_percent", Double.NaN) : Double.NaN;
-                double afterFlt  = (afterObj  != null) ? afterObj .optDouble("coverage_filtered_percent", Double.NaN) : Double.NaN;
-
-                double dBw  = (deltaObj != null) ? deltaObj.optDouble("coverage_bw_percent_points", Double.NaN)
-                        : ((!Double.isNaN(afterBw) && !Double.isNaN(beforeBw)) ? afterBw - beforeBw : Double.NaN);
-                double dFlt = (deltaObj != null) ? deltaObj.optDouble("coverage_filtered_percent_points", Double.NaN)
-                        : ((!Double.isNaN(afterFlt) && !Double.isNaN(beforeFlt)) ? afterFlt - beforeFlt : Double.NaN);
-
-                // Unkrautfilter-Werte pro Paar
-                double beforeWfP = (beforeObj != null) ? beforeObj.optDouble("coverage_weedfiltered_percent", Double.NaN) : Double.NaN;
-                double afterWfP  = (afterObj  != null) ? afterObj .optDouble("coverage_weedfiltered_percent", Double.NaN) : Double.NaN;
-                double dWfP = (deltaObj != null) ? deltaObj.optDouble("coverage_weedfiltered_percent_points", Double.NaN) : Double.NaN;
-
-                // CSC pro Paar: Modus A → SW-Werte, Modus B → unkrautgefilterte Werte
-                // (Fallback auf Gefiltert, falls keine Unkraut-Werte vorliegen)
-                double cscPairBefore = hasWeedFilter
-                        ? (!Double.isNaN(beforeWfP) ? beforeWfP : beforeFlt)
-                        : beforeBw;
-                double cscPairAfter = hasWeedFilter
-                        ? (!Double.isNaN(afterWfP) ? afterWfP : afterFlt)
-                        : afterBw;
-                Double pairBefore = Double.isNaN(cscPairBefore) ? null : cscPairBefore;
-                Double pairAfter  = Double.isNaN(cscPairAfter)  ? null : cscPairAfter;
-                Double cscPair = CscCalculator.compute(pairBefore, pairAfter);
-                CscCalculator.Recommendation pairReco = CscCalculator.recommendForCoverage(
-                        pairBefore, pairAfter,
-                        analysisSettings.getCscBandLow(), analysisSettings.getCscBandHigh());
-                String recoPair = (pairReco == CscCalculator.Recommendation.NOT_AVAILABLE)
-                        ? getString(R.string.not_available)
-                        : recommendationText(pairReco);
-
-                // --- UI-Block (item_pair_result.xml) ---
-                View pairView = getLayoutInflater().inflate(R.layout.item_pair_result, binding.pairsContainer, false);
-                android.widget.TextView header = pairView.findViewById(R.id.tvPairHeader);
-                android.widget.TextView lines = pairView.findViewById(R.id.tvPairMetrics);
-                ImageView imgOrig = pairView.findViewById(R.id.ivPairOriginal);
-                ImageView imgStacked = pairView.findViewById(R.id.ivPairStacked);
-
-                header.setText(getString(R.string.pair_header, i + 1));
-
-                StringBuilder sb = new StringBuilder();
-                sb.append(getString(R.string.pair_line_before, toPct(beforeBw), toPct(beforeFlt)));
-                if (!Double.isNaN(beforeWfP)) sb.append(getString(R.string.pair_line_weed, toPct(beforeWfP)));
-                sb.append("\n").append(getString(R.string.pair_line_after, toPct(afterBw), toPct(afterFlt)));
-                if (!Double.isNaN(afterWfP)) sb.append(getString(R.string.pair_line_weed, toPct(afterWfP)));
-                sb.append("\n").append(getString(R.string.pair_line_delta,
-                        Double.isNaN(dBw)  ? "-" : toPp(dBw),
-                        Double.isNaN(dFlt) ? "-" : toPp(dFlt)));
-                if (!Double.isNaN(dWfP)) sb.append(getString(R.string.pair_line_delta_weed, toPp(dWfP)));
-                sb.append("\n").append(getString(R.string.pair_line_csc,
-                        (cscPair == null) ? getString(R.string.not_available) : toPct(cscPair),
-                        recoPair));
-
-                lines.setText(sb.toString());
-
-                // Bilder (Original + Stacked)
-                if (combo != null) {
-                    String origPanel = normalizePath(combo.optString("original_panel", null));
-                    String stacked   = normalizePath(combo.optString("labeled_tripanel_stacked", null));
-
-                    if (!TextUtils.isEmpty(origPanel)) {
-                        imgOrig.setVisibility(View.VISIBLE);
-                        loadInto(imgOrig, origPanel);
-                        final String clickPath = origPanel;
-                        imgOrig.setOnClickListener(v -> FullscreenImageDialog.show(SummaryFragment.this, clickPath));
-                    }
-
-                    if (!TextUtils.isEmpty(stacked)) {
-                        imgStacked.setVisibility(View.VISIBLE);
-                        loadInto(imgStacked, stacked);
-                        final String clickPath2 = stacked;
-                        imgStacked.setOnClickListener(v -> FullscreenImageDialog.show(SummaryFragment.this, clickPath2));
-                    }
-                }
-
-                binding.pairsContainer.addView(pairView);
-
-                // Trennlinie (optional)
-                View divider = new View(requireContext());
-                divider.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
-                divider.setBackgroundColor(0x1F000000);
-                binding.pairsContainer.addView(divider);
-            }
-
-        }
-
-        String modeLabel = getString(hasWeedFilter ? R.string.mode_label_b : R.string.mode_label_a);
-        binding.tvStatus.setText(getResources().getQuantityString(
-                R.plurals.status_analysis_done_pairs, n, n) + modeLabel);
-    }
-
-    // ===================================================
-    // Einzel-Ergebnis (alter Modus)
-    // ===================================================
-    private void handleSingleResult(@NonNull JSONObject root) {
-        if (binding.pairsContainer != null) binding.pairsContainer.removeAllViews();
-        if (binding.tvPairsHeader != null) binding.tvPairsHeader.setVisibility(View.GONE);
-
-        boolean hasWeedFilter = root.optBoolean("weed_filter", false);
-
-        Double beforeBw = null, beforeFlt = null, afterBw = null, afterFlt = null;
-        Double beforeWf = null, afterWf = null;
-        if (root.has("items")) {
-            JSONArray items = root.optJSONArray("items");
-            if (items != null && items.length() >= 1) {
-                JSONObject beforeObj = items.optJSONObject(0);
-                beforeBw  = asDouble(beforeObj, "coverage_bw_percent");
-                beforeFlt = asDouble(beforeObj, "coverage_filtered_percent");
-                beforeWf  = asDouble(beforeObj, "coverage_weedfiltered_percent");
-            }
-            if (items != null && items.length() >= 2) {
-                JSONObject afterObj = items.optJSONObject(1);
-                afterBw  = asDouble(afterObj, "coverage_bw_percent");
-                afterFlt = asDouble(afterObj, "coverage_filtered_percent");
-                afterWf  = asDouble(afterObj, "coverage_weedfiltered_percent");
-            }
-        }
-
-        safeSet(binding.tvBeforeBw,  toPct(beforeBw));
-        safeSet(binding.tvBeforeFiltered, toPct(beforeFlt));
-        safeSet(binding.tvAfterBw,   toPct(afterBw));
-        safeSet(binding.tvAfterFiltered, toPct(afterFlt));
-
-        // Unkrautfilter-Werte
-        if (hasWeedFilter) {
-            safeSet(binding.tvBeforeWeedFiltered, toPct(beforeWf));
-            safeSet(binding.tvAfterWeedFiltered,  toPct(afterWf));
-            if (binding.rowBeforeWeedFiltered != null) binding.rowBeforeWeedFiltered.setVisibility(View.VISIBLE);
-            if (binding.rowAfterWeedFiltered  != null) binding.rowAfterWeedFiltered.setVisibility(View.VISIBLE);
-        }
+        safeSet(binding.tvBeforeBw, toPct(bBw));
+        safeSet(binding.tvBeforeFiltered, toPct(bFlt));
+        safeSet(binding.tvAfterBw, toPct(aBw));
+        safeSet(binding.tvAfterFiltered, toPct(aFlt));
 
         JSONObject delta = root.optJSONObject("delta");
-        double dBw  = (delta != null) ? delta.optDouble("coverage_bw_percent_points", Double.NaN) : Double.NaN;
-        double dFlt = (delta != null) ? delta.optDouble("coverage_filtered_percent_points", Double.NaN) : Double.NaN;
-        double dWf  = (delta != null) ? delta.optDouble("coverage_weedfiltered_percent_points", Double.NaN) : Double.NaN;
-        safeSet(binding.tvDeltaBw,  Double.isNaN(dBw)  ? "-" : toPp(dBw));
-        safeSet(binding.tvDeltaFiltered, Double.isNaN(dFlt) ? "-" : toPp(dFlt));
+        safeSet(binding.tvDeltaBw, toPp(asDouble(delta, "bw")));
+        safeSet(binding.tvDeltaFiltered, toPp(asDouble(delta, "filtered")));
 
-        if (hasWeedFilter) {
-            safeSet(binding.tvDeltaWeedFiltered, Double.isNaN(dWf) ? "-" : toPp(dWf));
-            if (binding.rowDeltaWeedFiltered != null) binding.rowDeltaWeedFiltered.setVisibility(View.VISIBLE);
+        boolean showWf = (bWf != null || aWf != null);
+        if (showWf) {
+            safeSet(binding.tvBeforeWeedFiltered, toPct(bWf));
+            safeSet(binding.tvAfterWeedFiltered, toPct(aWf));
+            safeSet(binding.tvDeltaWeedFiltered, toPp(asDouble(delta, "weedfiltered")));
+        }
+        int wfVis = showWf ? View.VISIBLE : View.GONE;
+        if (binding.rowBeforeWeedFiltered != null) binding.rowBeforeWeedFiltered.setVisibility(wfVis);
+        if (binding.rowAfterWeedFiltered != null) binding.rowAfterWeedFiltered.setVisibility(wfVis);
+        if (binding.rowDeltaWeedFiltered != null) binding.rowDeltaWeedFiltered.setVisibility(wfVis);
+
+        // CSC-Basis: Modus C -> Kulturpflanzen-Bedeckung (Reihen), Modus B ->
+        // unkrautgefilterte Werte (Fallback Gefiltert), Modus A -> SW-Werte
+        Double cscB;
+        Double cscA;
+        if (rowsDetected && bCrop != null && aCrop != null) {
+            cscB = bCrop;
+            cscA = aCrop;
+        } else if (weedFilter) {
+            cscB = (bWf != null) ? bWf : bFlt;
+            cscA = (aWf != null) ? aWf : aFlt;
+        } else {
+            cscB = bBw;
+            cscA = aBw;
+        }
+        applyCscHero(cscB, cscA);
+
+        // Unkraut-Wirkungsgrad (nur Modus C mit erkannten Reihen):
+        // relative Abnahme der Unkraut-Bedeckung zwischen den Reihen
+        if (rowsDetected && bWeed != null && aWeed != null) {
+            Double efficacy = CscCalculator.compute(bWeed, aWeed);
+            binding.tvWeedEfficacy.setText(getString(R.string.weed_efficacy, toPct(efficacy)));
+            binding.tvWeedEfficacy.setVisibility(View.VISIBLE);
+        } else {
+            binding.tvWeedEfficacy.setVisibility(View.GONE);
         }
 
-        // CSC-Basis: Modus A → SW-Werte, Modus B → unkrautgefilterte Werte
-        // (Fallback auf Gefiltert, falls keine Unkraut-Werte vorliegen)
-        Double cscBefore2 = hasWeedFilter ? (beforeWf != null ? beforeWf : beforeFlt) : beforeBw;
-        Double cscAfter2  = hasWeedFilter ? (afterWf  != null ? afterWf  : afterFlt)  : afterBw;
-        applyCscHero(cscBefore2, cscAfter2);
+        // Plausibilitäts-Warnungen (Licht / Reihen nicht erkannt)
+        StringBuilder warn = new StringBuilder();
+        if (root.optBoolean("brightness_warning", false)) {
+            warn.append(getString(R.string.warning_light));
+        }
+        if (rowMode && !rowsDetected) {
+            if (warn.length() > 0) warn.append("\n");
+            warn.append(getString(R.string.warning_rows));
+        }
+        binding.tvAnalysisWarning.setText(warn.toString());
+        binding.tvAnalysisWarning.setVisibility(warn.length() > 0 ? View.VISIBLE : View.GONE);
 
+        // Übersichtsbild (Vorher-Zeile / Nachher-Zeile)
         JSONObject combo = root.optJSONObject("combo");
-        loadImages(combo);
-        String modeLabel = getString(hasWeedFilter ? R.string.mode_label_b : R.string.mode_label_a);
-        binding.tvStatus.setText(getString(R.string.status_analysis_done) + modeLabel);
+        String overview = (combo != null) ? normalizePath(combo.optString("overview", "")) : "";
+        Glide.with(binding.ivOriginalPanel).clear(binding.ivOriginalPanel);
+        Glide.with(binding.ivStackedPanels).clear(binding.ivStackedPanels);
+        binding.ivStackedPanels.setVisibility(View.GONE);
+        lastStackedPath = null;
+        if (!TextUtils.isEmpty(overview)) {
+            lastOriginalPath = overview;
+            binding.ivOriginalPanel.setVisibility(View.VISIBLE);
+            loadInto(binding.ivOriginalPanel, overview);
+        } else {
+            lastOriginalPath = null;
+            binding.ivOriginalPanel.setVisibility(View.GONE);
+        }
+
+        renderItems(root.optJSONArray("items"));
+
+        String modeLabel = getString(rowMode ? R.string.mode_label_c
+                : (weedFilter ? R.string.mode_label_b : R.string.mode_label_a));
+        binding.tvStatus.setText(getString(R.string.status_analysis_done_group, nBefore, nAfter) + modeLabel);
+    }
+
+    /** Einzelergebnisse pro Bild (erst alle Vorher-, dann alle Nachher-Bilder) */
+    private void renderItems(JSONArray items) {
+        if (binding.pairsContainer == null) return;
+        binding.pairsContainer.removeAllViews();
+        if (items == null || items.length() == 0) {
+            if (binding.tvPairsHeader != null) binding.tvPairsHeader.setVisibility(View.GONE);
+            return;
+        }
+        if (binding.tvPairsHeader != null) binding.tvPairsHeader.setVisibility(View.VISIBLE);
+
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject it = items.optJSONObject(i);
+            if (it == null) continue;
+
+            boolean isBefore = "before".equals(it.optString("tag"));
+            int idx = it.optInt("index", i) + 1;
+
+            View itemView = getLayoutInflater().inflate(R.layout.item_pair_result, binding.pairsContainer, false);
+            android.widget.TextView header = itemView.findViewById(R.id.tvPairHeader);
+            android.widget.TextView metrics = itemView.findViewById(R.id.tvPairMetrics);
+            ImageView img = itemView.findViewById(R.id.ivPairOriginal);
+
+            header.setText(getString(isBefore ? R.string.label_before : R.string.label_after)
+                    + " " + idx + " – " + it.optString("file", ""));
+
+            StringBuilder sb = new StringBuilder();
+            sb.append(getString(R.string.label_bw)).append(" ")
+              .append(toPct(asDouble(it, "coverage_bw_percent")));
+            sb.append("   ").append(getString(R.string.label_filtered)).append(" ")
+              .append(toPct(asDouble(it, "coverage_filtered_percent")));
+            Double wf = asDouble(it, "coverage_weedfiltered_percent");
+            if (wf != null) {
+                sb.append("   ").append(getString(R.string.label_weed_filtered)).append(" ").append(toPct(wf));
+            }
+            Double crop = asDouble(it, "coverage_crop_percent");
+            Double weed = asDouble(it, "coverage_weed_percent");
+            if (crop != null && weed != null) {
+                sb.append("\n").append(getString(R.string.label_crop)).append(" ").append(toPct(crop));
+                sb.append("   ").append(getString(R.string.label_weed_cov)).append(" ").append(toPct(weed));
+            }
+            metrics.setText(sb.toString());
+
+            // Bild: Reihen-Overlay bevorzugen, sonst das Analyse-Panel
+            JSONObject outputs = it.optJSONObject("outputs");
+            String imgPath = null;
+            if (outputs != null) {
+                imgPath = normalizePath(outputs.optString("row_overlay", ""));
+                if (TextUtils.isEmpty(imgPath)) imgPath = normalizePath(outputs.optString("panel", ""));
+            }
+            if (!TextUtils.isEmpty(imgPath)) {
+                img.setVisibility(View.VISIBLE);
+                loadInto(img, imgPath);
+                final String clickPath = imgPath;
+                img.setOnClickListener(v -> FullscreenImageDialog.show(SummaryFragment.this, clickPath));
+            }
+
+            binding.pairsContainer.addView(itemView);
+
+            View divider = new View(requireContext());
+            divider.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
+            divider.setBackgroundColor(0x1F000000);
+            binding.pairsContainer.addView(divider);
+        }
     }
 
     // ===================================================
@@ -571,6 +469,10 @@ public class SummaryFragment extends Fragment {
         return String.format(Locale.getDefault(), "%.2f pp", v);
     }
 
+    private static String toPp(Double v) {
+        return (v == null) ? "-" : toPp(v.doubleValue());
+    }
+
     private static void safeSet(android.widget.TextView tv, String txt) {
         if (tv != null) tv.setText(txt);
     }
@@ -589,6 +491,8 @@ public class SummaryFragment extends Fragment {
         if (binding.rowBeforeWeedFiltered != null) binding.rowBeforeWeedFiltered.setVisibility(View.GONE);
         if (binding.rowAfterWeedFiltered  != null) binding.rowAfterWeedFiltered.setVisibility(View.GONE);
         if (binding.rowDeltaWeedFiltered  != null) binding.rowDeltaWeedFiltered.setVisibility(View.GONE);
+        if (binding.tvWeedEfficacy != null) binding.tvWeedEfficacy.setVisibility(View.GONE);
+        if (binding.tvAnalysisWarning != null) binding.tvAnalysisWarning.setVisibility(View.GONE);
     }
 
     private int dp(int v) {

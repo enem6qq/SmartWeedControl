@@ -68,6 +68,10 @@ public class MainActivity extends AppCompatActivity {
 
         // Android 11+: MANAGE_EXTERNAL_STORAGE anfordern, damit Bilder in /Pictures/SmartWeed/ liegen
         requestStoragePermission();
+
+        // Papierkorb-Aufbewahrungsfrist (30 Tage) beim App-Start durchsetzen —
+        // nicht erst, wenn der Nutzer den Papierkorb öffnet
+        new Thread(() -> new TrashManager(this).autoCleanup()).start();
     }
 
     private void requestStoragePermission() {

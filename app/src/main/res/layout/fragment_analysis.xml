@@ -222,6 +222,16 @@
                     android:text="@string/analysis_mode_b"
                     android:textSize="15sp"
                     android:textColor="@color/text_primary"
+                    android:paddingStart="8dp"
+                    android:layout_marginBottom="8dp"/>
+
+                <RadioButton
+                    android:id="@+id/rbModeC"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/analysis_mode_c"
+                    android:textSize="15sp"
+                    android:textColor="@color/text_primary"
                     android:paddingStart="8dp"/>
             </RadioGroup>
 

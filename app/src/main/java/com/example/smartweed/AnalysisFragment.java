@@ -167,9 +167,12 @@ public class AnalysisFragment extends Fragment {
             afterUris.clear();
             if (bList != null) for (String s : bList) beforeUris.add(Uri.parse(s));
             if (aList != null) for (String s : aList) afterUris.add(Uri.parse(s));
+        } else if (getArguments() != null && getArguments().getString("imageDir") != null) {
+            // Session geöffnet: Bilder aus vorher/ und nachher/ direkt vorladen
+            preloadSessionImages(new File(imageDirPath));
         }
 
-        // Render initial (leer)
+        // Render initial
         renderSelectedImages(true);
         renderSelectedImages(false);
 
@@ -177,6 +180,8 @@ public class AnalysisFragment extends Fragment {
         binding.rgAnalysisMode.setOnCheckedChangeListener((group, checkedId) -> {
             if (checkedId == R.id.rbModeB) {
                 binding.tvModeDescription.setText(R.string.analysis_mode_b_desc);
+            } else if (checkedId == R.id.rbModeC) {
+                binding.tvModeDescription.setText(R.string.analysis_mode_c_desc);
             } else {
                 binding.tvModeDescription.setText(R.string.analysis_mode_a_desc);
             }
@@ -188,14 +193,10 @@ public class AnalysisFragment extends Fragment {
         binding.buttonPickAfter.setOnClickListener(v ->
                 pickAfterImages.launch(new String[]{"image/*"}));
 
-        // Analyse starten
+        // Analyse starten (Vorher- und Nachher-Gruppe dürfen unterschiedlich groß sein)
         binding.buttonRunAnalysis.setOnClickListener(v -> {
             if (beforeUris.isEmpty() || afterUris.isEmpty()) {
                 Toast.makeText(requireContext(), R.string.toast_pick_before_after, Toast.LENGTH_LONG).show();
-                return;
-            }
-            if (beforeUris.size() != afterUris.size()) {
-                Toast.makeText(requireContext(), R.string.toast_count_mismatch, Toast.LENGTH_LONG).show();
                 return;
             }
 
@@ -206,6 +207,7 @@ public class AnalysisFragment extends Fragment {
             }
 
             boolean weedFilter = binding.rbModeB.isChecked();
+            boolean rowMode = binding.rbModeC.isChecked();
 
             analysisVM.running.postValue(true);
             analysisVM.resultJson.postValue(null);
@@ -229,7 +231,7 @@ public class AnalysisFragment extends Fragment {
             NavHostFragment.findNavController(this)
                     .navigate(R.id.action_AnalysisFragment_to_SummaryFragment);
 
-            runPythonAnalysis(outDir, weedFilter);
+            runPythonAnalysis(outDir, weedFilter, rowMode);
         });
     }
 
@@ -242,6 +244,21 @@ public class AnalysisFragment extends Fragment {
         for (Uri u : afterUris) a.add(u.toString());
         outState.putStringArrayList("beforeUris", b);
         outState.putStringArrayList("afterUris", a);
+    }
+
+    /** Lädt beim Öffnen einer Session die Bilder aus vorher/ und nachher/ als Paare vor */
+    private void preloadSessionImages(File sessionDir) {
+        beforeUris.clear();
+        afterUris.clear();
+        addImagesFromDir(new File(sessionDir, SessionStore.BEFORE_DIR_NAME), beforeUris);
+        addImagesFromDir(new File(sessionDir, SessionStore.AFTER_DIR_NAME), afterUris);
+    }
+
+    private void addImagesFromDir(File dir, List<Uri> target) {
+        File[] files = dir.listFiles(f -> f.isFile() && SessionStore.isImageFile(f.getName()));
+        if (files == null) return;
+        java.util.Arrays.sort(files, (a, b) -> a.getName().compareTo(b.getName()));
+        for (File f : files) target.add(Uri.fromFile(f));
     }
 
     private void takePersistable(Uri uri) {
@@ -278,10 +295,10 @@ public class AnalysisFragment extends Fragment {
                 Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
     }
 
-    // ==============================
-    // Python-Analyse: mehrere Paare
-    // ==============================
-    private void runPythonAnalysis(@NonNull File outDir, boolean weedFilter) {
+    // ==================================================================
+    // Python-Analyse: Gruppen-Auswertung (N Vorher- vs. M Nachher-Bilder)
+    // ==================================================================
+    private void runPythonAnalysis(@NonNull File outDir, boolean weedFilter, boolean rowMode) {
         Toast.makeText(requireContext(), R.string.toast_analysis_started, Toast.LENGTH_SHORT).show();
 
         // Application-Context und Einstellungen vorab holen: das Fragment kann während
@@ -293,19 +310,17 @@ public class AnalysisFragment extends Fragment {
         final int minSize = settings.getMinSize();
         final int hueLow  = settings.getHueLow();
         final int hueHigh = settings.getHueHigh();
+        final String method = settings.getMethod();
 
         bgExecutor.execute(() -> {
             try {
                 ArrayList<String> beforePaths = new ArrayList<>();
                 ArrayList<String> afterPaths  = new ArrayList<>();
-
                 for (int i = 0; i < beforeUris.size(); i++) {
-                    Uri bu = beforeUris.get(i);
-                    Uri au = afterUris.get(i);
-                    File bf = copyUriToCache(appContext, bu, "before_" + i + ".jpg");
-                    File af = copyUriToCache(appContext, au, "after_"  + i + ".jpg");
-                    beforePaths.add(bf.getAbsolutePath());
-                    afterPaths.add(af.getAbsolutePath());
+                    beforePaths.add(copyUriToCache(appContext, beforeUris.get(i), "before_" + i + ".jpg").getAbsolutePath());
+                }
+                for (int i = 0; i < afterUris.size(); i++) {
+                    afterPaths.add(copyUriToCache(appContext, afterUris.get(i), "after_" + i + ".jpg").getAbsolutePath());
                 }
 
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(appContext));
@@ -313,38 +328,38 @@ public class AnalysisFragment extends Fragment {
                 PyObject module = py.getModule("analysis");
                 try { module.callAttr("chaquopy_probe"); } catch (Exception ignored) {}
 
-                // Paar für Paar analysieren, damit der Fortschritt angezeigt werden kann
-                // (analyze_batch bleibt als Python-API für Tests/Skripte erhalten).
-                int total = beforePaths.size();
-                JSONArray jArr = new JSONArray();
-                for (int i = 0; i < total; i++) {
-                    analysisVM.progress.postValue(new int[]{i + 1, total});
-                    PyObject r = module.callAttr("analyze_pair",
-                            beforePaths.get(i), afterPaths.get(i),
-                            outDir.getAbsolutePath(), weedFilter,
-                            minSize, hueLow, hueHigh);
-                    String js = (r == null) ? "" : r.toString();
-                    if (js.trim().startsWith("{")) jArr.put(new JSONObject(js));
+                // Jedes Bild einzeln analysieren (Fortschritt "Bild i von n"),
+                // anschließend fasst build_group_summary alles zusammen.
+                int total = beforePaths.size() + afterPaths.size();
+                int done = 0;
+                JSONArray items = new JSONArray();
+                for (int i = 0; i < beforePaths.size(); i++) {
+                    analysisVM.progress.postValue(new int[]{++done, total});
+                    PyObject r = module.callAttr("analyze_image",
+                            beforePaths.get(i), outDir.getAbsolutePath(), "before", i,
+                            weedFilter, rowMode, minSize, hueLow, hueHigh, method);
+                    items.put(new JSONObject(r.toString()));
+                }
+                for (int i = 0; i < afterPaths.size(); i++) {
+                    analysisVM.progress.postValue(new int[]{++done, total});
+                    PyObject r = module.callAttr("analyze_image",
+                            afterPaths.get(i), outDir.getAbsolutePath(), "after", i,
+                            weedFilter, rowMode, minSize, hueLow, hueHigh, method);
+                    items.put(new JSONObject(r.toString()));
                 }
                 analysisVM.progress.postValue(null);
 
-                final String json = jArr.toString();
+                PyObject summary = module.callAttr("build_group_summary",
+                        items.toString(), outDir.getAbsolutePath());
+                final String json = summary.toString();
                 Log.i(TAG, "analysis result: " + json);
 
-                // Nur die fertigen Vergleichsbilder der Galerie melden — Masken und
+                // Nur das fertige Übersichtsbild der Galerie melden — Masken und
                 // Einzelbilder liegen versteckt im details/-Unterordner (.nomedia).
-                ArrayList<String> scanFiles = new ArrayList<>();
-                for (int i = 0; i < jArr.length(); i++) {
-                    JSONObject combo = jArr.getJSONObject(i).optJSONObject("combo");
-                    if (combo == null) continue;
-                    String p1 = combo.optString("original_panel", "");
-                    String p2 = combo.optString("labeled_tripanel_stacked", "");
-                    if (!p1.isEmpty()) scanFiles.add(p1);
-                    if (!p2.isEmpty()) scanFiles.add(p2);
-                }
-                if (!scanFiles.isEmpty()) {
-                    MediaScannerConnection.scanFile(appContext,
-                            scanFiles.toArray(new String[0]), null, null);
+                JSONObject combo = new JSONObject(json).optJSONObject("combo");
+                String overview = (combo != null) ? combo.optString("overview", "") : "";
+                if (!overview.isEmpty()) {
+                    MediaScannerConnection.scanFile(appContext, new String[]{overview}, null, null);
                 }
 
                 analysisVM.resultJson.postValue(json);
