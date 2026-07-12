@@ -51,15 +51,19 @@ und Komponenten unterhalb einer Mindestgröße (Standard 50 px) werden entfernt.
   versagt, wenn Unkraut die Mehrheit stellt oder Gras-Unkräuter länglich wie
   Getreide sind.
 - **Modus C – Reihen-Erkennung (empfohlen für das Projektziel):** Nutzt aus,
-  dass Getreide in Reihen gesät wird. Über die Rotation mit der stärksten
-  periodischen Spalten-Struktur werden die Reihen gefunden; Grün **auf** den
-  Reihen zählt als Kulturpflanze, Grün **zwischen** den Reihen als Unkraut.
-  Ergebnis: zwei getrennte Kennzahlen —
+  dass Getreide in Reihen gesät wird. Zunächst wird die Bildrotation mit dem
+  am stärksten „gestreiften" Spaltenprofil gesucht; anschließend misst die
+  **Autokorrelation** dieses Profils den regelmäßigen Reihenabstand. Grün
+  **auf** den Reihen zählt als Kulturpflanze, Grün **zwischen** den Reihen als
+  Unkraut. Ergebnis: zwei getrennte Kennzahlen —
   - **Kultur-CSC** (Schaden an der Kulturpflanze, Zielband 8–12 %)
   - **Unkraut-Wirkungsgrad** (relative Abnahme des Unkrauts, je höher desto besser)
 
-  Werden keine klaren Reihen gefunden, fällt die Analyse transparent auf die
-  Gesamtbedeckung zurück (mit Hinweis in der App).
+  Damit keine feine Bodentextur als „Reihen alle paar Pixel" fehlinterpretiert
+  wird, muss der Reihenabstand realistisch sein (höchstens ~15 Reihen im Bild)
+  und die Autokorrelation eine Mindeststärke erreichen. Werden keine klaren
+  Reihen gefunden, fällt die Analyse transparent auf die Gesamtbedeckung
+  zurück (mit Hinweis in der App).
 
 ## 4. Gruppen-Auswertung (mehrere Bilder)
 
@@ -70,15 +74,33 @@ Zusätzlich prüft die App, ob sich die mittlere Helligkeit von Vorher- und
 Nachher-Gruppe stark unterscheidet, und warnt dann vor einem möglichen
 Beleuchtungs-Bias.
 
-## 5. Bekannte Grenzen / geplante Validierung
+## 5. Validierung an echten Feldbildern (Stand v1.3)
 
-- Die HSV-Methode ist beleuchtungsabhängig; ExG+Otsu ist deshalb Standard.
-- Die Reihen-Erkennung setzt näherungsweise senkrechte Aufnahmen mit
-  sichtbaren Reihen voraus.
-- **Geplant:** Validierung an echten Feldbildern gegen eine Referenzmessung
-  (z. B. die frei verfügbare App *Canopeo* der Oklahoma State University,
-  die die Grünbedeckung eines Einzelbildes misst) sowie gegen manuelle
-  Auszählung.
+Erste Kalibrierung an 14 realen Feldfotos (Sonnenlicht, verschiedene
+Bewuchsdichten) plus synthetischen Kontrollbildern:
+
+- **Segmentierung:** ExG+Otsu segmentiert die Pflanzen auf allen Realbildern
+  sauber und ist sichtbar robuster als HSV (die feste HSV-Schwelle verfehlt
+  Vegetation bei ungünstigem Licht deutlich). ExG+Otsu ist daher Standard.
+- **Reihen-Erkennung:** Auf den Realbildern springt Modus C nur bei echter,
+  grober Reihenstruktur an (bei den vorliegenden, meist dicht bewachsenen
+  Zufallsbildern ~4 von 14) und fällt sonst korrekt zurück — 0 Fehlalarme auf
+  Kontrollbildern ohne Reihen. Bei klar erkennbaren Reihen trennt die Methode
+  Kultur (auf der Reihe) und Unkraut (dazwischen) zutreffend.
+
+### Bekannte Grenzen / nächste Schritte
+
+- Die Reihen-Erkennung setzt näherungsweise senkrechte Aufnahmen mit klar
+  sichtbaren Reihen voraus; bei jungem, dichtem Mischbewuchs ist keine
+  zuverlässige Reihentrennung möglich (dann greift der Rückfall auf die
+  Gesamtbedeckung).
+- Die bisherige Kalibrierung erfolgte an *einzelnen* Feldbildern. Für die
+  eigentliche CSC-Messung werden **echte Vorher-/Nachher-Paare** derselben
+  Stelle benötigt — die Feinjustierung der Reihen-Parameter erfolgt an
+  diesen Paaren.
+- **Geplant:** Abgleich der gemessenen Bedeckungsgrade gegen eine
+  Referenzmessung (z. B. die frei verfügbare App *Canopeo* der Oklahoma State
+  University) sowie gegen manuelle Auszählung.
 
 ## Quellen
 
