@@ -15,8 +15,10 @@ public final class AnalysisSettings {
     private static final String KEY_MIN_SIZE = "min_size";
     private static final String KEY_H_LOW = "h_low";
     private static final String KEY_H_HIGH = "h_high";
-    private static final String KEY_CSC_LOW = "csc_band_low";
-    private static final String KEY_CSC_HIGH = "csc_band_high";
+    private static final String KEY_CSC_LOW = "csc_band_low";        // Altbestand (float, bis v1.5)
+    private static final String KEY_CSC_HIGH = "csc_band_high";      // Altbestand (float, bis v1.5)
+    private static final String KEY_CSC_LOW_BITS = "csc_band_low_bits";   // double als Long-Bits
+    private static final String KEY_CSC_HIGH_BITS = "csc_band_high_bits"; // double als Long-Bits
     private static final String KEY_METHOD = "segmentation_method";
 
     public static final int DEFAULT_MIN_SIZE = 50;
@@ -46,8 +48,25 @@ public final class AnalysisSettings {
             prefs.edit().putString(KEY_METHOD, method).apply();
         }
     }
-    public double getCscBandLow()  { return prefs.getFloat(KEY_CSC_LOW,  (float) CscCalculator.DEFAULT_BAND_LOW); }
-    public double getCscBandHigh() { return prefs.getFloat(KEY_CSC_HIGH, (float) CscCalculator.DEFAULT_BAND_HIGH); }
+    // Bänder verlustfrei als Double-Bits gespeichert: Der frühere float-Cast
+    // machte aus 8.3 den Wert 8.300000190... — ein CSC exakt auf der
+    // Bandgrenze konnte dadurch auf die falsche Seite kippen. Der Fallback
+    // auf die alten float-Keys migriert Bestandsdaten aus v1.5.
+    public double getCscBandLow() {
+        if (prefs.contains(KEY_CSC_LOW_BITS)) {
+            return Double.longBitsToDouble(prefs.getLong(KEY_CSC_LOW_BITS,
+                    Double.doubleToLongBits(CscCalculator.DEFAULT_BAND_LOW)));
+        }
+        return prefs.getFloat(KEY_CSC_LOW, (float) CscCalculator.DEFAULT_BAND_LOW);
+    }
+
+    public double getCscBandHigh() {
+        if (prefs.contains(KEY_CSC_HIGH_BITS)) {
+            return Double.longBitsToDouble(prefs.getLong(KEY_CSC_HIGH_BITS,
+                    Double.doubleToLongBits(CscCalculator.DEFAULT_BAND_HIGH)));
+        }
+        return prefs.getFloat(KEY_CSC_HIGH, (float) CscCalculator.DEFAULT_BAND_HIGH);
+    }
 
     /**
      * Speichert alle Werte, sofern sie plausibel sind.
@@ -63,8 +82,10 @@ public final class AnalysisSettings {
                 .putInt(KEY_MIN_SIZE, minSize)
                 .putInt(KEY_H_LOW, hueLow)
                 .putInt(KEY_H_HIGH, hueHigh)
-                .putFloat(KEY_CSC_LOW, (float) cscLow)
-                .putFloat(KEY_CSC_HIGH, (float) cscHigh)
+                .putLong(KEY_CSC_LOW_BITS, Double.doubleToLongBits(cscLow))
+                .putLong(KEY_CSC_HIGH_BITS, Double.doubleToLongBits(cscHigh))
+                .remove(KEY_CSC_LOW)
+                .remove(KEY_CSC_HIGH)
                 .apply();
         return true;
     }

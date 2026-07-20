@@ -77,7 +77,13 @@ public final class MediaExport {
                         Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
                         relative);
                 if (!dstDir.exists()) dstDir.mkdirs();
-                File dst = new File(dstDir, src.getName());
+                // Eindeutigen Namen wählen statt still zu überschreiben: Das
+                // Übersichtsbild heißt bei jeder Analyse gleich
+                // (uebersicht_vorher_nachher.jpg) — auf Android 9 hätte jede
+                // neue Analyse das Galerie-Bild der vorherigen ersetzt.
+                // MediaStore auf API 29+ nummeriert von sich aus durch;
+                // dieser Zweig zieht damit gleich.
+                File dst = uniqueFile(dstDir, src.getName());
                 try (InputStream in = new FileInputStream(src);
                      OutputStream out = new FileOutputStream(dst)) {
                     byte[] buf = new byte[8192];
@@ -93,5 +99,19 @@ public final class MediaExport {
             // sicher im App-Speicher.
             Log.e(TAG, "Galerie-Export fehlgeschlagen: " + src.getName(), e);
         }
+    }
+
+    /** name.jpg -> name (1).jpg, name (2).jpg ... bis der Name frei ist */
+    private static File uniqueFile(File dir, String name) {
+        File f = new File(dir, name);
+        if (!f.exists()) return f;
+        int dot = name.lastIndexOf('.');
+        String base = (dot > 0) ? name.substring(0, dot) : name;
+        String ext = (dot > 0) ? name.substring(dot) : "";
+        int n = 1;
+        while (f.exists()) {
+            f = new File(dir, base + " (" + (n++) + ")" + ext);
+        }
+        return f;
     }
 }

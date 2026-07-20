@@ -345,19 +345,41 @@ def test_rows_mehrheits_aggregation(tmp_path):
 
 
 def test_gruppe_leer_und_einseitig(tmp_path):
-    """Leere Item-Liste und nur-Vorher-Gruppe dürfen nicht crashen und müssen
-    gültiges JSON mit None-Mitteln liefern."""
+    """Leere Item-Liste und nur-Vorher-Gruppe dürfen nicht crashen. Nicht
+    berechenbare Mittelwerte werden gemäß JSON-Kontrakt WEGGELASSEN (kein
+    null — Androids optString macht aus JSON-null den String "null")."""
     s = json.loads(analysis.build_group_summary("[]", str(tmp_path)))
     assert s["count_before"] == 0 and s["count_after"] == 0
-    assert s["avg_before"]["bw"] is None
-    assert s["delta"]["bw"] is None
+    assert "bw" not in s["avg_before"]
+    assert "bw" not in s["delta"]
     assert "overview" not in s["combo"]
 
     only_before = [_item("before", 0, 8.0, 7.8, 100)]
     s2 = json.loads(analysis.build_group_summary(json.dumps(only_before), str(tmp_path)))
     assert s2["count_before"] == 1 and s2["count_after"] == 0
-    assert s2["avg_after"]["bw"] is None
-    assert s2["delta"]["bw"] is None
+    assert s2["avg_before"]["bw"] == 8.0
+    assert "bw" not in s2["avg_after"]
+    assert "bw" not in s2["delta"]
+
+
+def test_gruppen_json_enthaelt_keine_nulls(tmp_path):
+    """Der komplette Gruppen-JSON-Kontrakt: nirgendwo darf ein JSON-null
+    stehen — optionale Schlüssel werden weggelassen (Regression zu v1.5,
+    wo avg_*/delta/rows_detected echte nulls emittierten)."""
+    def assert_no_none(obj, path="root"):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                assert v is not None, f"JSON-null bei {path}.{k}"
+                assert_no_none(v, f"{path}.{k}")
+        elif isinstance(obj, list):
+            for i, v in enumerate(obj):
+                assert_no_none(v, f"{path}[{i}]")
+
+    # Ohne row_mode: rows_detected muss KOMPLETT fehlen, nicht null sein
+    items = [_item("before", 0, 8.0, 7.8, 100), _item("after", 0, 6.0, 5.9, 104)]
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    assert "rows_detected" not in s
+    assert_no_none(s)
 
 
 # ---------------------------------------------------------------------------
@@ -395,3 +417,157 @@ def test_analyze_image_fehlerpfade(tmp_path):
         f.write("kein bild")
     with pytest.raises(ValueError):
         analysis.analyze_image(kaputt, str(tmp_path), "before", 0)
+
+
+# ---------------------------------------------------------------------------
+# v1.6-Regressionen: Reihen-Erkennung (Harmonischen-Bug) und Unkrautfilter
+# ---------------------------------------------------------------------------
+def make_clean_rows(n_rows, spacing, row_w=18, h=900):
+    """Ideales Reihenfeld OHNE Rauschen/Lücken — genau der Fall, in dem die
+    unverzerrte Autokorrelation die Harmonischen über das Fundamental hebt."""
+    w = n_rows * spacing + spacing // 2
+    mask = np.zeros((h, w), np.uint8)
+    for i in range(n_rows):
+        c = spacing // 2 + i * spacing
+        mask[:, c - row_w // 2:c + row_w // 2] = 255
+    return mask
+
+
+def test_reihen_sauberes_feld_fundamental_statt_harmonischer():
+    """Regression v1.5-Bug (kritisch): Bei sauberen periodischen Mustern
+    wählte das argmax die 2. Harmonische (Periode 2L) — nur 50 % der
+    Kulturpixel lagen im Band, die halbe Kultur wurde als Unkraut gezählt.
+    Der Detektor muss das FUNDAMENTAL und damit ALLE Reihen finden."""
+    spacing = 150
+    mask = make_clean_rows(8, spacing)
+    ok, band, info = analysis._detect_rows(mask)
+    assert ok
+    assert abs(info["period"] - spacing) <= spacing * 0.1, info
+    assert info["n_rows"] == 8, info
+    in_band = (cv2.bitwise_and(mask, band) > 0).sum() / (mask > 0).sum()
+    assert in_band > 0.95, f"nur {in_band:.0%} der Kultur im Band: {info}"
+
+
+def test_reihen_zu_dicht_ehrlich_abgelehnt():
+    """Regression v1.5-Bug (hoch): Lag der echte Reihenabstand unter dem
+    Suchfenster (mehr als ROW_MAX_ROWS Reihen), akzeptierte der Detektor
+    zwingend eine Harmonische mit hoher Konfidenz (45 % der Kultur als
+    Unkraut). Jetzt: ehrlicher Rückfall auf die Gesamtbedeckung."""
+    mask = make_clean_rows(20, 60, row_w=12)
+    ok, band, info = analysis._detect_rows(mask)
+    assert not ok, f"zu dichte Reihen wurden akzeptiert: {info}"
+
+
+def test_reihen_wenige_weite_reihen_kein_falscher_subharmonik_veto():
+    """Gegenprobe zum Subharmonik-Veto: Ein legitimes Raster mit wenigen,
+    weiten Reihen hat bei L/2, L/3 AC-Täler (keine Peaks) und darf durch
+    die Gegenprüfung NICHT abgelehnt werden."""
+    spacing = 220
+    mask = make_clean_rows(5, spacing, row_w=50)
+    ok, band, info = analysis._detect_rows(mask)
+    assert ok, info
+    assert abs(info["period"] - spacing) <= spacing * 0.1, info
+
+
+def test_unkrautfilter_verschont_objekt_im_loch():
+    """Regression v1.5-Bug: drawContours(FILLED) auf der Außenkontur einer
+    Unkraut-Komponente malte deren Löcher mit aus — ein separates
+    Kultur-Objekt IM Loch wurde mitgelöscht. Jetzt wird über die
+    Komponenten-Labels exakt pixelgenau gelöscht."""
+    mask = np.zeros((400, 600), np.uint8)
+    cv2.circle(mask, (150, 200), 60, 255, -1)                # große Kultur-Referenz
+    cv2.circle(mask, (450, 200), 30, 255, -1)                # Unkraut-Ring ...
+    cv2.circle(mask, (450, 200), 20, 0, -1)                  # ... mit Loch
+    cv2.line(mask, (440, 190), (460, 210), 255, 2)           # dünnes Objekt IM Loch
+    line_probe = np.zeros_like(mask)
+    cv2.line(line_probe, (440, 190), (460, 210), 255, 2)
+
+    out = analysis._weed_filter_mask(mask)
+    ring_only = cv2.circle(np.zeros_like(mask), (450, 200), 30, 255, -1)
+    ring_only = cv2.circle(ring_only, (450, 200), 20, 0, -1)
+    assert (cv2.bitwise_and(out, ring_only) > 0).sum() == 0, "Ring (Unkraut) blieb stehen"
+    survived = (cv2.bitwise_and(out, line_probe) > 0).sum() / (line_probe > 0).sum()
+    assert survived > 0.9, f"Objekt im Loch wurde mitgelöscht ({survived:.0%} übrig)"
+
+
+def test_unkrautfilter_pixelflaeche_statt_konturflaeche():
+    """Regression v1.5-Bug: cv2.contourArea der Außenkontur zählte Löcher
+    mit — löchrige Objekte wurden zu groß bewertet und fälschlich als
+    Kultur behalten. Maß ist jetzt die echte Pixelfläche (CC_STAT_AREA)."""
+    mask = np.zeros((500, 700), np.uint8)
+    cv2.circle(mask, (170, 250), 76, 255, -1)                # Referenz: 18.1k px
+    cv2.circle(mask, (500, 250), 40, 255, -1)                # kompakte Scheibe ...
+    cv2.circle(mask, (500, 250), 15, 0, -1)                  # ... mit Loch: 4.3k px
+    # Konturfläche der Scheibe (5.0k) läge ÜBER der Schwelle (0.25*18.1k=4.5k),
+    # die echte Pixelfläche (4.3k) liegt DARUNTER -> muss als Unkraut entfernt werden
+    out = analysis._weed_filter_mask(mask)
+    disk_probe = cv2.circle(np.zeros_like(mask), (500, 250), 40, 255, -1)
+    assert (cv2.bitwise_and(out, disk_probe) > 0).sum() == 0, \
+        "löchrige Scheibe wurde über die Konturfläche fälschlich behalten"
+
+
+def test_unkrautfilter_flaechen_mehrheit_bekannte_grenze():
+    """DOKUMENTIERT eine bekannte Grenze (kein Soll-Verhalten im engeren
+    Sinn): Stellt Unkraut >50 % der PflanzenFLÄCHE, wird der flächen-
+    gewichtete Median selbst eine Unkrautgröße und der Filter faktisch
+    wirkungslos — Modus B nähert sich Modus A. Schlägt dieser Test fehl,
+    wurde die Heuristik geändert: dann Docstring + Methodik prüfen."""
+    rng = np.random.default_rng(7)
+    mask = np.zeros((600, 900), np.uint8)
+    for x in (100, 350, 600, 850):                            # 4 schmale Kulturstreifen
+        cv2.line(mask, (x, 0), (x, 599), 255, 6)
+    for _ in range(120):                                      # dichte Unkraut-Blobs
+        cv2.circle(mask, (int(rng.integers(0, 900)), int(rng.integers(0, 600))),
+                   int(rng.integers(6, 12)), 255, -1)
+    out = analysis._weed_filter_mask(mask)
+    cov_in = (mask > 0).mean() * 100
+    cov_out = (out > 0).mean() * 100
+    assert cov_out > cov_in * 0.7, (
+        "Flächen-Mehrheits-Verhalten hat sich geändert — Doku anpassen "
+        f"(in {cov_in:.1f}% -> out {cov_out:.1f}%)")
+
+
+# ---------------------------------------------------------------------------
+# v1.6: HSV-Pfad End-to-End und Item-JSON-Kontrakt ohne erkannte Reihen
+# ---------------------------------------------------------------------------
+def test_analyze_image_hsv_end_to_end(tmp_path):
+    import os
+    img, _, _ = make_field()
+    src = str(tmp_path / "feld.jpg")
+    cv2.imwrite(src, img)
+    item = json.loads(analysis.analyze_image(src, str(tmp_path / "out"), "before", 0,
+                                             weed_filter=True, row_mode=True,
+                                             method="hsv"))
+    assert item["coverage_bw_percent"] > 0
+    for name, p in item["outputs"].items():
+        assert os.path.isfile(p), f"outputs[{name}] fehlt: {p}"
+
+
+def test_hsv_invertierter_hue_bereich_crasht_nicht(tmp_path):
+    """Experten-Einstellungen erlauben h_low/h_high frei — ein (durch die
+    Java-Validierung eigentlich verhinderter) invertierter Bereich darf
+    höchstens eine leere Maske ergeben, nie einen Crash."""
+    img, _, _ = make_field()
+    mask = analysis._segment_plants(img, "hsv", 85, 35)
+    assert (mask > 0).mean() < 0.01
+    src = str(tmp_path / "feld.jpg")
+    cv2.imwrite(src, img)
+    item = json.loads(analysis.analyze_image(src, str(tmp_path / "out"), "before", 0,
+                                             h_low=85, h_high=35, method="hsv"))
+    assert item["coverage_bw_percent"] == 0.0
+
+
+def test_item_json_ohne_erkannte_reihen(tmp_path):
+    """row_mode=True ohne erkennbare Reihen: rows_detected=False, und die
+    Nur-bei-Reihen-Schlüssel müssen FEHLEN (nicht null sein).
+    (Seed 1 wird sicher abgelehnt; Seed 5 wäre ein grenzwertiges
+    Falsch-Positiv knapp über beiden Schwellen — auch schon in v1.5.)"""
+    img = make_chaos_image(1)
+    src = str(tmp_path / "chaos.jpg")
+    cv2.imwrite(src, img)
+    item = json.loads(analysis.analyze_image(src, str(tmp_path / "out"), "after", 1,
+                                             row_mode=True, method="exg"))
+    assert item["rows_detected"] is False
+    assert "coverage_crop_percent" not in item
+    assert "coverage_weed_percent" not in item
+    assert "row_overlay" not in item["outputs"]

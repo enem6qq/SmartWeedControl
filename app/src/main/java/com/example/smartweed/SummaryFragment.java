@@ -38,8 +38,19 @@ public class SummaryFragment extends Fragment {
     private FragmentSummaryBinding binding;
     private AnalysisViewModel analysisVM;
     private AnalysisSettings analysisSettings;
+    private android.app.AlertDialog activeDialog; // für dismiss in onDestroyView
 
     private String lastOriginalPath = null;
+
+    /** Verwerfen erst anbieten, wenn ein Ausgabeordner existiert UND die
+     *  Analyse nicht mehr läuft (sonst Race mit dem Python-Thread). */
+    private void updateDiscardButton() {
+        if (binding == null) return;
+        boolean running = Boolean.TRUE.equals(analysisVM.running.getValue());
+        boolean hasOutDir = !TextUtils.isEmpty(analysisVM.outDir.getValue());
+        binding.btnDiscardAnalysis.setVisibility(
+                hasOutDir && !running ? View.VISIBLE : View.GONE);
+    }
 
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
@@ -79,15 +90,20 @@ public class SummaryFragment extends Fragment {
         analysisVM.outDir.observe(getViewLifecycleOwner(), path -> {
             if (!TextUtils.isEmpty(path)) {
                 binding.tvOutDir.setText(path);
-                binding.btnDiscardAnalysis.setVisibility(View.VISIBLE);
             }
+            updateDiscardButton();
         });
 
         // Analyse verwerfen: Ergebnisbilder in den Papierkorb, zurück zur Analyse-Seite
         binding.btnDiscardAnalysis.setOnClickListener(v -> {
             String path = analysisVM.outDir.getValue();
             if (TextUtils.isEmpty(path)) return;
-            new android.app.AlertDialog.Builder(requireContext())
+            // Guard gegen ein Race: outDir ist schon VOR dem Analyse-Ende
+            // gesetzt — ein Verwerfen, während der Python-Thread noch in
+            // genau dieses Verzeichnis schreibt, hinterließe halb verschobene
+            // Ordner bzw. nachlaufend wieder angelegte "verworfene" Ergebnisse
+            if (Boolean.TRUE.equals(analysisVM.running.getValue())) return;
+            activeDialog = new android.app.AlertDialog.Builder(requireContext())
                     .setTitle(R.string.session_delete_confirm_title)
                     .setMessage(R.string.analysis_discard_confirm_message)
                     .setPositiveButton(R.string.session_delete_action, (d, w) -> {
@@ -104,7 +120,7 @@ public class SummaryFragment extends Fragment {
                             activity.runOnUiThread(() -> {
                                 if (!isAdded()) return;
                                 Toast.makeText(requireContext(),
-                                        getString(R.string.session_deleted, moved),
+                                        getResources().getQuantityString(R.plurals.session_deleted, moved, moved),
                                         Toast.LENGTH_SHORT).show();
                                 androidx.navigation.fragment.NavHostFragment.findNavController(this).popBackStack();
                             });
@@ -120,10 +136,16 @@ public class SummaryFragment extends Fragment {
                 binding.tvStatus.setText(R.string.status_analysis_running);
             } else {
                 binding.progress.setVisibility(View.GONE);
-                if (TextUtils.isEmpty(binding.tvStatus.getText())) {
+                // "Abgeschlossen" nur behaupten, wenn wirklich ein Ergebnis da
+                // ist: Nach einem Prozess-Tod im Hintergrund startet das
+                // ViewModel leer (running=false, resultJson=null) — der alte
+                // Code zeigte dann "Analyse abgeschlossen" mit leeren Feldern.
+                if (TextUtils.isEmpty(binding.tvStatus.getText())
+                        && !TextUtils.isEmpty(analysisVM.resultJson.getValue())) {
                     binding.tvStatus.setText(R.string.status_analysis_done);
                 }
             }
+            updateDiscardButton();
         });
 
         // Fortschritt ("Analysiere Bild 2 von 12 …")
@@ -490,6 +512,11 @@ public class SummaryFragment extends Fragment {
     public void onDestroyView() {
         super.onDestroyView();
         binding = null;
+        // Offenen Bestätigungsdialog schließen (sonst WindowLeak bei Rotation)
+        if (activeDialog != null) {
+            activeDialog.dismiss();
+            activeDialog = null;
+        }
     }
 
     // =================================================

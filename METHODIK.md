@@ -73,6 +73,16 @@ und Komponenten unterhalb einer Mindestgröße (Standard 50 px) werden entfernt.
   - **Kultur-CSC** (Schaden an der Kulturpflanze, Zielband 8–12 %)
   - **Unkraut-Wirkungsgrad** (relative Abnahme des Unkrauts, je höher desto besser)
 
+  Gewählt wird der **kleinste** Autokorrelations-Peak, der alle Schwellen
+  besteht — nicht der stärkste: Die unverzerrte Normierung hebt bei sauberen
+  periodischen Mustern die Harmonischen (2L, 3L, …) leicht über das
+  Fundamental; ein argmax rastete dort ein und halbierte die Reihenzahl
+  (bis v1.5 nachweisbar auch auf echten Feldbildern: feld_19/feld_20 wurden
+  mit doppeltem Reihenabstand erkannt). Eine **subharmonische Gegenprüfung**
+  lehnt zusätzlich Bilder ehrlich ab, deren echter Reihenabstand unterhalb
+  des Suchfensters liegt (mehr als ~15 Reihen im Bild) — sonst würde
+  zwingend eine Harmonische mit hoher Konfidenz akzeptiert.
+
   Drei Schutzkriterien verhindern Fehl-Erkennungen: Der Reihenabstand muss
   realistisch sein (höchstens ~15 Reihen im Bild), der Autokorrelations-Peak
   muss eine Mindeststärke erreichen **und** eine Mindest-**Prominenz** haben —

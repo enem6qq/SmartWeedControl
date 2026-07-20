@@ -29,6 +29,7 @@ public class TrashFragment extends Fragment {
     private LinearLayout emptyState;
     private TextView tvTrashCount;
     private Button buttonEmptyTrash;
+    private AlertDialog activeDialog; // für dismiss in onDestroyView
 
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
@@ -61,9 +62,10 @@ public class TrashFragment extends Fragment {
                     Toast.makeText(requireContext(), R.string.trash_already_empty, Toast.LENGTH_SHORT).show();
                     return;
                 }
-                new AlertDialog.Builder(requireContext())
+                activeDialog = new AlertDialog.Builder(requireContext())
                         .setTitle(R.string.trash_empty_confirm_title)
-                        .setMessage(getString(R.string.trash_empty_confirm_message, count))
+                        .setMessage(getResources().getQuantityString(
+                                R.plurals.trash_empty_confirm_message, count, count))
                         .setPositiveButton(R.string.trash_delete_permanently, (d, w) ->
                                 runInBackground(() -> trashManager.emptyTrash(), () ->
                                         Toast.makeText(requireContext(), R.string.trash_emptied, Toast.LENGTH_SHORT).show()))
@@ -109,7 +111,8 @@ public class TrashFragment extends Fragment {
                     emptyState.setVisibility(View.GONE);
                     trashItemsContainer.setVisibility(View.VISIBLE);
                     buttonEmptyTrash.setVisibility(View.VISIBLE);
-                    tvTrashCount.setText(getString(R.string.trash_item_count, items.size()));
+                    tvTrashCount.setText(getResources().getQuantityString(
+                            R.plurals.trash_item_count, items.size(), items.size()));
 
                     for (TrashManager.TrashItem item : items) {
                         addTrashItemView(item);
@@ -158,7 +161,7 @@ public class TrashFragment extends Fragment {
 
         // Wiederherstellen
         btnRestore.setOnClickListener(v -> {
-            new AlertDialog.Builder(requireContext())
+            activeDialog = new AlertDialog.Builder(requireContext())
                     .setTitle(R.string.trash_restore_confirm_title)
                     .setMessage(getString(R.string.trash_restore_confirm_message, item.originalName))
                     .setPositiveButton(R.string.trash_restore, (d, w) -> {
@@ -184,7 +187,7 @@ public class TrashFragment extends Fragment {
         // Endgueltig loeschen (Rueckgabewert respektieren: bei Fehlschlag keinen
         // Erfolg vortaeuschen)
         btnDelete.setOnClickListener(v -> {
-            new AlertDialog.Builder(requireContext())
+            activeDialog = new AlertDialog.Builder(requireContext())
                     .setTitle(R.string.trash_delete_confirm_title)
                     .setMessage(getString(R.string.trash_delete_confirm_message, item.originalName))
                     .setPositiveButton(R.string.trash_delete_permanently, (d, w) -> {
@@ -202,5 +205,15 @@ public class TrashFragment extends Fragment {
         });
 
         trashItemsContainer.addView(itemView);
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        // Offenen Bestätigungsdialog schließen (sonst WindowLeak bei Rotation)
+        if (activeDialog != null) {
+            activeDialog.dismiss();
+            activeDialog = null;
+        }
     }
 }

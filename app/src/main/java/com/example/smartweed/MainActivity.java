@@ -72,8 +72,15 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // Papierkorb-Aufbewahrungsfrist (30 Tage) beim App-Start durchsetzen —
-        // nicht erst, wenn der Nutzer den Papierkorb öffnet
-        new Thread(() -> new TrashManager(this).autoCleanup()).start();
+        // nicht erst, wenn der Nutzer den Papierkorb öffnet.
+        // Application-Context statt this: Der Thread würde die Activity sonst
+        // während des Cleanups festhalten (transienter Leak bei Rotation).
+        // Nur beim ECHTEN Kaltstart (savedInstanceState == null): Rotation und
+        // Sprachwechsel (recreate()) müssen den Lauf nicht wiederholen.
+        if (savedInstanceState == null) {
+            final android.content.Context appCtx = getApplicationContext();
+            new Thread(() -> new TrashManager(appCtx).autoCleanup()).start();
+        }
     }
 
     @Override

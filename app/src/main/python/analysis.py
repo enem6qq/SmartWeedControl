@@ -1,6 +1,6 @@
 # app/src/main/python/analysis.py
 #
-# Bildanalyse für SmartWeedControl (v1.5)
+# Bildanalyse für SmartWeedControl (v1.6)
 #
 # Ablauf: Die App analysiert jedes Bild einzeln (analyze_image) und fasst
 # anschließend alle Vorher-/Nachher-Bilder zu einer Gruppen-Auswertung zusammen
@@ -141,7 +141,17 @@ def _exg_otsu_mask(bgr):
         als Pflanze geteilt wird.
       - vegetationsREICH: Ist fast das ganze Bild grün-dominant, würde Otsu
         den Schwellwert MITTEN in die Vegetation legen und die Bedeckung
-        halbieren — dann zählt direkt die EXG_MIN-Maske."""
+        halbieren — dann zählt direkt die EXG_MIN-Maske.
+
+    Bekannte Grenze (bewusst NICHT "gefixt"): Bei 50-84 % Bewuchs mit sehr
+    breiter ExG-Verteilung (starke Sonne/Schatten-Kontraste im Bestand) kann
+    Otsu die Schwelle in die Vegetation legen und die Bedeckung unterschätzen.
+    Ein Fallback auf die EXG_MIN-Maske ist hier KEINE Option: Auf den 24
+    validierten Feldbildern schneidet Otsu regulär 30-70 % der ExG-positiven
+    Pixel weg (grünstichiger Boden/Moos knapp über EXG_MIN) — auch bei
+    Grün-Anteilen über 50 %. Der pathologische Fall ist metrisch nicht vom
+    Feld-Normalfall unterscheidbar; ein Guard würde die validierte Messung
+    auf echten Bildern massiv verfälschen (z. B. feld_08: 10 % -> 66 %)."""
     f = bgr.astype(np.float32)
     b, g, r = f[:, :, 0], f[:, :, 1], f[:, :, 2]
     s = b + g + r
@@ -193,35 +203,52 @@ def _coverage_percent(mask):
 def _weed_filter_mask(filtered_mask):
     """Entfernt kleine, kompakte Objekte (typisches Unkraut) aus der Maske.
 
-    Zwei bewusste Design-Punkte (beide waren früher fehlerhaft):
-    - Die Originalmaske wird GEFILTERT statt behaltene Konturen neu zu zeichnen:
-      cv2.drawContours(..., FILLED) hatte alle Boden-Löcher innerhalb einer
-      Pflanze mit ausgemalt und die Bedeckung so massiv überschätzt
-      (gemessen: Ringmaske 20 % -> 44 %). Jetzt werden nur die als Unkraut
-      erkannten Komponenten aus der Maske gelöscht — Löcher bleiben Löcher.
+    Bewusste Design-Punkte (alle waren früher fehlerhaft):
+    - Gelöscht wird über die KOMPONENTEN-LABELS, nicht über gefüllte Konturen:
+      cv2.drawContours(..., FILLED) auf der Außenkontur malt auch die Löcher
+      einer Unkraut-Komponente aus — ein separates Objekt IM Loch (das selbst
+      als Kultur klassifiziert wurde) wurde dadurch mitgelöscht. Über die
+      Labels werden exakt die Pixel der Unkraut-Komponenten entfernt; Löcher
+      und darin liegende Fremdobjekte bleiben unangetastet.
+    - Flächen sind echte PIXELflächen (CC_STAT_AREA), nicht cv2.contourArea
+      der Außenkontur: Letztere zählt Löcher mit — ring-/löchrige Objekte
+      wurden systematisch zu groß bewertet (Ring r=80/Loch r=65: Kontur
+      ~19.9k vs. real ~6.8k px) und verzerrten auch die Referenzfläche.
     - Referenzfläche ist der FLÄCHENGEWICHTETE Median (die Komponentengröße,
       oberhalb derer die Hälfte der gesamten Pflanzenfläche liegt) statt des
       einfachen Median: Stellt Unkraut die zahlenmäßige Mehrheit der
       Komponenten, war der einfache Median selbst eine Unkrautgröße und der
-      Filter entfernte gar nichts — ausgerechnet bei hohem Unkrautdruck."""
-    contours, hierarchy = cv2.findContours(filtered_mask.copy(), cv2.RETR_CCOMP,
+      Filter entfernte gar nichts — ausgerechnet bei hohem Unkrautdruck.
+
+    Bekannte Grenze: Der flächengewichtete Median schützt nur gegen die
+    zahlenmäßige Unkraut-Mehrheit. Stellt Unkraut >50 % der PflanzenFLÄCHE,
+    wird die Referenz selbst eine Unkrautgröße und der Filter faktisch
+    wirkungslos (Ergebnis nähert sich Modus A). Für die Kernfrage des
+    Projekts (Kultur-CSC) ist Modus C zuständig, nicht diese Heuristik."""
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(filtered_mask,
+                                                                    connectivity=8)
+    contours, hierarchy = cv2.findContours(filtered_mask, cv2.RETR_CCOMP,
                                            cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
+    if not contours or num_labels <= 1:
         return np.zeros_like(filtered_mask)
 
     # Nur Außenkonturen betrachten (RETR_CCOMP: Ebene 0 = Objektrand,
     # Ebene 1 = Lochrand). Anders als RETR_EXTERNAL erfasst das auch
     # Objekte, die innerhalb des Lochs eines anderen Objekts liegen.
+    # Konturpunkte liegen AUF der Komponente -> Label direkt ablesbar.
     outer = [cnt for idx, cnt in enumerate(contours)
              if hierarchy is None or hierarchy[0][idx][3] < 0]
     if not outer:
         return np.zeros_like(filtered_mask)
 
-    areas, form_factors = [], []
+    comp_labels, areas, form_factors = [], [], []
     for cnt in outer:
-        a = cv2.contourArea(cnt)
+        x, y = int(cnt[0][0][0]), int(cnt[0][0][1])
+        lbl = int(labels[y, x])
+        a = float(stats[lbl, cv2.CC_STAT_AREA]) if lbl > 0 else 0.0
         p = cv2.arcLength(cnt, True)
         ff = (p ** 2) / (4.0 * np.pi * a) if (a > 0 and p > 0) else float("inf")
+        comp_labels.append(lbl)
         areas.append(a)
         form_factors.append(ff)
 
@@ -235,12 +262,17 @@ def _weed_filter_mask(filtered_mask):
     ref_area = float(sorted_areas[int(np.searchsorted(cum, total / 2.0))])
     size_threshold = WEED_SIZE_FRACTION * ref_area
 
-    # Unkraut-Komponenten aus der ORIGINALMASKE löschen (Löcher unangetastet)
-    weed_paint = np.zeros_like(filtered_mask)
-    for idx, cnt in enumerate(outer):
-        if (areas[idx] < size_threshold) and (form_factors[idx] < WEED_FORM_FACTOR_THRESHOLD):
-            cv2.drawContours(weed_paint, [cnt], -1, 255, cv2.FILLED)
-    return cv2.bitwise_and(filtered_mask, cv2.bitwise_not(weed_paint))
+    # Exakt die Pixel der Unkraut-Komponenten aus der Maske löschen
+    weed_ids = [comp_labels[idx] for idx in range(len(outer))
+                if comp_labels[idx] > 0
+                and (areas[idx] < size_threshold)
+                and (form_factors[idx] < WEED_FORM_FACTOR_THRESHOLD)]
+    if not weed_ids:
+        return filtered_mask.copy()
+    weed_pixels = np.isin(labels, weed_ids)
+    result = filtered_mask.copy()
+    result[weed_pixels] = 0
+    return result
 
 
 # -------------------------------
@@ -291,9 +323,12 @@ def _detect_rows_oriented(plant_mask):
     padded = cv2.copyMakeBorder(plant_mask, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=0)
     ph, pw = padded.shape
 
+    # INTER_AREA statt INTER_NEAREST: dichteerhaltend — dünne Reihen (<1-2 px
+    # nach Skalierung) würden bei Nearest-Neighbor aliasen oder streckenweise
+    # verschwinden und das Winkel-Scoring verfälschen.
     scale = 400.0 / max(ph, pw)
     small = cv2.resize(padded, (max(1, int(pw * scale)), max(1, int(ph * scale))),
-                       interpolation=cv2.INTER_NEAREST)
+                       interpolation=cv2.INTER_AREA)
     sh, sw = small.shape
 
     def profile_score(angle):
@@ -358,23 +393,63 @@ def _detect_rows_oriented(plant_mask):
     if len(local_max) == 0:
         return False, None, {"angle": round(float(best_angle), 1),
                              "reason": "no_periodic_peak"}
-    best_local = local_max[int(np.argmax(seg_ac[local_max]))]
-    lag = lo + int(best_local)
+
+    # Prominenz eines Peaks: Ein echtes Reihenraster erzeugt tiefe Täler
+    # zwischen den AC-Peaks; Rauschwellen auf einer glatt abfallenden Kurve
+    # (breite Vegetationswolke) haben nur minimale Einbuchtungen.
+    def peak_prominence(lag):
+        half = max(5, lag // 2)
+        left = ac[max(lo, lag - half):lag]
+        right = ac[lag + 1:min(hi, lag + half + 1)]
+        return float(ac[lag] - max(left.min() if len(left) else ac[lag],
+                                   right.min() if len(right) else ac[lag]))
+
+    # Den KLEINSTEN Peak über den Schwellen wählen, NICHT das globale argmax:
+    # Die unverzerrte Normierung (Division durch m-L) hebt bei sauberen
+    # periodischen Mustern die Harmonischen (2L, 3L, ...) leicht ÜBER das
+    # Fundamental — ein argmax rastete dort ein, halbierte/drittelte die
+    # Reihenzahl und zählte die Kultur zwischen den zu weiten Bändern als
+    # Unkraut (gemessen: ideales 8-Reihen-Feld -> Periode 2L, 50 % der
+    # Kulturpixel außerhalb der Bänder). Harmonische bestehen dieselben
+    # Schwellen wie das Fundamental; das Fundamental ist aber stets der
+    # kleinste gültige Peak.
+    candidates = [lo + int(i) for i in local_max]
+    passing = [L for L in candidates
+               if float(ac[L]) >= ROW_MIN_STRENGTH
+               and peak_prominence(L) >= ROW_MIN_PROMINENCE]
+    if not passing:
+        best = candidates[int(np.argmax(ac[np.asarray(candidates)]))]
+        return False, None, {"angle": round(float(best_angle), 1),
+                             "period": int(best),
+                             "strength": round(float(ac[best]), 3),
+                             "prominence": round(peak_prominence(best), 3)}
+    lag = int(min(passing))
+
+    # Subharmonische Gegenprüfung: Liegt der ECHTE Reihenabstand UNTERHALB des
+    # Suchfensters (mehr als ROW_MAX_ROWS Reihen im Bild bzw. Abstand unter
+    # ROW_MIN_LAG), wäre jeder Peak im Fenster nur eine Harmonische. Früher
+    # wurde die dann mit hoher Konfidenz akzeptiert (gemessen: 20 Reihen im
+    # Abstand 60 px -> Periode 360, 45 % der Kultur als Unkraut) — jetzt wird
+    # ehrlich abgelehnt (Rückfall auf Gesamtbedeckung). Ein AC-Peak bei L/k
+    # entsteht nur durch echte Struktur im Abstand L/k, nie durch ein reines
+    # L-Raster (dort liegen zwischen den Peaks Täler).
+    for k in (2, 3, 4):
+        cand = int(round(lag / float(k)))
+        if cand < 8 or cand >= lo:
+            continue
+        win = max(2, int(0.08 * cand))
+        w_lo, w_hi = max(1, cand - win), min(len(ac) - 1, cand + win + 1)
+        c = w_lo + int(np.argmax(ac[w_lo:w_hi]))
+        is_peak = 0 < c < len(ac) - 1 and ac[c] > ac[c - 1] and ac[c] >= ac[c + 1]
+        if is_peak and float(ac[c]) >= 0.5 * float(ac[lag]):
+            return False, None, {"angle": round(float(best_angle), 1),
+                                 "period": int(c),
+                                 "reason": "rows_too_dense"}
+
     strength = float(ac[lag])
-
-    # Prominenz des Peaks: Ein echtes Reihenraster erzeugt tiefe Täler zwischen
-    # den AC-Peaks; Rauschwellen auf einer glatt abfallenden Kurve (breite
-    # Vegetationswolke) haben nur minimale Einbuchtungen.
-    half = max(5, lag // 2)
-    left = ac[max(lo, lag - half):lag]
-    right = ac[lag + 1:min(hi, lag + half + 1)]
-    prominence = float(ac[lag] - max(left.min() if len(left) else ac[lag],
-                                     right.min() if len(right) else ac[lag]))
-
+    prominence = peak_prominence(lag)
     info = {"angle": round(float(best_angle), 1), "period": int(lag),
             "strength": round(strength, 3), "prominence": round(prominence, 3)}
-    if strength < ROW_MIN_STRENGTH or prominence < ROW_MIN_PROMINENCE:
-        return False, None, info
 
     # Phase: Verschiebung mit der höchsten aufsummierten Vegetation auf dem Raster
     origin = nz[0]
@@ -385,7 +460,8 @@ def _detect_rows_oriented(plant_mask):
     band_rot = np.zeros((ph, pw), np.uint8)
     pos = origin + best_phase
     n_rows = 0
-    while pos < nz[-1]:
+    # <= statt <: eine Reihe exakt am Profilende bekommt sonst kein Band
+    while pos <= nz[-1]:
         cv2.rectangle(band_rot, (max(0, pos - band_hw), 0),
                       (min(pw - 1, pos + band_hw), ph - 1), 255, -1)
         pos += lag
@@ -399,15 +475,20 @@ def _detect_rows_oriented(plant_mask):
 
 
 def _row_overlay(bgr, crop_mask, weed_mask):
-    """Anschauliches Overlay: Kulturpflanze grün, Unkraut rot eingefärbt."""
-    ov = bgr.copy().astype(np.float32)
-    green = np.array([60, 220, 60], np.float32)   # BGR
-    red   = np.array([50, 50, 230], np.float32)
-    cm = crop_mask[..., None] > 0
-    wm = weed_mask[..., None] > 0
-    ov = np.where(cm, 0.45 * ov + 0.55 * green, ov)
-    ov = np.where(wm, 0.45 * ov + 0.55 * red, ov)
-    return np.clip(ov, 0, 255).astype(np.uint8)
+    """Anschauliches Overlay: Kulturpflanze grün, Unkraut rot eingefärbt.
+
+    Bewusst in uint8 gerechnet (addWeighted + boolesche Zuweisung) statt über
+    float32-Vollbilder: Bei 1600er-Kantenlänge sparte das ~70-90 MB transiente
+    Zwischenbilder — relevant auf Low-RAM-Geräten."""
+    ov = bgr.copy()
+    for mask, color in ((crop_mask, (60, 220, 60)),    # BGR: grün
+                        (weed_mask, (50, 50, 230))):   # BGR: rot
+        layer = np.empty_like(bgr)
+        layer[:] = color
+        blended = cv2.addWeighted(bgr, 0.45, layer, 0.55, 0.0)
+        sel = mask > 0
+        ov[sel] = blended[sel]
+    return ov
 
 
 # -------------------------------
@@ -553,7 +634,7 @@ def _mean_of(items, key):
 
 def _build_overview(before_items, after_items, out_dir):
     """Übersichtsbild: obere Zeile alle Vorher-Originale, untere Zeile Nachher."""
-    def strip(items, label):
+    def strip(items, label_fmt):
         imgs = []
         for it in items:
             p = it.get("outputs", {}).get("original")
@@ -568,12 +649,15 @@ def _build_overview(before_items, after_items, out_dir):
         for im in imgs[1:]:
             parts.extend([gap, im])
         row = np.concatenate(parts, axis=1)
+        # Beschriftung zählt die tatsächlich ANGEZEIGTEN Bilder — nicht
+        # lesbare Originale wurden oben übersprungen
+        label = label_fmt.format(len(imgs))
         cv2.putText(row, label, (14, 34), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 0), 5)
         cv2.putText(row, label, (14, 34), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
         return row
 
-    top = strip(before_items, f"Vorher ({len(before_items)})")
-    bottom = strip(after_items, f"Nachher ({len(after_items)})")
+    top = strip(before_items, "Vorher ({})")
+    bottom = strip(after_items, "Nachher ({})")
     if top is None and bottom is None:
         return None
     rows = [r for r in (top, bottom) if r is not None]
@@ -601,7 +685,9 @@ def build_group_summary(items_json, out_dir):
     after = [i for i in items if i.get("tag") == "after"]
 
     def group_avg(group):
-        return {
+        # Nicht berechenbare Mittelwerte werden WEGGELASSEN statt None gesetzt
+        # (JSON-Kontrakt: kein null — siehe Kommentar am result-Objekt)
+        avg = {
             "bw": _mean_of(group, "coverage_bw_percent"),
             "filtered": _mean_of(group, "coverage_filtered_percent"),
             "weedfiltered": _mean_of(group, "coverage_weedfiltered_percent"),
@@ -609,6 +695,7 @@ def build_group_summary(items_json, out_dir):
             "weed": _mean_of(group, "coverage_weed_percent"),
             "brightness": _mean_of(group, "brightness"),
         }
+        return {k: v for k, v in avg.items() if v is not None}
 
     avg_b = group_avg(before)
     avg_a = group_avg(after)
@@ -649,30 +736,28 @@ def build_group_summary(items_json, out_dir):
 
     overview_path = _build_overview(before, after, out_dir)
 
+    # Kontrakt Python->Java: Optionale Schlüssel werden durchgängig WEGGELASSEN
+    # statt auf None/null gesetzt — Androids JSONObject.optString würde aus
+    # einem JSON-null den String "null" machen; optDouble/optBoolean verhalten
+    # sich bei fehlendem Schlüssel identisch zu ihrem Default.
+    deltas = {k: delta(k) for k in ("bw", "filtered", "weedfiltered", "crop", "weed")}
     result = {
         "mode": "group",
         "count_before": len(before),
         "count_after": len(after),
         "weed_filter": any("coverage_weedfiltered_percent" in i for i in items),
         "row_mode": row_mode,
-        "rows_detected": rows_detected,
         "brightness_warning": brightness_warning,
         "brightness_spread_warning": brightness_spread_warning,
         "out_dir": out_dir,
         "avg_before": avg_b,
         "avg_after": avg_a,
-        "delta": {
-            "bw": delta("bw"),
-            "filtered": delta("filtered"),
-            "weedfiltered": delta("weedfiltered"),
-            "crop": delta("crop"),
-            "weed": delta("weed"),
-        },
-        # Schlüssel weglassen statt None: Androids JSONObject.optString würde
-        # aus einem JSON-null den String "null" machen
+        "delta": {k: v for k, v in deltas.items() if v is not None},
         "combo": {"overview": overview_path} if overview_path else {},
         "items": items,
     }
+    if rows_detected is not None:
+        result["rows_detected"] = rows_detected
     print(f"[PY] group summary: {len(before)} vorher / {len(after)} nachher, "
           f"rows={rows_detected}, bright_warn={brightness_warning}, "
           f"spread_warn={brightness_spread_warning}")

@@ -85,28 +85,44 @@ public class AnalysisFragment extends Fragment {
 
     // === Multi-Picker ===
     private final ActivityResultLauncher<String[]> pickBeforeImages =
-            registerForActivityResult(new OpenMultipleImagesInSmartWeedDir(), uris -> {
-                beforeUris.clear();
-                if (uris != null) {
-                    for (Uri u : uris) {
-                        takePersistable(u);
-                        beforeUris.add(u);
-                    }
-                }
-                renderSelectedImages(true);
-            });
+            registerForActivityResult(new OpenMultipleImagesInSmartWeedDir(),
+                    uris -> applyPickedUris(uris, true));
 
     private final ActivityResultLauncher<String[]> pickAfterImages =
-            registerForActivityResult(new OpenMultipleImagesInSmartWeedDir(), uris -> {
-                afterUris.clear();
-                if (uris != null) {
-                    for (Uri u : uris) {
-                        takePersistable(u);
-                        afterUris.add(u);
-                    }
-                }
-                renderSelectedImages(false);
-            });
+            registerForActivityResult(new OpenMultipleImagesInSmartWeedDir(),
+                    uris -> applyPickedUris(uris, false));
+
+    private void applyPickedUris(List<Uri> uris, boolean isBefore) {
+        // Abbruch liefert eine LEERE Liste (nicht null) — die bestehende
+        // Auswahl muss dann erhalten bleiben. Vorher stand clear() VOR der
+        // Prüfung: Picker öffnen + Zurück drücken löschte die Auswahl.
+        if (uris == null || uris.isEmpty()) return;
+        List<Uri> target = isBefore ? beforeUris : afterUris;
+        List<Uri> old = new ArrayList<>(target);
+        target.clear();
+        for (Uri u : uris) {
+            takePersistable(u);
+            target.add(u);
+        }
+        releaseUnusedPersistables(old);
+        renderSelectedImages(isBefore);
+    }
+
+    /** Gibt persistierte URI-Grants frei, die in keiner Auswahl mehr vorkommen —
+     *  Android deckelt die Grants pro App (128 vor API 30, 512 danach); ohne
+     *  Freigabe schlagen neue Grants bei intensiver Langzeitnutzung fehl. */
+    private void releaseUnusedPersistables(List<Uri> removed) {
+        for (Uri u : removed) {
+            if (beforeUris.contains(u) || afterUris.contains(u)) continue;
+            if (!"content".equals(u.getScheme())) continue;
+            try {
+                requireContext().getContentResolver().releasePersistableUriPermission(
+                        u, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (Exception e) {
+                Log.w(TAG, "releasePersistableUriPermission fehlgeschlagen: " + u);
+            }
+        }
+    }
 
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
@@ -135,8 +151,13 @@ public class AnalysisFragment extends Fragment {
             afterUris.clear();
             if (bList != null) for (String s : bList) beforeUris.add(Uri.parse(s));
             if (aList != null) for (String s : aList) afterUris.add(Uri.parse(s));
-        } else if (getArguments() != null && getArguments().getString("imageDir") != null) {
-            // Session geöffnet: Bilder aus vorher/ und nachher/ direkt vorladen
+        } else if (getArguments() != null && getArguments().getString("imageDir") != null
+                && beforeUris.isEmpty() && afterUris.isEmpty()) {
+            // Session geöffnet: Bilder aus vorher/ und nachher/ direkt vorladen.
+            // Nur bei LEERER Auswahl: Beim Zurückkehren von der Ergebnisseite
+            // läuft onViewCreated erneut (savedInstanceState == null, Argumente
+            // unverändert gesetzt) — ohne den Guard würde eine manuell
+            // getroffene Bildauswahl durch die Session-Ordner-Bilder ersetzt.
             preloadSessionImages(new File(imageDirPath));
         }
 
@@ -207,7 +228,22 @@ public class AnalysisFragment extends Fragment {
             }
             String analyseTimestamp = new SimpleDateFormat("HH-mm-ss", Locale.US).format(new Date());
             File outDir = new File(sessionDir, SessionStore.ANALYSIS_PREFIX + analyseTimestamp);
-            if (!outDir.exists()) outDir.mkdirs();
+            // Kollisionsschutz: Der Ordnername trägt kein Datum — eine erneute
+            // Analyse derselben Session zur exakt gleichen Uhrzeit (Sekunde)
+            // würde sonst in denselben Ordner schreiben und die alten
+            // Ergebnisse überschreiben (feste Dateinamen wie uebersicht_*.jpg).
+            int suffix = 2;
+            while (outDir.exists()) {
+                outDir = new File(sessionDir,
+                        SessionStore.ANALYSIS_PREFIX + analyseTimestamp + "_" + suffix++);
+            }
+            if (!outDir.mkdirs()) {
+                Toast.makeText(requireContext(),
+                        getString(R.string.error_analysis_failed, outDir.getName()),
+                        Toast.LENGTH_LONG).show();
+                analysisVM.running.setValue(false);
+                return;
+            }
             analysisVM.outDir.setValue(outDir.getAbsolutePath());
 
             nav.navigate(R.id.action_AnalysisFragment_to_SummaryFragment);
@@ -338,7 +374,13 @@ public class AnalysisFragment extends Fragment {
                 PyObject summary = module.callAttr("build_group_summary",
                         items.toString(), outDir.getAbsolutePath());
                 final String json = summary.toString();
-                Log.i(TAG, "analysis result: " + json);
+                // Volles Ergebnis-JSON (inkl. aller Ausgabepfade) nur im
+                // Debug-Build loggen — im Release reicht die Erfolgsmeldung
+                if (BuildConfig.DEBUG) {
+                    Log.i(TAG, "analysis result: " + json);
+                } else {
+                    Log.i(TAG, "analysis finished, " + items.length() + " items");
+                }
 
                 // Nur das fertige Übersichtsbild der Galerie melden — Masken und
                 // Einzelbilder liegen versteckt im details/-Unterordner (.nomedia).
@@ -357,7 +399,13 @@ public class AnalysisFragment extends Fragment {
                 analysisVM.error.postValue(String.format(errPython, firstLine(pyEx.getMessage())));
                 analysisVM.running.postValue(false);
                 cleanupFailedOutDir(outDir);
-            } catch (Exception e) {
+            } catch (Throwable e) {
+                // Bewusst Throwable statt Exception: Ein OutOfMemoryError (bei
+                // vielen 12-MP-Bildern realistisch) ließe sonst running dauerhaft
+                // auf true stehen — der Doppelstart-Guard blockierte dann jede
+                // weitere Analyse bis zum App-Neustart und die Ergebnisseite
+                // zeigte endlos "Analyse läuft".
+                Log.e(TAG, "Analyse fehlgeschlagen", e);
                 analysisVM.error.postValue(String.format(errAnalysis, firstLine(e.getMessage())));
                 analysisVM.running.postValue(false);
                 cleanupFailedOutDir(outDir);
@@ -414,6 +462,12 @@ public class AnalysisFragment extends Fragment {
         File outFile = new File(context.getCacheDir(), nameHint);
         try (InputStream in = context.getContentResolver().openInputStream(uri);
              OutputStream out = new FileOutputStream(outFile)) {
+            if (in == null) {
+                // openInputStream darf laut Vertrag null liefern (Provider weg,
+                // Grant abgelaufen) — ohne diese Prüfung gäbe es nur eine
+                // nichtssagende NullPointerException in der Fehlermeldung
+                throw new IOException("Bild nicht mehr lesbar: " + uri);
+            }
             byte[] buf = new byte[8192];
             int n;
             while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
@@ -451,12 +505,21 @@ public class AnalysisFragment extends Fragment {
             setVisibility(container, View.GONE);
         }
 
-        // Single-Preview Bild/Name befüllen bei genau 1 Bild
+        // Single-Preview Bild/Name befüllen bei genau 1 Bild.
+        // Glide statt setImageURI: setImageURI dekodiert das komplette Bild
+        // synchron auf dem UI-Thread (12 MP ≈ 48 MB) — Frame-Freeze und
+        // OOM-Risiko; Glide sampelt asynchron auf die View-Größe herunter.
         if (count == 1) {
             Uri u = uris.get(0);
-            single.setImageURI(u);
+            Glide.with(this)
+                    .load(u)
+                    .diskCacheStrategy(DiskCacheStrategy.NONE)
+                    .skipMemoryCache(true)
+                    .fitCenter()
+                    .into(single);
             nameView.setText(getDisplayName(u));
         } else if (count == 0) {
+            Glide.with(this).clear(single); // laufende Glide-Ladung abbrechen
             single.setImageDrawable(null);
             nameView.setText(R.string.no_image_selected);
         }

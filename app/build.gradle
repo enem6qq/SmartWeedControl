@@ -21,8 +21,8 @@ android {
         applicationId "de.smartweedcontrol.app"
         minSdk 28
         targetSdk 35
-        versionCode 6
-        versionName "1.5"
+        versionCode 7
+        versionName "1.6"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
@@ -51,8 +51,11 @@ android {
 
                 install "opencv-python-headless==4.5.1.48"
 
-                // NumPy NICHT pinnen: wird automatisch als passendes Wheel mit installiert
-                // (Chaquopy-Repo liefert passende numpy-Wheels für cp38).
+                // NumPy exakt auf den CI-Stand pinnen (requirements-ci.txt):
+                // Die pytest-Suite validiert genau diese Version — ohne Pin
+                // wäre die Übereinstimmung zwischen APK und CI nur Zufall
+                // (Chaquopy zöge die jeweils neueste cp38-numpy).
+                install "numpy==1.19.5"
             }
         }
     }

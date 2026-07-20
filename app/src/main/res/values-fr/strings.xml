@@ -34,7 +34,10 @@
     <string name="session_delete_confirm_title">Déplacer vers la corbeille ?</string>
     <string name="session_delete_action">Vers la corbeille</string>
     <string name="session_delete_confirm_message">Toutes les images de la session \"%1$s\" seront déplacées vers la corbeille.</string>
-    <string name="session_deleted">%1$d image(s) déplacée(s) vers la corbeille</string>
+    <plurals name="session_deleted">
+        <item quantity="one">%1$d image déplacée vers la corbeille</item>
+        <item quantity="other">%1$d images déplacées vers la corbeille</item>
+    </plurals>
     <string name="btn_discard_analysis">Supprimer cette analyse</string>
     <string name="analysis_discard_confirm_message">Les images de résultat générées seront déplacées vers la corbeille.</string>
 
@@ -86,14 +89,20 @@
     <string name="trash_empty">Vider la corbeille</string>
     <string name="trash_empty_state">La corbeille est vide</string>
     <string name="trash_no_items">Aucun élément dans la corbeille</string>
-    <string name="trash_item_count">%1$d élément(s) dans la corbeille</string>
+    <plurals name="trash_item_count">
+        <item quantity="one">%1$d élément dans la corbeille</item>
+        <item quantity="other">%1$d éléments dans la corbeille</item>
+    </plurals>
     <string name="trash_restore">Restaurer</string>
     <string name="trash_delete_permanently">Supprimer définitivement</string>
     <string name="trash_deleted_on">Supprimé le %1$s</string>
     <string name="trash_size_and_days">%1$s • Encore %2$d jours</string>
     <string name="trash_already_empty">La corbeille est déjà vide</string>
     <string name="trash_empty_confirm_title">Vider la corbeille ?</string>
-    <string name="trash_empty_confirm_message">Les %1$d éléments seront supprimés définitivement. Cette action est irréversible.</string>
+    <plurals name="trash_empty_confirm_message">
+        <item quantity="one">%1$d élément sera supprimé définitivement. Cette action est irréversible.</item>
+        <item quantity="other">Les %1$d éléments seront supprimés définitivement. Cette action est irréversible.</item>
+    </plurals>
     <string name="trash_emptied">Corbeille vidée</string>
     <string name="trash_restore_confirm_title">Restaurer ?</string>
     <string name="trash_restore_confirm_message">\"%1$s\" sera restauré à son emplacement d\'origine.</string>

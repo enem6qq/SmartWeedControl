@@ -34,7 +34,10 @@
     <string name="session_delete_confirm_title">In den Papierkorb?</string>
     <string name="session_delete_action">In den Papierkorb</string>
     <string name="session_delete_confirm_message">Alle Bilder der Aufnahme \"%1$s\" werden in den Papierkorb verschoben.</string>
-    <string name="session_deleted">%1$d Bild(er) in den Papierkorb verschoben</string>
+    <plurals name="session_deleted">
+        <item quantity="one">%1$d Bild in den Papierkorb verschoben</item>
+        <item quantity="other">%1$d Bilder in den Papierkorb verschoben</item>
+    </plurals>
     <string name="btn_discard_analysis">Diese Analyse verwerfen</string>
     <string name="analysis_discard_confirm_message">Die erzeugten Ergebnisbilder werden in den Papierkorb verschoben.</string>
 
@@ -86,14 +89,20 @@
     <string name="trash_empty">Papierkorb leeren</string>
     <string name="trash_empty_state">Papierkorb ist leer</string>
     <string name="trash_no_items">Keine Elemente im Papierkorb</string>
-    <string name="trash_item_count">%1$d Element(e) im Papierkorb</string>
+    <plurals name="trash_item_count">
+        <item quantity="one">%1$d Element im Papierkorb</item>
+        <item quantity="other">%1$d Elemente im Papierkorb</item>
+    </plurals>
     <string name="trash_restore">Wiederherstellen</string>
     <string name="trash_delete_permanently">Endgültig löschen</string>
     <string name="trash_deleted_on">Gelöscht am %1$s</string>
     <string name="trash_size_and_days">%1$s • Noch %2$d Tage</string>
     <string name="trash_already_empty">Papierkorb ist bereits leer</string>
     <string name="trash_empty_confirm_title">Papierkorb leeren?</string>
-    <string name="trash_empty_confirm_message">Alle %1$d Elemente werden endgültig gelöscht. Dies kann nicht rückgängig gemacht werden.</string>
+    <plurals name="trash_empty_confirm_message">
+        <item quantity="one">%1$d Element wird endgültig gelöscht. Dies kann nicht rückgängig gemacht werden.</item>
+        <item quantity="other">Alle %1$d Elemente werden endgültig gelöscht. Dies kann nicht rückgängig gemacht werden.</item>
+    </plurals>
     <string name="trash_emptied">Papierkorb geleert</string>
     <string name="trash_restore_confirm_title">Wiederherstellen?</string>
     <string name="trash_restore_confirm_message">\"%1$s\" wird an den ursprünglichen Speicherort wiederhergestellt.</string>
