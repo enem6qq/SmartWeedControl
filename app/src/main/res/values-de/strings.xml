@@ -11,7 +11,6 @@
     <string name="summary_fragment_label">Ergebnisse</string>
     <string name="sessions_fragment_label">Meine Aufnahmen</string>
     <string name="next">Weiter</string>
-    <string name="previous">Zurück</string>
 
     <!-- Language Selection -->
     <string name="select_language">Sprache auswählen</string>
@@ -32,7 +31,6 @@
     <!-- Sessions-Übersicht -->
     <string name="sessions_empty">Noch keine Aufnahmen – mach auf der Kamera-Seite Vorher-/Nachher-Fotos.</string>
     <string name="session_photo_count">%1$d vorher · %2$d nachher</string>
-    <string name="session_open">Öffnen</string>
     <string name="session_delete_confirm_title">In den Papierkorb?</string>
     <string name="session_delete_action">In den Papierkorb</string>
     <string name="session_delete_confirm_message">Alle Bilder der Aufnahme \"%1$s\" werden in den Papierkorb verschoben.</string>
@@ -81,7 +79,6 @@
 
     <!-- Toast Messages -->
     <string name="language_changed">Sprache geändert</string>
-    <string name="please_restart">Bitte App neu starten für volle Wirkung</string>
 
     <!-- Trash / Papierkorb -->
     <string name="trash_title">Papierkorb</string>
@@ -105,19 +102,13 @@
     <string name="trash_delete_confirm_title">Endgültig löschen?</string>
     <string name="trash_delete_confirm_message">\"%1$s\" wird endgültig gelöscht. Dies kann nicht rückgängig gemacht werden.</string>
     <string name="trash_deleted_permanently">\"%1$s\" endgültig gelöscht</string>
-    <string name="trash_moved_to_trash">In den Papierkorb verschoben</string>
-    <string name="trash_move_failed">Fehler beim Löschen</string>
     <string name="btn_open_trash">Papierkorb</string>
 
     <!-- Laufzeit-Meldungen (Toasts / Status) -->
     <string name="toast_storage_permission_needed">Speicher-Berechtigung wird benötigt, um Bilder zu speichern.</string>
-    <string name="toast_allow_file_access">Bitte Dateizugriff erlauben, damit Bilder im Pictures-Ordner gespeichert werden.</string>
-    <string name="toast_storage_permission_for_results">Speicher-Berechtigung wird zum Speichern der Ergebnisse benötigt</string>
     <string name="toast_pick_before_after">Bitte Vorher- und Nachher-Bilder wählen</string>
     <string name="toast_analysis_started">Analyse gestartet …</string>
     <string name="toast_image_open_failed">Konnte Bild nicht öffnen.</string>
-    <string name="toast_media_access_denied">Bilder-Zugriff verweigert</string>
-    <string name="toast_storage_permission_save">Speicher-Berechtigung wird zum Speichern benötigt</string>
     <string name="toast_photo_saved">%1$s-Bild gespeichert in %2$s</string>
     <string name="toast_photo_save_error">Fehler beim Speichern</string>
     <string name="toast_image_imported">Bild importiert in %1$s: %2$s</string>
@@ -140,7 +131,6 @@
     <string name="csc_target_range">Zielbereich: %1$s–%2$s %%</string>
 
     <!-- Analyse-Einstellungen (Experten-Modus) -->
-    <string name="settings_title">Analyse-Einstellungen</string>
     <string name="settings_info">Experten-Einstellungen: Diese Werte beeinflussen die Bildanalyse und die Empfehlung. Nur ändern, wenn du weißt, was du tust.</string>
     <string name="settings_min_size">Minimale Objektgröße (px)</string>
     <string name="settings_h_low">Grünton – untere Grenze (0–179)</string>
@@ -153,16 +143,8 @@
     <string name="settings_invalid">Ungültiger Wert – bitte Eingaben prüfen</string>
 
     <!-- Login -->
-    <string name="login_button_pressed">Button wurde gedrückt</string>
-    <string name="login_json_empty">JSON-Datei ist leer oder fehlt!</string>
-    <string name="login_file_error">Fehler beim Lesen der Datei</string>
-    <string name="login_correct_password">Richtiges Passwort</string>
-    <string name="login_wrong_credentials">Falscher Benutzername oder Passwort</string>
-    <string name="login_json_error">Fehler beim Verarbeiten des JSON</string>
     <string name="btn_login">Anmelden</string>
-    <string name="label_username">Benutzername</string>
     <string name="label_password">Passwort</string>
-    <string name="hint_username">Benutzername eingeben</string>
     <string name="hint_password">Passwort eingeben</string>
 
 
@@ -181,4 +163,14 @@
     <string name="status_analysis_done_group">Analyse abgeschlossen (%1$d vorher / %2$d nachher).</string>
     <string name="progress_image">Analysiere Bild %1$d von %2$d …</string>
     <string name="import_target_title">Als Vorher- oder Nachher-Bild importieren?</string>
+
+    <!-- v1.4: Admin-Bereich -->
+    <string name="admin_login_title">Admin-Bereich</string>
+    <string name="admin_login_hint">Die Admin-Anmeldung schaltet die Experten-Einstellungen der Analyse frei. Die App selbst ist ohne Anmeldung voll nutzbar.</string>
+    <string name="admin_wrong_password">Falsches Passwort</string>
+    <string name="admin_login_success">Admin freigeschaltet</string>
+    <string name="admin_area_locked">Diese Experten-Einstellungen sind durch die Admin-Anmeldung geschützt. Ansehen ist möglich, Ändern erfordert die Anmeldung.</string>
+    <string name="admin_area_unlocked">Als Admin angemeldet – Einstellungen können geändert werden.</string>
+    <string name="btn_admin_login">Als Admin anmelden</string>
+    <string name="btn_admin_logout">Admin abmelden</string>
 </resources>

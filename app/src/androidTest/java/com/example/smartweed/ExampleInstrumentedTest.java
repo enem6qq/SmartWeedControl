@@ -19,8 +19,9 @@ import static org.junit.Assert.*;
 public class ExampleInstrumentedTest {
     @Test
     public void useAppContext() {
-        // Context of the app under test.
+        // Context of the app under test — getPackageName() liefert die
+        // applicationId aus build.gradle, nicht den Java-Namespace.
         Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        assertEquals("com.example.smartweed", appContext.getPackageName());
+        assertEquals("de.smartweedcontrol.app", appContext.getPackageName());
     }
 }

@@ -1,7 +1,6 @@
 package com.example.smartweed;
 
 import android.content.Context;
-import android.os.Environment;
 import android.util.Log;
 
 import org.json.JSONArray;
@@ -36,8 +35,7 @@ public class TrashManager {
 
     public TrashManager(Context context) {
         this.context = context.getApplicationContext();
-        File baseDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "SmartWeed");
-        trashDir = new File(baseDir, TRASH_DIR_NAME);
+        trashDir = new File(SessionStore.getBaseDir(this.context), TRASH_DIR_NAME);
         if (!trashDir.exists()) trashDir.mkdirs();
         metadataFile = new File(trashDir, METADATA_FILE);
     }
@@ -49,6 +47,13 @@ public class TrashManager {
         try {
             String trashName = System.currentTimeMillis() + "_" + file.getName();
             File trashFile = new File(trashDir, trashName);
+            // Eindeutigkeit sicherstellen: gleichnamige Dateien in derselben
+            // Millisekunde dürfen sich nicht gegenseitig überschreiben
+            int counter = 1;
+            while (trashFile.exists()) {
+                trashName = System.currentTimeMillis() + "_" + (counter++) + "_" + file.getName();
+                trashFile = new File(trashDir, trashName);
+            }
 
             if (copyFile(file, trashFile)) {
                 // Metadaten speichern

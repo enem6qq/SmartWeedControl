@@ -1,6 +1,6 @@
 # app/src/main/python/analysis.py
 #
-# Bildanalyse für SmartWeedControl (v1.2)
+# Bildanalyse für SmartWeedControl (v1.4)
 #
 # Ablauf: Die App analysiert jedes Bild einzeln (analyze_image) und fasst
 # anschließend alle Vorher-/Nachher-Bilder zu einer Gruppen-Auswertung zusammen
@@ -30,6 +30,8 @@ SV_MIN         = 40    # Mindest-Sättigung/-Helligkeit für "grün" (nur HSV-Me
 MIN_SIZE       = 50    # Komponenten kleiner als 50 px werden entfernt
 EXG_MIN        = 0.05  # ExG-Untergrenze: Grün muss dominieren (verhindert
                        # Fehl-Detektionen auf reinem Boden)
+EXG_UNIMODAL_FRACTION = 0.85  # ab diesem Grün-Anteil gilt das Bild als
+                              # vollflächig bewachsen -> Otsu überspringen
 
 METHOD_HSV = "hsv"
 METHOD_EXG = "exg"
@@ -51,6 +53,9 @@ WEED_SIZE_FRACTION = 0.25
 # Spaltenprofils gemessen (robuster als reine Peak-Abstände).
 ROW_MIN_COVERAGE   = 0.3    # Mindest-Bedeckung (%) — darunter keine Reihensuche
 ROW_MIN_STRENGTH   = 0.35   # Mindest-Autokorrelation am Reihenraster (0..1)
+ROW_MIN_PROMINENCE = 0.35   # Mindest-Prominenz des AC-Peaks: echte Reihenraster
+                            # haben tiefe Täler zwischen den Peaks (gemessen:
+                            # echte Reihen >= 0.68, Rausch-/Wolkenprofile <= 0.27)
 ROW_MAX_ROWS       = 15     # höchstens so viele Reihen im Bild (setzt Mindestabstand)
 ROW_MIN_LAG        = 40     # absoluter kleinster Reihenabstand (px)
 ROW_BAND_FRACTION  = 0.3    # Bandbreite um jede Reihe (Anteil des Reihenabstands)
@@ -119,16 +124,27 @@ def _hsv_mask(bgr, h_low, h_high):
 def _exg_otsu_mask(bgr):
     """Excess Green (auf normalisierten RGB-Werten) + Otsu-Schwellwert.
     Der Schwellwert passt sich jedem Bild automatisch an => robust gegen
-    Sonne/Wolken/Tageszeit. Zusätzliche Untergrenze EXG_MIN verhindert,
-    dass Otsu auf vegetationsfreien Bildern Bodenrauschen teilt."""
+    Sonne/Wolken/Tageszeit. Zwei Schutzmechanismen gegen Otsu-Fehltrennungen
+    auf (nahezu) unimodalen Histogrammen:
+      - vegetationsARM:  Untergrenze EXG_MIN verhindert, dass Bodenrauschen
+        als Pflanze geteilt wird.
+      - vegetationsREICH: Ist fast das ganze Bild grün-dominant, würde Otsu
+        den Schwellwert MITTEN in die Vegetation legen und die Bedeckung
+        halbieren — dann zählt direkt die EXG_MIN-Maske."""
     f = bgr.astype(np.float32)
     b, g, r = f[:, :, 0], f[:, :, 1], f[:, :, 2]
     s = b + g + r
     s[s == 0] = 1.0
     exg = 2.0 * g / s - r / s - b / s          # Wertebereich [-1..2]
+    positive = ((exg > EXG_MIN).astype(np.uint8)) * 255
+
+    # Nahezu vollflächige Vegetation: kein Boden-Modus vorhanden => Otsu wäre
+    # bedeutungslos und würde die Vegetationsverteilung selbst zerteilen.
+    if float((positive > 0).mean()) >= EXG_UNIMODAL_FRACTION:
+        return positive
+
     exg8 = np.clip((exg + 1.0) * 127.5, 0, 255).astype(np.uint8)
     _, otsu = cv2.threshold(exg8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    positive = ((exg > EXG_MIN).astype(np.uint8)) * 255
     return cv2.bitwise_and(otsu, positive)
 
 
@@ -252,11 +268,32 @@ def _detect_rows(plant_mask):
     if hi <= lo + 2:
         return False, None, {"reason": "profile_too_narrow"}
 
-    lag = lo + int(np.argmax(ac[lo:hi]))
+    # Nur ECHTE lokale Maxima der Autokorrelation zulassen: Bei nicht-periodischen
+    # Profilen (eine breite Vegetationswolke) fällt die Autokorrelation ab Lag 0
+    # monoton — das globale argmax läge dann am Rand lo mit hohem Restwert und
+    # würde ein Reihenraster erfinden. Ein Reihenraster erzeugt dagegen eine
+    # echte Spitze: ac[lag] > ac[lag-1] und ac[lag] >= ac[lag+1].
+    seg_ac = ac[lo:hi]
+    local_max = np.where((seg_ac[1:-1] > seg_ac[:-2]) & (seg_ac[1:-1] >= seg_ac[2:]))[0] + 1
+    if len(local_max) == 0:
+        return False, None, {"angle": round(float(best_angle), 1),
+                             "reason": "no_periodic_peak"}
+    best_local = local_max[int(np.argmax(seg_ac[local_max]))]
+    lag = lo + int(best_local)
     strength = float(ac[lag])
+
+    # Prominenz des Peaks: Ein echtes Reihenraster erzeugt tiefe Täler zwischen
+    # den AC-Peaks; Rauschwellen auf einer glatt abfallenden Kurve (breite
+    # Vegetationswolke) haben nur minimale Einbuchtungen.
+    half = max(5, lag // 2)
+    left = ac[max(lo, lag - half):lag]
+    right = ac[lag + 1:min(hi, lag + half + 1)]
+    prominence = float(ac[lag] - max(left.min() if len(left) else ac[lag],
+                                     right.min() if len(right) else ac[lag]))
+
     info = {"angle": round(float(best_angle), 1), "period": int(lag),
-            "strength": round(strength, 3)}
-    if strength < ROW_MIN_STRENGTH:
+            "strength": round(strength, 3), "prominence": round(prominence, 3)}
+    if strength < ROW_MIN_STRENGTH or prominence < ROW_MIN_PROMINENCE:
         return False, None, info
 
     # Phase: Verschiebung mit der höchsten aufsummierten Vegetation auf dem Raster
@@ -499,7 +536,15 @@ def build_group_summary(items_json, out_dir):
     row_mode = any("rows_detected" in i for i in items)
     rows_detected = None
     if row_mode:
-        rows_detected = all(i.get("rows_detected") for i in items if "rows_detected" in i)
+        # Feinere Aggregation statt all(): Reihen gelten je GRUPPE als erkannt,
+        # wenn die Mehrheit ihrer Bilder Reihen zeigt. Ein einzelner Ausreißer
+        # kippt so nicht mehr die gesamte Auswertung; die crop/weed-Mittelwerte
+        # stammen ohnehin nur aus den Bildern MIT erkannten Reihen (_mean_of
+        # überspringt fehlende Schlüssel).
+        def group_rows_ok(group):
+            flags = [bool(i.get("rows_detected")) for i in group if "rows_detected" in i]
+            return bool(flags) and sum(flags) * 2 >= len(flags)
+        rows_detected = group_rows_ok(before) and group_rows_ok(after)
 
     brightness_warning = False
     if avg_b.get("brightness") is not None and avg_a.get("brightness") is not None:

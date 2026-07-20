@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    name: Lint & Unit-Tests
+    name: Tests, Lint & APK
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -28,14 +28,32 @@ jobs:
       - name: Chaquopy buildPython konfigurieren
         run: echo "chaquopy.buildPython=$(which python)" > local.properties
 
+      # Golden-Image-Tests für die Bildanalyse (läuft ohne Android-Emulator)
+      - name: Python-Analyse-Tests (pytest)
+        run: |
+          pip install --quiet "numpy<2" opencv-python-headless pytest
+          PYTHONPATH=app/src/main/python pytest app/src/test/python/ -v
+
       - name: Gradle Cache
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Unit-Tests ausführen
+      - name: Java-Unit-Tests ausführen
         run: ./gradlew testDebugUnitTest --no-daemon
 
       - name: Android Lint
         run: ./gradlew lintDebug --no-daemon
+
+      # Baut das komplette APK inkl. Chaquopy/OpenCV-Packaging — genau der
+      # fehleranfälligste Schritt, der vorher nie in der CI lief.
+      - name: Debug-APK bauen
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Debug-APK hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartweedcontrol-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
 
       - name: Lint-Report hochladen
         if: always()

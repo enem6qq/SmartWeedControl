@@ -3,15 +3,11 @@ package com.example.smartweed;
 import android.Manifest;
 import android.app.Dialog;
 import android.content.Context;
-import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
-import android.provider.Settings;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
@@ -21,7 +17,6 @@ import android.widget.LinearLayout;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.content.ContextCompat;
 import androidx.navigation.NavController;
 import androidx.navigation.Navigation;
 import androidx.navigation.ui.AppBarConfiguration;
@@ -66,32 +61,18 @@ public class MainActivity extends AppCompatActivity {
         appBarConfiguration = new AppBarConfiguration.Builder(navController.getGraph()).build();
         NavigationUI.setupActionBarWithNavController(this, navController, appBarConfiguration);
 
-        // Android 11+: MANAGE_EXTERNAL_STORAGE anfordern, damit Bilder in /Pictures/SmartWeed/ liegen
-        requestStoragePermission();
+        // Nur Android 9 (API 28): WRITE_EXTERNAL_STORAGE für den Galerie-Export
+        // der Fotos. Ab Android 10 braucht die App KEINE Speicher-Berechtigung
+        // mehr (Session-Daten liegen im App-Speicher, Galerie-Export via MediaStore).
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P
+                && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED) {
+            writePermLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        }
 
         // Papierkorb-Aufbewahrungsfrist (30 Tage) beim App-Start durchsetzen —
         // nicht erst, wenn der Nutzer den Papierkorb öffnet
         new Thread(() -> new TrashManager(this).autoCleanup()).start();
-    }
-
-    private void requestStoragePermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Android 11+: MANAGE_EXTERNAL_STORAGE ueber Einstellungen anfordern
-            if (!Environment.isExternalStorageManager()) {
-                Toast.makeText(this,
-                        R.string.toast_allow_file_access,
-                        Toast.LENGTH_LONG).show();
-                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-                intent.setData(Uri.parse("package:" + getPackageName()));
-                startActivity(intent);
-            }
-        } else {
-            // Android 9-10: WRITE_EXTERNAL_STORAGE als Runtime-Permission anfordern
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                    != PackageManager.PERMISSION_GRANTED) {
-                writePermLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
-            }
-        }
     }
 
     @Override

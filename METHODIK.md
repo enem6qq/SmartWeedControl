@@ -33,6 +33,12 @@ Zwei Verfahren stehen zur Wahl (Analyse-Einstellungen → Segmentierung):
   `ExG = 2·g − r − b` auf normalisierten RGB-Kanälen, gefolgt von einem
   automatischen Otsu-Schwellwert. Der Schwellwert passt sich jedem Bild an
   und ist dadurch robust gegen wechselnde Beleuchtung (Sonne/Wolken/Tageszeit).
+  Zwei Schutzmechanismen sichern die unimodalen Grenzfälle ab, in denen Otsu
+  keine sinnvolle Trennung finden kann: Auf vegetationsfreien Bildern
+  verhindert eine ExG-Untergrenze Geister-Detektionen auf Bodenrauschen, und
+  auf (nahezu) vollflächig bewachsenen Bildern — wo Otsu den Schwellwert
+  mitten in die Vegetationsverteilung legen und die Bedeckung halbieren
+  würde — zählt direkt die ExG-Untergrenzen-Maske.
   Grundlage: Woebbecke et al. (1995), Meyer & Neto (2008) — der Standard-
   Vegetationsindex der Agrar-Bildanalyse und die im Businessplan genannte
   Zielmethodik.
@@ -59,11 +65,18 @@ und Komponenten unterhalb einer Mindestgröße (Standard 50 px) werden entfernt.
   - **Kultur-CSC** (Schaden an der Kulturpflanze, Zielband 8–12 %)
   - **Unkraut-Wirkungsgrad** (relative Abnahme des Unkrauts, je höher desto besser)
 
-  Damit keine feine Bodentextur als „Reihen alle paar Pixel" fehlinterpretiert
-  wird, muss der Reihenabstand realistisch sein (höchstens ~15 Reihen im Bild)
-  und die Autokorrelation eine Mindeststärke erreichen. Werden keine klaren
-  Reihen gefunden, fällt die Analyse transparent auf die Gesamtbedeckung
-  zurück (mit Hinweis in der App).
+  Drei Schutzkriterien verhindern Fehl-Erkennungen: Der Reihenabstand muss
+  realistisch sein (höchstens ~15 Reihen im Bild), der Autokorrelations-Peak
+  muss eine Mindeststärke erreichen **und** eine Mindest-**Prominenz** haben —
+  echte Reihenraster erzeugen tiefe Täler zwischen den Peaks, während
+  Rauschwellen auf einer glatt abfallenden Kurve (z. B. eine breite
+  Vegetationswolke ohne Reihen) nur minimale Einbuchtungen zeigen (gemessen:
+  echte Reihen ≥ 0,68 Prominenz, reihenlose Profile ≤ 0,27; Schwelle 0,35).
+  Werden keine klaren Reihen gefunden, fällt die Analyse transparent auf die
+  Gesamtbedeckung zurück (mit Hinweis in der App). Bei der Gruppen-Auswertung
+  gilt Mehrheitsentscheid je Gruppe: Ein einzelnes Bild ohne erkannte Reihen
+  kippt nicht die gesamte Auswertung; die Kultur-/Unkraut-Mittelwerte stammen
+  ausschließlich aus den Bildern mit erkannten Reihen.
 
 ## 4. Gruppen-Auswertung (mehrere Bilder)
 

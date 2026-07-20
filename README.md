@@ -34,31 +34,48 @@ gestriegelt werden, liegt er darüber, sollte die Intensität reduziert werden.
   Bildanzahl — Antippen öffnet die Session direkt in der Analyse, das
   Papierkorb-Symbol verschiebt sie (wiederherstellbar) in den Papierkorb
 - **Analyse-Einstellungen (Experten-Modus):** Grünton-Schwellen, minimale
-  Objektgröße und CSC-Zielband sind über das Menü → „Einstellungen"
-  anpassbar (z. B. für Feldtests mit anderen Kulturen)
+  Objektgröße, Segmentierungsverfahren und CSC-Zielband sind über das Menü →
+  „Einstellungen" anpassbar (z. B. für Feldtests mit anderen Kulturen).
+  Änderungen erfordern die **Admin-Anmeldung** (siehe unten) — Ansehen ist
+  für alle möglich, die App selbst läuft komplett ohne Anmeldung
 - **Papierkorb:** Gelöschte Bilder werden 30 Tage aufbewahrt und können
   wiederhergestellt werden
 - **Mehrsprachig:** Deutsch, Englisch und Französisch (umschaltbar über das Menü)
 
 ## Ablage der Bilder
 
-Eine „Session" entspricht einem Feldeinsatz. Alles zu einer Session liegt
-in einem gemeinsamen Ordner:
+Eine „Session" entspricht einem Feldeinsatz. Alle Arbeitsdaten liegen im
+**app-eigenen Speicher** (Scoped-Storage-konform, ohne Spezial-Berechtigungen):
 
 ```
-Pictures/SmartWeed/
+Android/data/de.smartweedcontrol.app/files/SmartWeed/
 └── 2026-07-07_18-58/          ← Session (lesbarer Zeitstempel)
     ├── vorher/                ← eigene Aufnahmen
     ├── nachher/
     └── Analyse_18-59-30/      ← Analyse-Ergebnis zur Session
-        ├── *_original_both.jpg / *_panel_both.jpg  (Vergleichsbilder)
-        └── details/           ← Masken & Einzelbilder (.nomedia,
-                                  in der Galerie ausgeblendet)
+        ├── uebersicht_vorher_nachher.jpg   (Vergleichsbild)
+        └── details/           ← Masken (PNG), Panels & Reihen-Overlays
 ```
 
-Der Galerie werden nur die eigenen Fotos und die fertigen Vergleichsbilder
-gemeldet — Zwischenergebnisse bleiben über den Datei-Manager und die App
-zugänglich, verstopfen aber nicht die Galerie.
+Damit Fotos und Ergebnisse wie gewohnt sichtbar sind, exportiert die App
+eigene Aufnahmen und das Analyse-Übersichtsbild **zusätzlich in die Galerie**
+(`Pictures/SmartWeed/…`) — auf Android 10+ ohne jede Berechtigung über die
+MediaStore-API, auf Android 9 über die klassische Speicher-Berechtigung.
+Hinweis: Beim Deinstallieren der App werden die Session-Daten im App-Speicher
+entfernt; die Galerie-Kopien bleiben erhalten.
+
+## Admin-Bereich
+
+Die Experten-Einstellungen sind durch eine Offline-Admin-Anmeldung geschützt,
+damit die Analyse-Parameter nicht versehentlich verstellt werden. Im APK
+liegt **kein Klartext-Passwort** — nur ein gesalzener SHA-256-Hash
+(`AdminAuth.java`). Passwort ändern:
+
+```bash
+printf 'SmartWeedControl.v14.salt:NEUES_PASSWORT' | sha256sum
+```
+
+und den Hex-Wert in `AdminAuth.ADMIN_HASH` eintragen.
 
 ## Technik
 
@@ -92,33 +109,33 @@ Danach normal in Android Studio öffnen und bauen, oder per CLI:
 
 ## Tests & CI
 
-Die CSC-Berechnung und die Empfehlungslogik stecken in der eigenständigen
-Klasse `CscCalculator` und sind mit JUnit getestet:
+- **Java:** CSC-Berechnung und Empfehlungslogik (`CscCalculator`) mit JUnit —
+  `./gradlew testDebugUnitTest`
+- **Python:** Golden-Image-Tests für Segmentierung, Reihen-Erkennung und
+  Gruppen-Auswertung (`app/src/test/python/`) —
+  `PYTHONPATH=app/src/main/python pytest app/src/test/python/`
 
-```bash
-./gradlew testDebugUnitTest
-```
+Bei jedem Push auf `main` und jedem Pull Request laufen über GitHub Actions
+(`.github/workflows/ci.yml`): Python-Tests, Java-Unit-Tests, Android Lint und
+ein kompletter **Debug-APK-Build** inkl. Chaquopy/OpenCV-Packaging. Das
+fertige APK hängt an jedem CI-Lauf als Artefakt `smartweedcontrol-debug-apk`
+zum Download.
 
-Bei jedem Push auf `main` und bei jedem Pull Request laufen die Unit-Tests
-und Android Lint automatisch über GitHub Actions (`.github/workflows/ci.yml`).
+## Testdaten
+
+`testdaten/feldbilder/` enthält 24 echte Feldfotos (Wintergetreide, frühes
+Stadium, Sonnenlicht), an denen die Segmentierung und Reihen-Erkennung
+kalibriert wurden (siehe [METHODIK.md](METHODIK.md) §5).
 
 ## Hinweise / bekannte Einschränkungen
 
-- Die App fordert auf Android 11+ `MANAGE_EXTERNAL_STORAGE` an, damit die
-  Analyse-Ergebnisse als normale Dateien unter `Pictures/SmartWeed/` liegen.
-  Für eine Veröffentlichung im Play Store müsste die Speicherung auf die
-  MediaStore-API umgestellt werden (Google lehnt diese Berechtigung für
-  normale Apps ab). Für Sideloading/Demos ist das unkritisch.
-- Der Login-Screen ist ein Demo-Feature: Die Zugangsdaten liegen unverschlüsselt
-  in `app/src/main/assets/pw.json` und der Login wird beim App-Start übersprungen
-  (`MainActivity` ist die Launcher-Activity).
 - Die Beschriftungen in den generierten Ergebnisbildern (z. B. „Vorher“,
   „Gefiltert“) sind fest auf Deutsch, da sie in `analysis.py` ins Bild
   gerendert werden.
-- **Methodik:** Die Pflanzensegmentierung nutzt aktuell eine HSV-Grünton-Schwelle
-  (Standard: H 35–85, per Einstellungen anpassbar). Der Businessplan nennt
-  ExG-/ExGR-Farbindizes als Zielmethodik — eine Umstellung sollte mit echten
-  Feldbildern validiert werden, bevor sie die HSV-Schwelle ersetzt.
+- **Methodik:** Standard-Segmentierung ist **ExG + Otsu** (an echten
+  Feldbildern validiert, robust gegen wechselndes Licht); die klassische
+  HSV-Grünton-Schwelle bleibt in den Einstellungen als Alternative wählbar.
+  Details und Validierungsstand in [METHODIK.md](METHODIK.md).
 - Die früheren Platzhalter-Screens „Monitoring“ und „Manuell“ (Traktor-/
   Striegelsteuerung) wurden entfernt — sie hatten keine Funktion. Die
   Git-Historie enthält sie weiterhin, falls die Idee wieder aufgegriffen wird.

@@ -1,6 +1,6 @@
 package com.example.smartweed;
 
-import android.os.Environment;
+import android.content.Context;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -11,13 +11,21 @@ import java.util.Locale;
 /**
  * Zentrale Ablage-Logik für Aufnahme-Sessions.
  *
+ * Die Sessions liegen im app-eigenen externen Speicher
+ * (Android/data/&lt;app&gt;/files/SmartWeed) — dort kann die App inkl. der
+ * Python-Analyse ohne jede Speicher-Berechtigung frei lesen und schreiben
+ * (Scoped-Storage-konform, kein MANAGE_EXTERNAL_STORAGE mehr nötig).
+ * Eigene Fotos und das Analyse-Übersichtsbild werden zusätzlich über
+ * {@link MediaExport} in die öffentliche Galerie (Pictures/SmartWeed)
+ * exportiert, damit sie wie gewohnt sichtbar sind.
+ *
  * Ordnerstruktur:
- *   Pictures/SmartWeed/
+ *   Android/data/&lt;app&gt;/files/SmartWeed/
  *   └── 2026-07-07_18-58/          ← eine Session (ein Feldeinsatz)
  *       ├── vorher/                ← Kamera-Aufnahmen
  *       ├── nachher/
  *       └── Analyse_18-59-30/      ← Analyse-Ergebnis zur Session
- *           └── details/           ← Masken/Einzelbilder (.nomedia, galerie-versteckt)
+ *           └── details/           ← Masken/Einzelbilder
  */
 public final class SessionStore {
 
@@ -34,9 +42,12 @@ public final class SessionStore {
 
     private SessionStore() { }
 
-    /** Basisordner der App: Pictures/SmartWeed */
-    public static File getBaseDir() {
-        return new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "SmartWeed");
+    /** Basisordner der App (app-eigener externer Speicher, keine Berechtigung nötig) */
+    public static File getBaseDir(Context context) {
+        File external = context.getExternalFilesDir(null);
+        File base = new File(external != null ? external : context.getFilesDir(), "SmartWeed");
+        if (!base.exists()) base.mkdirs();
+        return base;
     }
 
     /** Daten einer Session für die Übersichts-Seite */
@@ -49,9 +60,9 @@ public final class SessionStore {
     }
 
     /** Alle Sessions, neueste zuerst (Papierkorb wird ausgeblendet) */
-    public static List<Session> listSessions() {
+    public static List<Session> listSessions(Context context) {
         List<Session> result = new ArrayList<>();
-        File[] dirs = getBaseDir().listFiles(File::isDirectory);
+        File[] dirs = getBaseDir(context).listFiles(File::isDirectory);
         if (dirs == null) return result;
 
         for (File dir : dirs) {
