@@ -31,6 +31,12 @@ public class Login extends AppCompatActivity {
         passwordEditText = findViewById(R.id.PasswordText);
         Button loginButton = findViewById(R.id.LoginButton);
 
+        // Footer-Version zur Laufzeit aus BuildConfig statt hartcodiert im String
+        android.widget.TextView footer = findViewById(R.id.footerText);
+        if (footer != null) {
+            footer.setText(getString(R.string.footer_info, BuildConfig.VERSION_NAME));
+        }
+
         loginButton.setOnClickListener(v -> {
             String password = passwordEditText.getText().toString();
             if (AdminAuth.login(this, password)) {

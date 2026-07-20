@@ -34,11 +34,17 @@ public final class AdminAuth {
     public static boolean login(Context context, String password) {
         if (password == null) return false;
         String hash = sha256Hex(SALT + password);
-        if (ADMIN_HASH.equalsIgnoreCase(hash)) {
+        // MessageDigest.isEqual: zeitkonstanter Vergleich (statt equals).
+        // Einordnung: Dieser Login schützt nur die Experten-Einstellungen vor
+        // versehentlichem Verstellen — er ist KEIN Sicherheitsfeature gegen
+        // entschlossene Angreifer (Salt+Hash liegen im APK).
+        boolean ok = MessageDigest.isEqual(
+                hash.getBytes(StandardCharsets.UTF_8),
+                ADMIN_HASH.getBytes(StandardCharsets.UTF_8));
+        if (ok) {
             prefs(context).edit().putBoolean(KEY_IS_ADMIN, true).apply();
-            return true;
         }
-        return false;
+        return ok;
     }
 
     public static void logout(Context context) {

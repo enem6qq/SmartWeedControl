@@ -9,3 +9,7 @@ local.properties
 .cxx
 .claude/settings.local.json
 __pycache__/
+
+# Signing-Keys duerfen nie ins Repo (relevant ab dem ersten Release-Build)
+*.jks
+*.keystore

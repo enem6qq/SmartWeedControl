@@ -32,6 +32,7 @@ public class MainActivity extends AppCompatActivity {
 
     private AppBarConfiguration appBarConfiguration;
     private ActivityMainBinding binding;
+    private Dialog languageDialog; // Referenz zum Aufräumen bei Rotation (Window-Leak)
 
     // Android <11: WRITE_EXTERNAL_STORAGE als Runtime-Permission anfordern
     private final ActivityResultLauncher<String> writePermLauncher =
@@ -91,8 +92,13 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (id == R.id.action_settings) {
-            Navigation.findNavController(this, R.id.nav_host_fragment_content_main)
-                    .navigate(R.id.settingsFragment);
+            NavController nav = Navigation.findNavController(this, R.id.nav_host_fragment_content_main);
+            // Doppelklick-Guard: zweimal schnelles Tippen würde sonst zwei
+            // Settings-Seiten übereinander stapeln
+            if (nav.getCurrentDestination() == null
+                    || nav.getCurrentDestination().getId() != R.id.settingsFragment) {
+                nav.navigate(R.id.settingsFragment);
+            }
             return true;
         }
 
@@ -103,6 +109,7 @@ public class MainActivity extends AppCompatActivity {
         String currentLang = LocaleHelper.getLanguage(this);
 
         Dialog dialog = new Dialog(this);
+        languageDialog = dialog;
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.setContentView(R.layout.dialog_language_selection);
 
@@ -172,5 +179,15 @@ public class MainActivity extends AppCompatActivity {
         NavController navController = Navigation.findNavController(this, R.id.nav_host_fragment_content_main);
         return NavigationUI.navigateUp(navController, appBarConfiguration)
                 || super.onSupportNavigateUp();
+    }
+
+    @Override
+    protected void onDestroy() {
+        // Offenen Sprachdialog schließen — sonst leakt sein Window bei Rotation
+        if (languageDialog != null && languageDialog.isShowing()) {
+            languageDialog.dismiss();
+        }
+        languageDialog = null;
+        super.onDestroy();
     }
 }

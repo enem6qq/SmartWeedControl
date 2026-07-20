@@ -71,7 +71,7 @@ public class SettingsFragment extends Fragment {
         reset.setOnClickListener(v -> {
             settings.reset();
             populateFields();
-            Toast.makeText(requireContext(), R.string.settings_saved, Toast.LENGTH_SHORT).show();
+            Toast.makeText(requireContext(), R.string.settings_reset_done, Toast.LENGTH_SHORT).show();
         });
 
         btnAdminLogin.setOnClickListener(v ->

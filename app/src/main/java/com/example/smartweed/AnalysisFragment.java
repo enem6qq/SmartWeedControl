@@ -168,6 +168,14 @@ public class AnalysisFragment extends Fragment {
                 return;
             }
 
+            // Läuft bereits eine Analyse (z. B. nach Zurück-Navigation von der
+            // Ergebnisseite), keine zweite parallel starten — beide würden in
+            // dieselben LiveData und Cache-Dateien schreiben.
+            if (Boolean.TRUE.equals(analysisVM.running.getValue())) {
+                Toast.makeText(requireContext(), R.string.status_analysis_running, Toast.LENGTH_SHORT).show();
+                return;
+            }
+
             // Doppelklick-/Doppelnavigations-Guard: nur starten, wenn wir noch
             // wirklich auf der Analyse-Seite stehen (sonst würde ein schneller
             // Doppeltipp die Navigation zweimal auslösen -> Crash + Doppel-Analyse).
@@ -180,24 +188,27 @@ public class AnalysisFragment extends Fragment {
             boolean weedFilter = binding.rbModeB.isChecked();
             boolean rowMode = binding.rbModeC.isChecked();
 
-            analysisVM.running.postValue(true);
-            analysisVM.resultJson.postValue(null);
-            analysisVM.error.postValue(null);
-            analysisVM.weedFilter.postValue(weedFilter);
+            // Auf dem UI-Thread ist setValue korrekt (deterministisch sofort
+            // sichtbar — postValue könnte Zwischenwerte verschlucken)
+            analysisVM.running.setValue(true);
+            analysisVM.resultJson.setValue(null);
+            analysisVM.error.setValue(null);
+            analysisVM.weedFilter.setValue(weedFilter);
 
             // Ausgabe-Ordner INNERHALB der Session: kommt man von der Kamera-Seite,
             // ist die Session bekannt; sonst wird eine neue Session angelegt.
+            // (Locale.US: Dateisystem-Namen locale-unabhängig halten)
             File sessionDir;
             if (getArguments() != null && getArguments().getString("imageDir") != null) {
                 sessionDir = new File(imageDirPath);
             } else {
-                String sessionName = new SimpleDateFormat(SessionStore.SESSION_NAME_PATTERN, Locale.getDefault()).format(new Date());
+                String sessionName = new SimpleDateFormat(SessionStore.SESSION_NAME_PATTERN, Locale.US).format(new Date());
                 sessionDir = new File(SessionStore.getBaseDir(requireContext()), sessionName);
             }
-            String analyseTimestamp = new SimpleDateFormat("HH-mm-ss", Locale.getDefault()).format(new Date());
+            String analyseTimestamp = new SimpleDateFormat("HH-mm-ss", Locale.US).format(new Date());
             File outDir = new File(sessionDir, SessionStore.ANALYSIS_PREFIX + analyseTimestamp);
             if (!outDir.exists()) outDir.mkdirs();
-            analysisVM.outDir.postValue(outDir.getAbsolutePath());
+            analysisVM.outDir.setValue(outDir.getAbsolutePath());
 
             nav.navigate(R.id.action_AnalysisFragment_to_SummaryFragment);
 
@@ -232,10 +243,16 @@ public class AnalysisFragment extends Fragment {
     }
 
     private void takePersistable(Uri uri) {
+        // Nur das LESE-Recht persistieren: Write wird nirgends benötigt, und ein
+        // kombinierter READ|WRITE-Aufruf würde bei nicht gewährtem Write-Grant
+        // mit einer SecurityException auch das Lese-Recht mit verlieren — die in
+        // onSaveInstanceState geretteten URIs wären nach Prozess-Tod unbrauchbar.
         try {
-            final int flags = (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-            requireContext().getContentResolver().takePersistableUriPermission(uri, flags);
-        } catch (Exception ignored) { }
+            requireContext().getContentResolver()
+                    .takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (Exception e) {
+            Log.w(TAG, "takePersistableUriPermission fehlgeschlagen: " + uri, e);
+        }
     }
 
     private String getDisplayName(Uri uri) {
@@ -272,15 +289,24 @@ public class AnalysisFragment extends Fragment {
         final int hueHigh = settings.getHueHigh();
         final String method = settings.getMethod();
 
+        // Unveränderliche KOPIEN der Auswahllisten: Der Nutzer kann während der
+        // Analyse zurück navigieren und neue Bilder wählen (clear() auf dem
+        // UI-Thread) — der Hintergrund-Thread darf davon nichts mitbekommen.
+        final List<Uri> beforeSnapshot = new ArrayList<>(beforeUris);
+        final List<Uri> afterSnapshot  = new ArrayList<>(afterUris);
+        // Lauf-eindeutiges Präfix für die Cache-Dateien, damit sich zwei
+        // Analysen nie gegenseitig die Zwischen-Kopien überschreiben können.
+        final String runPrefix = "run" + System.currentTimeMillis() + "_";
+
         bgExecutor.execute(() -> {
             try {
                 ArrayList<String> beforePaths = new ArrayList<>();
                 ArrayList<String> afterPaths  = new ArrayList<>();
-                for (int i = 0; i < beforeUris.size(); i++) {
-                    beforePaths.add(copyUriToCache(appContext, beforeUris.get(i), "before_" + i + ".jpg").getAbsolutePath());
+                for (int i = 0; i < beforeSnapshot.size(); i++) {
+                    beforePaths.add(copyUriToCache(appContext, beforeSnapshot.get(i), runPrefix + "before_" + i + ".jpg").getAbsolutePath());
                 }
-                for (int i = 0; i < afterUris.size(); i++) {
-                    afterPaths.add(copyUriToCache(appContext, afterUris.get(i), "after_" + i + ".jpg").getAbsolutePath());
+                for (int i = 0; i < afterSnapshot.size(); i++) {
+                    afterPaths.add(copyUriToCache(appContext, afterSnapshot.get(i), runPrefix + "after_" + i + ".jpg").getAbsolutePath());
                 }
 
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(appContext));
@@ -330,11 +356,51 @@ public class AnalysisFragment extends Fragment {
             } catch (PyException pyEx) {
                 analysisVM.error.postValue(String.format(errPython, firstLine(pyEx.getMessage())));
                 analysisVM.running.postValue(false);
+                cleanupFailedOutDir(outDir);
             } catch (Exception e) {
                 analysisVM.error.postValue(String.format(errAnalysis, firstLine(e.getMessage())));
                 analysisVM.running.postValue(false);
+                cleanupFailedOutDir(outDir);
+            } finally {
+                // Zwischen-Kopien dieses Laufs aus dem Cache entfernen
+                File[] cacheFiles = appContext.getCacheDir()
+                        .listFiles((d, n) -> n.startsWith(runPrefix));
+                if (cacheFiles != null) {
+                    for (File f : cacheFiles) f.delete();
+                }
             }
         });
+    }
+
+    /** Nach fehlgeschlagener Analyse keinen leeren Analyse-Ordner zurücklassen
+     *  (er würde in der Session-Übersicht als Analyse gezählt). */
+    private static void cleanupFailedOutDir(File outDir) {
+        if (outDir == null || !outDir.isDirectory()) return;
+        if (containsImage(outDir)) return; // Teilergebnisse behalten
+        deleteRecursively(outDir);
+    }
+
+    private static boolean containsImage(File dir) {
+        File[] files = dir.listFiles();
+        if (files == null) return false;
+        for (File f : files) {
+            if (f.isDirectory()) {
+                if (containsImage(f)) return true;
+            } else if (SessionStore.isImageFile(f.getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void deleteRecursively(File dir) {
+        File[] files = dir.listFiles();
+        if (files != null) {
+            for (File f : files) {
+                if (f.isDirectory()) deleteRecursively(f); else f.delete();
+            }
+        }
+        dir.delete();
     }
 
     private static String firstLine(String s) {
@@ -357,70 +423,46 @@ public class AnalysisFragment extends Fragment {
     }
 
     // ==============================
-    // UI-Rendering ohne Duplikate
+    // UI-Rendering (ein Pfad für Vorher und Nachher)
     // ==============================
     private void renderSelectedImages(boolean isBefore) {
-        if (isBefore) {
-            int count = beforeUris.size();
+        renderGroup(isBefore ? beforeUris : afterUris,
+                isBefore ? binding.imageBefore : binding.imageAfter,
+                isBefore ? binding.tvBeforeName : binding.tvAfterName,
+                isBefore ? binding.beforeContainer : binding.afterContainer);
+    }
 
-            // Single-Preview sichtbar nur bei 1 Bild, sonst verstecken
-            setVisibility(binding.imageBefore, count == 1 ? View.VISIBLE : View.GONE);
-            setVisibility(binding.tvBeforeName, count == 1 ? View.VISIBLE : View.GONE);
+    private void renderGroup(List<Uri> uris, android.widget.ImageView single,
+                             android.widget.TextView nameView, ViewGroup container) {
+        int count = uris.size();
 
-            // Container sichtbar nur bei >=2; bei 0/1 leeren & verstecken
-            if (count >= 2) {
-                setVisibility(binding.beforeContainer, View.VISIBLE);
-                binding.beforeContainer.removeAllViews();
-                for (int i = 0; i < count; i++) {
-                    Uri u = beforeUris.get(i);
-                    addThumbToContainer(binding.beforeContainer, u, "before_preview_" + i + ".jpg");
-                }
-            } else {
-                // 0 oder 1
-                binding.beforeContainer.removeAllViews();
-                setVisibility(binding.beforeContainer, View.GONE);
+        // Single-Preview sichtbar nur bei 1 Bild, sonst verstecken
+        setVisibility(single, count == 1 ? View.VISIBLE : View.GONE);
+        setVisibility(nameView, count == 1 ? View.VISIBLE : View.GONE);
+
+        // Container sichtbar nur bei >=2; bei 0/1 leeren & verstecken
+        container.removeAllViews();
+        if (count >= 2) {
+            setVisibility(container, View.VISIBLE);
+            for (Uri u : uris) {
+                addThumbToContainer(container, u);
             }
-
-            // Single-Preview Bild/Name befüllen bei genau 1 Bild
-            if (count == 1) {
-                Uri u = beforeUris.get(0);
-                binding.imageBefore.setImageURI(u);
-                binding.tvBeforeName.setText(getDisplayName(u));
-            } else if (count == 0) {
-                binding.imageBefore.setImageDrawable(null);
-                binding.tvBeforeName.setText(R.string.no_image_selected);
-            }
-
         } else {
-            int count = afterUris.size();
+            setVisibility(container, View.GONE);
+        }
 
-            setVisibility(binding.imageAfter, count == 1 ? View.VISIBLE : View.GONE);
-            setVisibility(binding.tvAfterName, count == 1 ? View.VISIBLE : View.GONE);
-
-            if (count >= 2) {
-                setVisibility(binding.afterContainer, View.VISIBLE);
-                binding.afterContainer.removeAllViews();
-                for (int i = 0; i < count; i++) {
-                    Uri u = afterUris.get(i);
-                    addThumbToContainer(binding.afterContainer, u, "after_preview_" + i + ".jpg");
-                }
-            } else {
-                binding.afterContainer.removeAllViews();
-                setVisibility(binding.afterContainer, View.GONE);
-            }
-
-            if (count == 1) {
-                Uri u = afterUris.get(0);
-                binding.imageAfter.setImageURI(u);
-                binding.tvAfterName.setText(getDisplayName(u));
-            } else if (count == 0) {
-                binding.imageAfter.setImageDrawable(null);
-                binding.tvAfterName.setText(R.string.no_image_selected);
-            }
+        // Single-Preview Bild/Name befüllen bei genau 1 Bild
+        if (count == 1) {
+            Uri u = uris.get(0);
+            single.setImageURI(u);
+            nameView.setText(getDisplayName(u));
+        } else if (count == 0) {
+            single.setImageDrawable(null);
+            nameView.setText(R.string.no_image_selected);
         }
     }
 
-    private void addThumbToContainer(ViewGroup container, Uri uri, String cacheName) {
+    private void addThumbToContainer(ViewGroup container, Uri uri) {
         android.widget.ImageView img = new android.widget.ImageView(requireContext());
         img.setAdjustViewBounds(true);
         img.setPadding(0, dp(4), 0, dp(2));
@@ -431,14 +473,10 @@ public class AnalysisFragment extends Fragment {
                 .fitCenter()
                 .into(img);
 
-        img.setOnClickListener(v -> {
-            try {
-                File cached = copyUriToCache(requireContext(), uri, cacheName);
-                SummaryFragment.FullscreenImageDialog.show(this, cached.getAbsolutePath());
-            } catch (Exception e) {
-                Toast.makeText(requireContext(), R.string.toast_image_open_failed, Toast.LENGTH_SHORT).show();
-            }
-        });
+        // Der Fullscreen-Dialog kann content://-URIs direkt laden — keine
+        // synchrone Kopie auf dem UI-Thread nötig.
+        img.setOnClickListener(v ->
+                SummaryFragment.FullscreenImageDialog.show(this, uri.toString()));
 
         container.addView(img);
     }

@@ -81,6 +81,14 @@ public final class SessionStore {
             if (s.thumbnail == null) s.thumbnail = findFirstImage(new File(dir, AFTER_DIR_NAME));
             if (s.thumbnail == null) s.thumbnail = findFirstImage(dir);
 
+            // Komplett leere Sessions (kein Foto, keine Analyse) ausblenden —
+            // z. B. Altlasten früherer Versionen, die die Ordner schon beim
+            // Öffnen der Kamera-Seite anlegten
+            if (s.beforeCount == 0 && s.afterCount == 0
+                    && s.analysisCount == 0 && s.thumbnail == null) {
+                continue;
+            }
+
             result.add(s);
         }
 

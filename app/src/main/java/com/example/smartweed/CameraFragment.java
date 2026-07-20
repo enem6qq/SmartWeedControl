@@ -52,9 +52,11 @@ import java.util.concurrent.Executors;
  */
 public class CameraFragment extends Fragment {
 
+    private static final String STATE_SESSION_NAME = "sessionDirName";
+
     private FragmentCameraBinding binding;
     private ImageCapture imageCapture;
-    private ExecutorService cameraExecutor;
+    private ExecutorService ioExecutor; // Import-Kopien & Galerie-Export im Hintergrund
 
     private File sessionDir;
     private File beforeDir;
@@ -64,7 +66,13 @@ public class CameraFragment extends Fragment {
     // Kamera-Permission
     private final ActivityResultLauncher<String> permissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
-                if (isGranted) startCameraPreview();
+                if (isGranted) {
+                    startCameraPreview();
+                } else if (isAdded()) {
+                    // Ohne Feedback bliebe nur ein schwarzer Preview zurück
+                    Toast.makeText(requireContext(),
+                            R.string.camera_permission_denied, Toast.LENGTH_LONG).show();
+                }
             });
 
     // Import-Dialog
@@ -86,15 +94,23 @@ public class CameraFragment extends Fragment {
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        cameraExecutor = Executors.newSingleThreadExecutor();
+        ioExecutor = Executors.newSingleThreadExecutor();
 
-        // Session-Ordner mit lesbarem Timestamp erstellen (minutengenau: zwei kurz
-        // aufeinanderfolgende Besuche der Kamera-Seite landen in derselben Session)
-        sessionDirName = new SimpleDateFormat(SessionStore.SESSION_NAME_PATTERN, Locale.getDefault()).format(new Date());
+        // Session-Name mit lesbarem Timestamp (minutengenau: zwei kurz
+        // aufeinanderfolgende Besuche der Kamera-Seite landen in derselben Session).
+        // Locale.US: Dateisystem-Namen dürfen nicht von locale-abhängigen Ziffern
+        // abhängen. Über savedInstanceState gerettet, damit eine Rotation über
+        // eine Minutengrenze die Aufnahme nicht in zwei Sessions splittet.
+        if (savedInstanceState != null && savedInstanceState.getString(STATE_SESSION_NAME) != null) {
+            sessionDirName = savedInstanceState.getString(STATE_SESSION_NAME);
+        } else {
+            sessionDirName = new SimpleDateFormat(SessionStore.SESSION_NAME_PATTERN, Locale.US).format(new Date());
+        }
         sessionDir = new File(SessionStore.getBaseDir(requireContext()), sessionDirName);
         beforeDir = new File(sessionDir, SessionStore.BEFORE_DIR_NAME);
         afterDir = new File(sessionDir, SessionStore.AFTER_DIR_NAME);
-        ensureDirectories();
+        // Ordner werden erst beim ersten Foto/Import angelegt (lazy) — sonst
+        // hinterlässt jeder Besuch der Kamera-Seite eine leere Session.
 
         // Button-Elevation & kleine Press-Animation
         float elev = getResources().getDisplayMetrics().density * 3f;
@@ -151,15 +167,29 @@ public class CameraFragment extends Fragment {
             try {
                 ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
 
+                // Das Manifest erlaubt die Installation ohne Kamera
+                // (uses-feature required=false) — ohne diesen Guard würde
+                // bindToLifecycle auf solchen Geräten crashen.
+                if (!cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) {
+                    Toast.makeText(requireContext(),
+                            R.string.camera_unavailable, Toast.LENGTH_LONG).show();
+                    return;
+                }
+
                 Preview preview = new Preview.Builder().build();
                 imageCapture = new ImageCapture.Builder().build();
 
                 preview.setSurfaceProvider(binding.previewView.getSurfaceProvider());
                 cameraProvider.unbindAll();
-                cameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture);
+                cameraProvider.bindToLifecycle(getViewLifecycleOwner(),
+                        CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture);
 
-            } catch (ExecutionException | InterruptedException e) {
+            } catch (ExecutionException | InterruptedException | IllegalArgumentException e) {
                 Log.e("Camera", "Kamera-Start fehlgeschlagen", e);
+                if (isAdded()) {
+                    Toast.makeText(requireContext(),
+                            R.string.camera_unavailable, Toast.LENGTH_LONG).show();
+                }
             }
         }, ContextCompat.getMainExecutor(requireContext()));
     }
@@ -178,26 +208,26 @@ public class CameraFragment extends Fragment {
         nav.navigate(R.id.action_CameraFragment_to_AnalysisFragment, args);
     }
 
-    /** Erstellt die Session-Ordner (app-eigener Speicher, keine Berechtigung nötig) */
-    private void ensureDirectories() {
-        if (!sessionDir.exists()) sessionDir.mkdirs();
-        if (!beforeDir.exists()) beforeDir.mkdirs();
-        if (!afterDir.exists()) afterDir.mkdirs();
+    @Override
+    public void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putString(STATE_SESSION_NAME, sessionDirName);
     }
 
     private void takePhoto(String subfolder) {
         if (imageCapture == null) return;
 
-        // Millisekunden im Namen: zwei Fotos in derselben Sekunde überschreiben sich nicht
-        String filename = "photo_" + new SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.getDefault()).format(new Date()) + ".jpg";
+        final boolean isBefore = SessionStore.BEFORE_DIR_NAME.equals(subfolder);
+        // Millisekunden im Namen: zwei Fotos in derselben Sekunde überschreiben sich
+        // nicht (Locale.US für locale-unabhängige Dateisystem-Namen)
+        String filename = "photo_" + new SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(new Date()) + ".jpg";
 
-        File targetDir = SessionStore.BEFORE_DIR_NAME.equals(subfolder) ? beforeDir : afterDir;
+        File targetDir = isBefore ? beforeDir : afterDir;
         if (!targetDir.exists()) targetDir.mkdirs();
         File photoFile = new File(targetDir, filename);
         ImageCapture.OutputFileOptions outputOptions = new ImageCapture.OutputFileOptions.Builder(photoFile).build();
 
-        String label = getString(SessionStore.BEFORE_DIR_NAME.equals(subfolder)
-                ? R.string.label_before : R.string.label_after);
+        String label = getString(isBefore ? R.string.label_before : R.string.label_after);
         // Application-Context vorab cachen: der Callback feuert asynchron und darf
         // nicht auf requireContext() eines evtl. schon abgelösten Fragments zugreifen.
         final Context appContext = requireContext().getApplicationContext();
@@ -211,13 +241,15 @@ public class CameraFragment extends Fragment {
                     @Override
                     public void onImageSaved(@NonNull ImageCapture.OutputFileResults outputFileResults) {
                         // Foto zusätzlich in die Galerie exportieren (Hintergrund)
-                        new Thread(() -> MediaExport.exportToGallery(
-                                appContext, photoFile, sessionDirName + "/" + subfolder)).start();
+                        ioExecutor.execute(() -> MediaExport.exportToGallery(
+                                appContext, photoFile, sessionDirName + "/" + subfolder));
 
                         Toast.makeText(appContext, toastText, Toast.LENGTH_SHORT).show();
-                        // UI-Feedback nur, wenn die View noch lebt
+                        // UI-Feedback nur, wenn die View noch lebt — auf dem Button,
+                        // der tatsächlich gedrückt wurde
                         if (binding != null && isAdded()) {
-                            binding.buttonTakePhotoBefore.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                            (isBefore ? binding.buttonTakePhotoBefore : binding.buttonTakePhotoAfter)
+                                    .performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
                         }
                     }
 
@@ -240,39 +272,45 @@ public class CameraFragment extends Fragment {
     }
 
     private void copyImportedImage(Uri uri, File targetDir) {
-        try {
-            ContentResolver resolver = requireContext().getContentResolver();
-            String name = getFileName(uri);
+        // Name + Context auf dem UI-Thread ermitteln, die (potenziell mehrere MB
+        // große) Kopie dann im Hintergrund — sonst droht Jank/ANR.
+        final ContentResolver resolver = requireContext().getContentResolver();
+        final Context appContext = requireContext().getApplicationContext();
+        final String name = getFileName(uri);
+        final String importedFmt = getString(R.string.toast_image_imported,
+                "SmartWeed/" + sessionDirName + "/" + targetDir.getName(), name);
 
-            if (!targetDir.exists()) targetDir.mkdirs();
-            File destFile = new File(targetDir, name);
-            // Kollision vermeiden: existiert der Name schon, eindeutig machen
-            if (destFile.exists()) {
-                int dot = name.lastIndexOf('.');
-                String base = (dot > 0) ? name.substring(0, dot) : name;
-                String ext = (dot > 0) ? name.substring(dot) : "";
-                destFile = new File(targetDir, base + "_" + System.currentTimeMillis() + ext);
-            }
-
-            try (InputStream inputStream = resolver.openInputStream(uri);
-                 OutputStream outputStream = new FileOutputStream(destFile)) {
-                if (inputStream == null) throw new java.io.IOException("openInputStream lieferte null");
-                byte[] buffer = new byte[8192];
-                int length;
-                while ((length = inputStream.read(buffer)) > 0) {
-                    outputStream.write(buffer, 0, length);
+        ioExecutor.execute(() -> {
+            try {
+                if (!targetDir.exists()) targetDir.mkdirs();
+                File destFile = new File(targetDir, name);
+                // Kollision vermeiden: existiert der Name schon, eindeutig machen
+                if (destFile.exists()) {
+                    int dot = name.lastIndexOf('.');
+                    String base = (dot > 0) ? name.substring(0, dot) : name;
+                    String ext = (dot > 0) ? name.substring(dot) : "";
+                    destFile = new File(targetDir, base + "_" + System.currentTimeMillis() + ext);
                 }
+
+                try (InputStream inputStream = resolver.openInputStream(uri);
+                     OutputStream outputStream = new FileOutputStream(destFile)) {
+                    if (inputStream == null) throw new java.io.IOException("openInputStream lieferte null");
+                    byte[] buffer = new byte[8192];
+                    int length;
+                    while ((length = inputStream.read(buffer)) > 0) {
+                        outputStream.write(buffer, 0, length);
+                    }
+                }
+
+                ContextCompat.getMainExecutor(appContext).execute(() ->
+                        Toast.makeText(appContext, importedFmt, Toast.LENGTH_SHORT).show());
+
+            } catch (Exception e) {
+                Log.e("Import", "Fehler beim Kopieren", e);
+                ContextCompat.getMainExecutor(appContext).execute(() ->
+                        Toast.makeText(appContext, R.string.toast_import_error, Toast.LENGTH_SHORT).show());
             }
-
-            Toast.makeText(requireContext(),
-                    getString(R.string.toast_image_imported,
-                            "SmartWeed/" + sessionDirName + "/" + targetDir.getName(), destFile.getName()),
-                    Toast.LENGTH_SHORT).show();
-
-        } catch (Exception e) {
-            Toast.makeText(requireContext(), R.string.toast_import_error, Toast.LENGTH_SHORT).show();
-            Log.e("Import", "Fehler beim Kopieren", e);
-        }
+        });
     }
 
     private String getFileName(Uri uri) {
@@ -281,9 +319,19 @@ public class CameraFragment extends Fragment {
             try (Cursor cursor = requireContext().getContentResolver().query(uri, null, null, null, null)) {
                 if (cursor != null && cursor.moveToFirst()) {
                     int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-                    if (index >= 0) result = cursor.getString(index);
+                    if (index >= 0) {
+                        String display = cursor.getString(index);
+                        if (display != null && !display.isEmpty()) result = display;
+                    }
                 }
             }
+        }
+        // DISPLAY_NAME stammt von einem fremden Content-Provider: Pfadanteile
+        // ("../", "/") entschärfen, sonst könnte ein präparierter Name außerhalb
+        // des Zielordners schreiben (Path Traversal).
+        result = new File(result).getName().replace("..", "_");
+        if (result.isEmpty() || ".".equals(result)) {
+            result = "imported_" + System.currentTimeMillis() + ".jpg";
         }
         return result;
     }
@@ -334,6 +382,7 @@ public class CameraFragment extends Fragment {
     public void onDestroyView() {
         super.onDestroyView();
         binding = null;
-        if (cameraExecutor != null) cameraExecutor.shutdown();
+        // Laufende Import-/Export-Aufgaben zu Ende bringen, dann herunterfahren
+        if (ioExecutor != null) ioExecutor.shutdown();
     }
 }

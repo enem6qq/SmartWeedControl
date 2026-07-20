@@ -9,6 +9,15 @@ import java.util.Locale;
 
 /**
  * Helper class for managing app language/locale settings.
+ *
+ * Bewusste Architektur-Entscheidung (v1.5): Diese Klasse implementiert den
+ * klassischen attachBaseContext-Ansatz. Das Manifest deklariert zusätzlich
+ * den AppCompat-Per-App-Locale-Service (autoStoreLocales) — der modernere Weg
+ * wäre AppCompatDelegate.setApplicationLocales(), der attachBaseContext und
+ * das manuelle recreate() überflüssig machen würde. Die Umstellung wird
+ * bewusst NICHT ungetestet durchgeführt, da der Sprachwechsel ein zentrales,
+ * abgenommenes Feature ist; sie ist ein Kandidat für eine spätere Version
+ * mit Gerätetest.
  */
 public class LocaleHelper {
 

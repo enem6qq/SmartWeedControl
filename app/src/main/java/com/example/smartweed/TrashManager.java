@@ -14,13 +14,18 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 
 /**
  * Verwaltet den Papierkorb fuer geloeschte Bilder.
  * Bilder werden in einen .trash-Ordner verschoben statt permanent geloescht,
  * sodass sie bei Bedarf wiederhergestellt werden koennen.
+ *
+ * Thread-Sicherheit: Alle Operationen, die die Metadaten-JSON lesen/schreiben,
+ * laufen unter einem gemeinsamen Lock. Ohne das Lock koennten z. B. der
+ * autoCleanup()-Thread beim App-Start und ein gleichzeitiges Session-Loeschen
+ * sich gegenseitig Eintraege ueberschreiben (Read-Modify-Write-Kollision) —
+ * die betroffenen Dateien laegen dann unsichtbar und unloeschbar im Papierkorb.
  */
 public class TrashManager {
 
@@ -28,6 +33,9 @@ public class TrashManager {
     private static final String TRASH_DIR_NAME = ".trash";
     private static final String METADATA_FILE = "trash_metadata.json";
     private static final long AUTO_DELETE_DAYS = 30;
+
+    /** Gemeinsames Lock aller TrashManager-Instanzen (die Metadaten-Datei ist global). */
+    private static final Object METADATA_LOCK = new Object();
 
     private final Context context;
     private final File trashDir;
@@ -44,26 +52,41 @@ public class TrashManager {
     public boolean moveToTrash(File file) {
         if (file == null || !file.exists()) return false;
 
-        try {
-            String trashName = System.currentTimeMillis() + "_" + file.getName();
-            File trashFile = new File(trashDir, trashName);
-            // Eindeutigkeit sicherstellen: gleichnamige Dateien in derselben
-            // Millisekunde dürfen sich nicht gegenseitig überschreiben
-            int counter = 1;
-            while (trashFile.exists()) {
-                trashName = System.currentTimeMillis() + "_" + (counter++) + "_" + file.getName();
-                trashFile = new File(trashDir, trashName);
-            }
+        synchronized (METADATA_LOCK) {
+            try {
+                String trashName = System.currentTimeMillis() + "_" + file.getName();
+                File trashFile = new File(trashDir, trashName);
+                // Eindeutigkeit sicherstellen: gleichnamige Dateien in derselben
+                // Millisekunde dürfen sich nicht gegenseitig überschreiben
+                int counter = 1;
+                while (trashFile.exists()) {
+                    trashName = System.currentTimeMillis() + "_" + (counter++) + "_" + file.getName();
+                    trashFile = new File(trashDir, trashName);
+                }
 
-            if (copyFile(file, trashFile)) {
-                // Metadaten speichern
+                // Metadaten VOR dem Verschieben erfassen (Groesse/Name)
+                long fileSize = file.length();
+                String originalName = file.getName();
+                String originalPath = file.getAbsolutePath();
+
+                // Quelle und Papierkorb liegen im selben Verzeichnisbaum:
+                // renameTo ist O(1); Copy+Delete nur als Fallback (z. B. falls
+                // das Dateisystem kein Umbenennen erlaubt)
+                boolean moved = file.renameTo(trashFile);
+                if (!moved) {
+                    if (!copyFile(file, trashFile)) return false;
+                    if (!file.delete()) {
+                        Log.w(TAG, "Original could not be deleted after copy: " + originalPath);
+                    }
+                }
+
                 JSONObject meta = loadMetadata();
                 JSONObject entry = new JSONObject();
-                entry.put("originalPath", file.getAbsolutePath());
+                entry.put("originalPath", originalPath);
                 entry.put("trashName", trashName);
-                entry.put("originalName", file.getName());
+                entry.put("originalName", originalName);
                 entry.put("deletedAt", System.currentTimeMillis());
-                entry.put("fileSize", file.length());
+                entry.put("fileSize", fileSize);
 
                 JSONArray items = meta.optJSONArray("items");
                 if (items == null) {
@@ -73,15 +96,13 @@ public class TrashManager {
                 meta.put("items", items);
                 saveMetadata(meta);
 
-                // Original loeschen
-                file.delete();
-                Log.i(TAG, "Moved to trash: " + file.getName() + " -> " + trashName);
+                Log.i(TAG, "Moved to trash: " + originalName + " -> " + trashName);
                 return true;
+            } catch (Exception e) {
+                Log.e(TAG, "Error moving to trash: " + file.getName(), e);
             }
-        } catch (Exception e) {
-            Log.e(TAG, "Error moving to trash: " + file.getName(), e);
+            return false;
         }
-        return false;
     }
 
     /**
@@ -102,7 +123,9 @@ public class TrashManager {
                     if (moveToTrash(f)) count++;
                 } else {
                     // Hilfsdateien sind nicht wiederherstellbar -> direkt loeschen
-                    f.delete();
+                    if (!f.delete()) {
+                        Log.w(TAG, "Could not delete helper file: " + f.getAbsolutePath());
+                    }
                 }
             }
         }
@@ -116,169 +139,214 @@ public class TrashManager {
 
     /** Bild aus dem Papierkorb wiederherstellen */
     public boolean restoreFromTrash(String trashName) {
-        try {
-            JSONObject meta = loadMetadata();
-            JSONArray items = meta.optJSONArray("items");
-            if (items == null) return false;
+        synchronized (METADATA_LOCK) {
+            try {
+                JSONObject meta = loadMetadata();
+                JSONArray items = meta.optJSONArray("items");
+                if (items == null) return false;
 
-            for (int i = 0; i < items.length(); i++) {
-                JSONObject entry = items.getJSONObject(i);
-                if (trashName.equals(entry.optString("trashName"))) {
-                    File trashFile = new File(trashDir, trashName);
-                    if (!trashFile.exists()) {
-                        // Datei nicht mehr vorhanden, Eintrag entfernen
-                        items.remove(i);
-                        saveMetadata(meta);
-                        return false;
-                    }
+                for (int i = 0; i < items.length(); i++) {
+                    JSONObject entry = items.getJSONObject(i);
+                    if (trashName.equals(entry.optString("trashName"))) {
+                        File trashFile = new File(trashDir, trashName);
+                        if (!trashFile.exists()) {
+                            // Datei nicht mehr vorhanden, Eintrag entfernen
+                            items.remove(i);
+                            saveMetadata(meta);
+                            return false;
+                        }
 
-                    String originalPath = entry.optString("originalPath");
-                    File originalFile = new File(originalPath);
-                    File parentDir = originalFile.getParentFile();
-                    if (parentDir != null && !parentDir.exists()) {
-                        parentDir.mkdirs();
-                    }
+                        String originalPath = entry.optString("originalPath");
+                        File originalFile = new File(originalPath);
+                        // Schutz vor manipulierten Metadaten: nur innerhalb des
+                        // App-Datenverzeichnisses wiederherstellen
+                        if (!isInsideBaseDir(originalFile)) {
+                            Log.w(TAG, "Restore target outside base dir refused: " + originalPath);
+                            return false;
+                        }
+                        File parentDir = originalFile.getParentFile();
+                        if (parentDir != null && !parentDir.exists()) {
+                            parentDir.mkdirs();
+                        }
 
-                    // Falls Original-Pfad belegt, alternativen Namen waehlen
-                    File restoreTarget = originalFile;
-                    if (restoreTarget.exists()) {
-                        String name = entry.optString("originalName", trashFile.getName());
-                        int dot = name.lastIndexOf('.');
-                        String base = (dot > 0) ? name.substring(0, dot) : name;
-                        String ext = (dot > 0) ? name.substring(dot) : "";
-                        restoreTarget = new File(parentDir, base + "_restored" + ext);
-                    }
+                        // Falls Original-Pfad belegt, alternativen Namen waehlen
+                        File restoreTarget = originalFile;
+                        if (restoreTarget.exists()) {
+                            String name = entry.optString("originalName", trashFile.getName());
+                            int dot = name.lastIndexOf('.');
+                            String base = (dot > 0) ? name.substring(0, dot) : name;
+                            String ext = (dot > 0) ? name.substring(dot) : "";
+                            restoreTarget = new File(parentDir, base + "_restored" + ext);
+                        }
 
-                    if (copyFile(trashFile, restoreTarget)) {
-                        trashFile.delete();
+                        boolean moved = trashFile.renameTo(restoreTarget);
+                        if (!moved) {
+                            if (!copyFile(trashFile, restoreTarget)) return false;
+                            if (!trashFile.delete()) {
+                                Log.w(TAG, "Trash file could not be deleted after restore: " + trashName);
+                            }
+                        }
                         items.remove(i);
                         saveMetadata(meta);
                         Log.i(TAG, "Restored from trash: " + trashName + " -> " + restoreTarget.getAbsolutePath());
                         return true;
                     }
                 }
+            } catch (Exception e) {
+                Log.e(TAG, "Error restoring from trash: " + trashName, e);
             }
-        } catch (Exception e) {
-            Log.e(TAG, "Error restoring from trash: " + trashName, e);
+            return false;
         }
-        return false;
     }
 
     /** Ein einzelnes Element permanent aus dem Papierkorb loeschen */
     public boolean deletePermanently(String trashName) {
-        try {
-            File trashFile = new File(trashDir, trashName);
-            if (trashFile.exists()) trashFile.delete();
+        synchronized (METADATA_LOCK) {
+            try {
+                File trashFile = new File(trashDir, trashName);
+                boolean fileGone = !trashFile.exists() || trashFile.delete();
+                if (!fileGone) {
+                    // Datei existiert weiterhin -> keinen Erfolg vortaeuschen,
+                    // Metadaten-Eintrag behalten, damit sie sichtbar bleibt
+                    Log.w(TAG, "Could not delete trash file: " + trashName);
+                    return false;
+                }
 
-            JSONObject meta = loadMetadata();
-            JSONArray items = meta.optJSONArray("items");
-            if (items != null) {
-                for (int i = 0; i < items.length(); i++) {
-                    JSONObject entry = items.getJSONObject(i);
-                    if (trashName.equals(entry.optString("trashName"))) {
-                        items.remove(i);
-                        saveMetadata(meta);
-                        break;
+                JSONObject meta = loadMetadata();
+                JSONArray items = meta.optJSONArray("items");
+                if (items != null) {
+                    for (int i = 0; i < items.length(); i++) {
+                        JSONObject entry = items.getJSONObject(i);
+                        if (trashName.equals(entry.optString("trashName"))) {
+                            items.remove(i);
+                            saveMetadata(meta);
+                            break;
+                        }
                     }
                 }
+                Log.i(TAG, "Permanently deleted: " + trashName);
+                return true;
+            } catch (Exception e) {
+                Log.e(TAG, "Error deleting permanently: " + trashName, e);
             }
-            Log.i(TAG, "Permanently deleted: " + trashName);
-            return true;
-        } catch (Exception e) {
-            Log.e(TAG, "Error deleting permanently: " + trashName, e);
+            return false;
         }
-        return false;
     }
 
     /** Papierkorb komplett leeren */
     public void emptyTrash() {
-        File[] files = trashDir.listFiles();
-        if (files != null) {
-            for (File f : files) {
-                if (!f.getName().equals(METADATA_FILE)) {
-                    f.delete();
+        synchronized (METADATA_LOCK) {
+            File[] files = trashDir.listFiles();
+            if (files != null) {
+                for (File f : files) {
+                    if (!f.getName().equals(METADATA_FILE)) {
+                        if (!f.delete()) {
+                            Log.w(TAG, "Could not delete trash file: " + f.getName());
+                        }
+                    }
                 }
             }
+            // Metadata zuruecksetzen; Eintraege nicht geloeschter Dateien behalten
+            try {
+                JSONObject meta = loadMetadata();
+                JSONArray items = meta.optJSONArray("items");
+                JSONArray keep = new JSONArray();
+                if (items != null) {
+                    for (int i = 0; i < items.length(); i++) {
+                        JSONObject entry = items.getJSONObject(i);
+                        File f = new File(trashDir, entry.optString("trashName"));
+                        if (f.exists()) keep.put(entry);
+                    }
+                }
+                JSONObject fresh = new JSONObject();
+                fresh.put("items", keep);
+                saveMetadata(fresh);
+            } catch (Exception e) {
+                Log.e(TAG, "Error emptying trash", e);
+            }
+            Log.i(TAG, "Trash emptied");
         }
-        // Metadata zuruecksetzen
-        try {
-            JSONObject meta = new JSONObject();
-            meta.put("items", new JSONArray());
-            saveMetadata(meta);
-        } catch (Exception e) {
-            Log.e(TAG, "Error emptying trash", e);
-        }
-        Log.i(TAG, "Trash emptied");
     }
 
     /** Alte Eintraege automatisch loeschen (aelter als AUTO_DELETE_DAYS Tage) */
     public int autoCleanup() {
-        int removed = 0;
-        try {
-            long cutoff = System.currentTimeMillis() - (AUTO_DELETE_DAYS * 24 * 60 * 60 * 1000L);
-            JSONObject meta = loadMetadata();
-            JSONArray items = meta.optJSONArray("items");
-            if (items == null) return 0;
+        synchronized (METADATA_LOCK) {
+            int removed = 0;
+            try {
+                long cutoff = System.currentTimeMillis() - (AUTO_DELETE_DAYS * 24 * 60 * 60 * 1000L);
+                JSONObject meta = loadMetadata();
+                JSONArray items = meta.optJSONArray("items");
+                if (items == null) return 0;
 
-            JSONArray remaining = new JSONArray();
-            for (int i = 0; i < items.length(); i++) {
-                JSONObject entry = items.getJSONObject(i);
-                long deletedAt = entry.optLong("deletedAt", 0);
-                if (deletedAt > 0 && deletedAt < cutoff) {
-                    // Abgelaufen -> permanent loeschen
-                    String trashName = entry.optString("trashName");
-                    File trashFile = new File(trashDir, trashName);
-                    if (trashFile.exists()) trashFile.delete();
-                    removed++;
-                } else {
-                    remaining.put(entry);
+                JSONArray remaining = new JSONArray();
+                for (int i = 0; i < items.length(); i++) {
+                    JSONObject entry = items.getJSONObject(i);
+                    long deletedAt = entry.optLong("deletedAt", 0);
+                    if (deletedAt > 0 && deletedAt < cutoff) {
+                        // Abgelaufen -> permanent loeschen; bei Fehlschlag den
+                        // Eintrag behalten und beim naechsten Lauf erneut versuchen
+                        String trashName = entry.optString("trashName");
+                        File trashFile = new File(trashDir, trashName);
+                        if (!trashFile.exists() || trashFile.delete()) {
+                            removed++;
+                        } else {
+                            Log.w(TAG, "Auto-cleanup could not delete: " + trashName);
+                            remaining.put(entry);
+                        }
+                    } else {
+                        remaining.put(entry);
+                    }
                 }
+                meta.put("items", remaining);
+                saveMetadata(meta);
+            } catch (Exception e) {
+                Log.e(TAG, "Error during auto-cleanup", e);
             }
-            meta.put("items", remaining);
-            saveMetadata(meta);
-        } catch (Exception e) {
-            Log.e(TAG, "Error during auto-cleanup", e);
+            if (removed > 0) Log.i(TAG, "Auto-cleanup removed " + removed + " items");
+            return removed;
         }
-        if (removed > 0) Log.i(TAG, "Auto-cleanup removed " + removed + " items");
-        return removed;
     }
 
     /** Alle Papierkorb-Eintraege laden */
     public List<TrashItem> getTrashItems() {
-        List<TrashItem> result = new ArrayList<>();
-        try {
-            JSONObject meta = loadMetadata();
-            JSONArray items = meta.optJSONArray("items");
-            if (items == null) return result;
+        synchronized (METADATA_LOCK) {
+            List<TrashItem> result = new ArrayList<>();
+            try {
+                JSONObject meta = loadMetadata();
+                JSONArray items = meta.optJSONArray("items");
+                if (items == null) return result;
 
-            for (int i = 0; i < items.length(); i++) {
-                JSONObject entry = items.getJSONObject(i);
-                File trashFile = new File(trashDir, entry.optString("trashName"));
-                if (!trashFile.exists()) continue;
+                for (int i = 0; i < items.length(); i++) {
+                    JSONObject entry = items.getJSONObject(i);
+                    File trashFile = new File(trashDir, entry.optString("trashName"));
+                    if (!trashFile.exists()) continue;
 
-                TrashItem item = new TrashItem();
-                item.trashName = entry.optString("trashName");
-                item.originalName = entry.optString("originalName");
-                item.originalPath = entry.optString("originalPath");
-                item.deletedAt = entry.optLong("deletedAt", 0);
-                item.fileSize = entry.optLong("fileSize", 0);
-                item.trashFile = trashFile;
-                result.add(item);
+                    TrashItem item = new TrashItem();
+                    item.trashName = entry.optString("trashName");
+                    item.originalName = entry.optString("originalName");
+                    item.originalPath = entry.optString("originalPath");
+                    item.deletedAt = entry.optLong("deletedAt", 0);
+                    item.fileSize = entry.optLong("fileSize", 0);
+                    item.trashFile = trashFile;
+                    result.add(item);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error loading trash items", e);
             }
-        } catch (Exception e) {
-            Log.e(TAG, "Error loading trash items", e);
+            return result;
         }
-        return result;
     }
 
     /** Anzahl der Elemente im Papierkorb */
     public int getTrashCount() {
-        try {
-            JSONObject meta = loadMetadata();
-            JSONArray items = meta.optJSONArray("items");
-            return (items != null) ? items.length() : 0;
-        } catch (Exception e) {
-            return 0;
+        synchronized (METADATA_LOCK) {
+            try {
+                JSONObject meta = loadMetadata();
+                JSONArray items = meta.optJSONArray("items");
+                return (items != null) ? items.length() : 0;
+            } catch (Exception e) {
+                return 0;
+            }
         }
     }
 
@@ -319,6 +387,16 @@ public class TrashManager {
 
     // === Private Hilfsmethoden ===
 
+    /** Liegt die Datei (kanonisch aufgeloest) im App-Datenverzeichnis? */
+    private boolean isInsideBaseDir(File f) {
+        try {
+            String base = SessionStore.getBaseDir(context).getCanonicalPath() + File.separator;
+            return f.getCanonicalPath().startsWith(base);
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
     private JSONObject loadMetadata() {
         try {
             if (!metadataFile.exists()) return new JSONObject();
@@ -338,14 +416,27 @@ public class TrashManager {
     }
 
     private void saveMetadata(JSONObject meta) {
+        // Atomar schreiben: erst in eine Temp-Datei, dann umbenennen. Ein
+        // Absturz mitten im Schreiben wuerde sonst die komplette Metadaten-
+        // JSON zerstoeren (alle Papierkorb-Eintraege verwaist).
+        File tmp = new File(trashDir, METADATA_FILE + ".tmp");
         try {
             byte[] bytes = meta.toString(2).getBytes(StandardCharsets.UTF_8);
-            try (FileOutputStream fos = new FileOutputStream(metadataFile)) {
+            try (FileOutputStream fos = new FileOutputStream(tmp)) {
                 fos.write(bytes);
                 fos.flush();
+                fos.getFD().sync();
+            }
+            if (!tmp.renameTo(metadataFile)) {
+                // Fallback (sollte auf demselben Dateisystem nie noetig sein)
+                if (!copyFile(tmp, metadataFile)) {
+                    Log.e(TAG, "Error saving metadata: rename and copy failed");
+                }
+                tmp.delete();
             }
         } catch (Exception e) {
             Log.e(TAG, "Error saving metadata", e);
+            tmp.delete();
         }
     }
 

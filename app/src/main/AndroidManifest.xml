@@ -14,8 +14,12 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
+    <!-- allowBackup=false: Ohne Ausschlüsse ließe sich sonst per adb backup/
+         restore das is_admin-Flag aus den SharedPreferences setzen und der
+         Admin-Login ganz ohne Passwort umgehen. Nutzdaten (Fotos/Analysen)
+         liegen ohnehin als Dateien vor und sind über die Galerie gesichert. -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
@@ -42,17 +46,6 @@
             android:name=".Login"
             android:exported="false"
             android:theme="@style/Theme.SmartWeed" />
-
-        <!-- FileProvider für Zugriff/Share von Dateien (z.B. Bilder) -->
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.provider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
 
         <!-- AppCompat per-app language support service -->
         <service
