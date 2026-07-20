@@ -184,7 +184,8 @@ public class CameraFragment extends Fragment {
                 cameraProvider.bindToLifecycle(getViewLifecycleOwner(),
                         CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture);
 
-            } catch (ExecutionException | InterruptedException | IllegalArgumentException e) {
+            } catch (ExecutionException | InterruptedException | IllegalArgumentException
+                     | androidx.camera.core.CameraInfoUnavailableException e) {
                 Log.e("Camera", "Kamera-Start fehlgeschlagen", e);
                 if (isAdded()) {
                     Toast.makeText(requireContext(),

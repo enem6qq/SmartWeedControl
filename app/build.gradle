@@ -71,6 +71,9 @@ android {
 
     buildFeatures {
         viewBinding true
+        // AGP 8 generiert BuildConfig nicht mehr automatisch; wird für die
+        // Footer-Version (BuildConfig.VERSION_NAME) gebraucht
+        buildConfig true
     }
 }
 
