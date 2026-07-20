@@ -22,6 +22,51 @@
             android:textColor="@color/text_secondary"
             android:lineSpacingExtra="3dp"/>
 
+        <!-- Admin-Sperre: Einstellungen nur nach Anmeldung änderbar -->
+        <LinearLayout
+            android:id="@+id/adminLockCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_card"
+            android:padding="20dp"
+            android:layout_marginTop="16dp">
+
+            <TextView
+                android:id="@+id/tvAdminLockInfo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/admin_area_locked"
+                android:textSize="13sp"
+                android:textColor="@color/status_warning"
+                android:lineSpacingExtra="3dp"/>
+
+            <Button
+                android:id="@+id/btnAdminLogin"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="14dp"
+                android:text="@string/btn_admin_login"
+                android:textStyle="bold"
+                android:textColor="@color/traktor_green"
+                android:background="@drawable/bg_secondary_button"
+                android:foreground="@drawable/ripple_light"
+                android:stateListAnimator="@null"/>
+
+            <Button
+                android:id="@+id/btnAdminLogout"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="14dp"
+                android:text="@string/btn_admin_logout"
+                android:textStyle="bold"
+                android:textColor="@color/text_secondary"
+                android:background="@drawable/bg_secondary_button"
+                android:foreground="@drawable/ripple_light"
+                android:stateListAnimator="@null"
+                android:visibility="gone"/>
+        </LinearLayout>
+
         <!-- Segmentierungsmethode -->
         <LinearLayout
             android:layout_width="match_parent"

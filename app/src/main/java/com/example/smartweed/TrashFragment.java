@@ -46,8 +46,8 @@ public class TrashFragment extends Fragment {
         tvTrashCount = view.findViewById(R.id.tvTrashCount);
         buttonEmptyTrash = view.findViewById(R.id.buttonEmptyTrash);
 
-        // Auto-Cleanup beim Oeffnen
-        trashManager.autoCleanup();
+        // Auto-Cleanup beim Oeffnen (im Hintergrund, dann Liste aktualisieren)
+        runInBackground(() -> trashManager.autoCleanup(), () -> { });
 
         // Papierkorb leeren Button
         buttonEmptyTrash.setOnClickListener(v -> {
@@ -59,16 +59,27 @@ public class TrashFragment extends Fragment {
             new AlertDialog.Builder(requireContext())
                     .setTitle(R.string.trash_empty_confirm_title)
                     .setMessage(getString(R.string.trash_empty_confirm_message, count))
-                    .setPositiveButton(R.string.trash_delete_permanently, (d, w) -> {
-                        trashManager.emptyTrash();
-                        refreshTrashList();
-                        Toast.makeText(requireContext(), R.string.trash_emptied, Toast.LENGTH_SHORT).show();
-                    })
+                    .setPositiveButton(R.string.trash_delete_permanently, (d, w) ->
+                            runInBackground(() -> trashManager.emptyTrash(), () ->
+                                    Toast.makeText(requireContext(), R.string.trash_emptied, Toast.LENGTH_SHORT).show()))
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
         });
 
         refreshTrashList();
+    }
+
+    /** Führt eine Papierkorb-Operation im Hintergrund aus und aktualisiert danach die Liste */
+    private void runInBackground(Runnable work, Runnable onDone) {
+        new Thread(() -> {
+            work.run();
+            if (!isAdded()) return;
+            requireActivity().runOnUiThread(() -> {
+                if (!isAdded()) return;
+                onDone.run();
+                refreshTrashList();
+            });
+        }).start();
     }
 
     private void refreshTrashList() {
@@ -135,17 +146,20 @@ public class TrashFragment extends Fragment {
                     .setTitle(R.string.trash_restore_confirm_title)
                     .setMessage(getString(R.string.trash_restore_confirm_message, item.originalName))
                     .setPositiveButton(R.string.trash_restore, (d, w) -> {
-                        boolean success = trashManager.restoreFromTrash(item.trashName);
-                        if (success) {
-                            Toast.makeText(requireContext(),
-                                    getString(R.string.trash_restored, item.originalName),
-                                    Toast.LENGTH_SHORT).show();
-                        } else {
-                            Toast.makeText(requireContext(),
-                                    R.string.trash_restore_failed,
-                                    Toast.LENGTH_SHORT).show();
-                        }
-                        refreshTrashList();
+                        final boolean[] success = new boolean[1];
+                        runInBackground(
+                                () -> success[0] = trashManager.restoreFromTrash(item.trashName),
+                                () -> {
+                                    if (success[0]) {
+                                        Toast.makeText(requireContext(),
+                                                getString(R.string.trash_restored, item.originalName),
+                                                Toast.LENGTH_SHORT).show();
+                                    } else {
+                                        Toast.makeText(requireContext(),
+                                                R.string.trash_restore_failed,
+                                                Toast.LENGTH_SHORT).show();
+                                    }
+                                });
                     })
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
@@ -156,13 +170,12 @@ public class TrashFragment extends Fragment {
             new AlertDialog.Builder(requireContext())
                     .setTitle(R.string.trash_delete_confirm_title)
                     .setMessage(getString(R.string.trash_delete_confirm_message, item.originalName))
-                    .setPositiveButton(R.string.trash_delete_permanently, (d, w) -> {
-                        trashManager.deletePermanently(item.trashName);
-                        Toast.makeText(requireContext(),
-                                getString(R.string.trash_deleted_permanently, item.originalName),
-                                Toast.LENGTH_SHORT).show();
-                        refreshTrashList();
-                    })
+                    .setPositiveButton(R.string.trash_delete_permanently, (d, w) ->
+                            runInBackground(
+                                    () -> trashManager.deletePermanently(item.trashName),
+                                    () -> Toast.makeText(requireContext(),
+                                            getString(R.string.trash_deleted_permanently, item.originalName),
+                                            Toast.LENGTH_SHORT).show()))
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
         });

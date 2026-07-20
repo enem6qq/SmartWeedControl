@@ -40,7 +40,6 @@ public class SummaryFragment extends Fragment {
     private AnalysisSettings analysisSettings;
 
     private String lastOriginalPath = null;
-    private String lastStackedPath  = null;
 
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
@@ -68,11 +67,6 @@ public class SummaryFragment extends Fragment {
                 FullscreenImageDialog.show(SummaryFragment.this, lastOriginalPath);
             }
         });
-        binding.ivStackedPanels.setOnClickListener(v -> {
-            if (!TextUtils.isEmpty(lastStackedPath)) {
-                FullscreenImageDialog.show(SummaryFragment.this, lastStackedPath);
-            }
-        });
 
         // Weed-Filter-Zeilen ein-/ausblenden
         analysisVM.weedFilter.observe(getViewLifecycleOwner(), wf -> {
@@ -97,11 +91,20 @@ public class SummaryFragment extends Fragment {
                     .setTitle(R.string.session_delete_confirm_title)
                     .setMessage(R.string.analysis_discard_confirm_message)
                     .setPositiveButton(R.string.session_delete_action, (d, w) -> {
-                        int moved = new TrashManager(requireContext()).moveDirectoryToTrash(new File(path));
-                        Toast.makeText(requireContext(),
-                                getString(R.string.session_deleted, moved),
-                                Toast.LENGTH_SHORT).show();
-                        androidx.navigation.fragment.NavHostFragment.findNavController(this).popBackStack();
+                        // Kopieren in den Papierkorb im Hintergrund (sonst ANR bei vielen Bildern)
+                        final android.content.Context appCtx = requireContext().getApplicationContext();
+                        binding.btnDiscardAnalysis.setEnabled(false);
+                        new Thread(() -> {
+                            int moved = new TrashManager(appCtx).moveDirectoryToTrash(new File(path));
+                            if (!isAdded()) return;
+                            requireActivity().runOnUiThread(() -> {
+                                if (!isAdded()) return;
+                                Toast.makeText(requireContext(),
+                                        getString(R.string.session_deleted, moved),
+                                        Toast.LENGTH_SHORT).show();
+                                androidx.navigation.fragment.NavHostFragment.findNavController(this).popBackStack();
+                            });
+                        }).start();
                     })
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
@@ -131,10 +134,8 @@ public class SummaryFragment extends Fragment {
                 binding.tvStatus.setText(err);
                 binding.tvRecommendation.setText("");
                 Glide.with(binding.ivOriginalPanel).clear(binding.ivOriginalPanel);
-                Glide.with(binding.ivStackedPanels).clear(binding.ivStackedPanels);
                 safeResetFields();
                 lastOriginalPath = null;
-                lastStackedPath = null;
 
                 if (binding.pairsContainer != null) binding.pairsContainer.removeAllViews();
                 if (binding.tvPairsHeader != null) binding.tvPairsHeader.setVisibility(View.GONE);
@@ -150,9 +151,7 @@ public class SummaryFragment extends Fragment {
                 binding.tvStatus.setText(R.string.status_result_parse_error);
                 binding.tvRecommendation.setText("");
                 Glide.with(binding.ivOriginalPanel).clear(binding.ivOriginalPanel);
-                Glide.with(binding.ivStackedPanels).clear(binding.ivStackedPanels);
                 lastOriginalPath = null;
-                lastStackedPath = null;
                 if (binding.pairsContainer != null) binding.pairsContainer.removeAllViews();
                 if (binding.tvPairsHeader != null) binding.tvPairsHeader.setVisibility(View.GONE);
             }
@@ -246,9 +245,6 @@ public class SummaryFragment extends Fragment {
         JSONObject combo = root.optJSONObject("combo");
         String overview = (combo != null) ? normalizePath(combo.optString("overview", "")) : "";
         Glide.with(binding.ivOriginalPanel).clear(binding.ivOriginalPanel);
-        Glide.with(binding.ivStackedPanels).clear(binding.ivStackedPanels);
-        binding.ivStackedPanels.setVisibility(View.GONE);
-        lastStackedPath = null;
         if (!TextUtils.isEmpty(overview)) {
             lastOriginalPath = overview;
             binding.ivOriginalPanel.setVisibility(View.VISIBLE);
@@ -381,35 +377,6 @@ public class SummaryFragment extends Fragment {
     // ===================================================
     // Hilfsfunktionen
     // ===================================================
-    private void loadImages(JSONObject combo) {
-        if (combo == null) {
-            lastOriginalPath = null;
-            lastStackedPath = null;
-            Glide.with(binding.ivOriginalPanel).clear(binding.ivOriginalPanel);
-            Glide.with(binding.ivStackedPanels).clear(binding.ivStackedPanels);
-            return;
-        }
-
-        String origPanel = normalizePath(combo.optString("original_panel", null));
-        String stacked   = normalizePath(combo.optString("labeled_tripanel_stacked", null));
-
-        Glide.with(binding.ivOriginalPanel).clear(binding.ivOriginalPanel);
-        Glide.with(binding.ivStackedPanels).clear(binding.ivStackedPanels);
-
-        if (!TextUtils.isEmpty(origPanel)) {
-            lastOriginalPath = origPanel;
-            loadInto(binding.ivOriginalPanel, origPanel);
-        } else {
-            lastOriginalPath = null;
-        }
-
-        if (!TextUtils.isEmpty(stacked)) {
-            lastStackedPath = stacked;
-            loadInto(binding.ivStackedPanels, stacked);
-        } else {
-            lastStackedPath = null;
-        }
-    }
 
     /** Lädt Pfad/URI in eine ImageView (unterstützt file paths, file://, content://) */
     private void loadInto(@NonNull ImageView target, @NonNull String pathOrUri) {

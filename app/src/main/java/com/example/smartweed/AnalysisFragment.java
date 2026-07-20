@@ -1,14 +1,10 @@
 // app/src/main/java/com/example/smartweed/AnalysisFragment.java
 package com.example.smartweed;
 
-import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.database.Cursor;
-import android.media.MediaScannerConnection;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.DocumentsContract;
@@ -22,7 +18,6 @@ import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
-import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
@@ -70,48 +65,22 @@ public class AnalysisFragment extends Fragment {
 
     private AnalysisViewModel analysisVM;
 
-    // Android <11: WRITE_EXTERNAL_STORAGE Runtime-Permission
-    private final ActivityResultLauncher<String> writePermLauncher =
-            registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
-                if (!isGranted) {
-                    Toast.makeText(requireContext(),
-                            R.string.toast_storage_permission_for_results,
-                            Toast.LENGTH_LONG).show();
-                }
-            });
-
     /**
-     * Dokument-Picker, der direkt im SmartWeed-Bilderordner startet,
-     * damit die aufgenommenen Bilder ganz oben angezeigt werden.
+     * Dokument-Picker, der direkt im Galerie-Ordner Pictures/SmartWeed startet —
+     * dorthin exportiert die App die aufgenommenen Fotos, sodass sie ganz oben
+     * angezeigt werden. (Die Session-Ordner selbst liegen im app-eigenen
+     * Speicher und werden beim Öffnen einer Session direkt vorgeladen.)
      */
     private class OpenMultipleImagesInSmartWeedDir extends ActivityResultContracts.OpenMultipleDocuments {
         @NonNull
         @Override
         public Intent createIntent(@NonNull Context context, @NonNull String[] input) {
             Intent intent = super.createIntent(context, input);
-            Uri initialUri = buildInitialPickerUri();
-            if (initialUri != null) {
-                intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri);
-            }
+            Uri initialUri = DocumentsContract.buildDocumentUri(EXTERNAL_STORAGE_PROVIDER,
+                    "primary:" + Environment.DIRECTORY_PICTURES + "/SmartWeed");
+            intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri);
             return intent;
         }
-    }
-
-    /**
-     * Baut eine DocumentsProvider-URI auf den Bilderordner der App
-     * (Session-Ordner, falls von der Kamera-Seite übergeben, sonst Pictures/SmartWeed).
-     */
-    private Uri buildInitialPickerUri() {
-        String docPath = Environment.DIRECTORY_PICTURES + "/SmartWeed";
-        if (imageDirPath != null) {
-            String rootPath = Environment.getExternalStorageDirectory().getAbsolutePath();
-            if (imageDirPath.startsWith(rootPath)) {
-                String rel = imageDirPath.substring(rootPath.length());
-                if (rel.startsWith("/")) rel = rel.substring(1);
-                if (!rel.isEmpty()) docPath = rel;
-            }
-        }
-        return DocumentsContract.buildDocumentUri(EXTERNAL_STORAGE_PROVIDER, "primary:" + docPath);
     }
 
     // === Multi-Picker ===
@@ -154,9 +123,8 @@ public class AnalysisFragment extends Fragment {
 
         imageDirPath = (getArguments() != null) ? getArguments().getString("imageDir") : null;
         if (imageDirPath == null) {
-            // App-spezifischer Speicher (keine Berechtigung nötig, Scoped Storage kompatibel)
-            File fallback = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "SmartWeed");
-            imageDirPath = fallback.getAbsolutePath();
+            // App-eigener Speicher (keine Berechtigung nötig, Scoped Storage konform)
+            imageDirPath = SessionStore.getBaseDir(requireContext()).getAbsolutePath();
         }
 
         // State wiederherstellen
@@ -200,9 +168,12 @@ public class AnalysisFragment extends Fragment {
                 return;
             }
 
-            // Android <11: Schreibberechtigung prüfen bevor Ausgabe-Ordner erstellt wird
-            if (!hasWritePermission()) {
-                writePermLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+            // Doppelklick-/Doppelnavigations-Guard: nur starten, wenn wir noch
+            // wirklich auf der Analyse-Seite stehen (sonst würde ein schneller
+            // Doppeltipp die Navigation zweimal auslösen -> Crash + Doppel-Analyse).
+            androidx.navigation.NavController nav = NavHostFragment.findNavController(this);
+            if (nav.getCurrentDestination() == null
+                    || nav.getCurrentDestination().getId() != R.id.AnalysisFragment) {
                 return;
             }
 
@@ -221,15 +192,14 @@ public class AnalysisFragment extends Fragment {
                 sessionDir = new File(imageDirPath);
             } else {
                 String sessionName = new SimpleDateFormat(SessionStore.SESSION_NAME_PATTERN, Locale.getDefault()).format(new Date());
-                sessionDir = new File(SessionStore.getBaseDir(), sessionName);
+                sessionDir = new File(SessionStore.getBaseDir(requireContext()), sessionName);
             }
             String analyseTimestamp = new SimpleDateFormat("HH-mm-ss", Locale.getDefault()).format(new Date());
             File outDir = new File(sessionDir, SessionStore.ANALYSIS_PREFIX + analyseTimestamp);
             if (!outDir.exists()) outDir.mkdirs();
             analysisVM.outDir.postValue(outDir.getAbsolutePath());
 
-            NavHostFragment.findNavController(this)
-                    .navigate(R.id.action_AnalysisFragment_to_SummaryFragment);
+            nav.navigate(R.id.action_AnalysisFragment_to_SummaryFragment);
 
             runPythonAnalysis(outDir, weedFilter, rowMode);
         });
@@ -283,16 +253,6 @@ public class AnalysisFragment extends Fragment {
             if (last != null) name = last;
         }
         return name;
-    }
-
-    /** Prüft ob Schreibzugriff auf externen Speicher vorhanden ist */
-    private boolean hasWritePermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Android 11+: MANAGE_EXTERNAL_STORAGE wird in MainActivity angefragt
-            return Environment.isExternalStorageManager();
-        }
-        return ContextCompat.checkSelfPermission(requireContext(),
-                Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
     }
 
     // ==================================================================
@@ -359,7 +319,8 @@ public class AnalysisFragment extends Fragment {
                 JSONObject combo = new JSONObject(json).optJSONObject("combo");
                 String overview = (combo != null) ? combo.optString("overview", "") : "";
                 if (!overview.isEmpty()) {
-                    MediaScannerConnection.scanFile(appContext, new String[]{overview}, null, null);
+                    // Übersichtsbild in die öffentliche Galerie exportieren
+                    MediaExport.exportToGallery(appContext, new File(overview), "");
                 }
 
                 analysisVM.resultJson.postValue(json);

@@ -4,15 +4,11 @@
 
     <!-- Kamera-Berechtigung + Feature (required=false = App installierbar ohne Kamera) -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- Android 13+ -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
-    <!-- Schreibzugriff auf öffentlichen Speicher (Android 9-10) -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
-    <!-- Für ältere Geräte zusätzlich: -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
-    <!-- Android 11+: voller Dateizugriff, damit Bilder in /Pictures/SmartWeed/ liegen -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+    <!-- Nur Android 9 (API 28): Galerie-Export der Fotos in Pictures/SmartWeed.
+         Ab Android 10 läuft der Export ohne Berechtigung über MediaStore;
+         die Session-Daten selbst liegen im app-eigenen Speicher (Scoped Storage). -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
     <uses-feature
         android:name="android.hardware.camera"
@@ -26,7 +22,6 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:requestLegacyExternalStorage="true"
         android:theme="@style/Theme.SmartWeed"
         tools:targetApi="31">
 
@@ -41,7 +36,8 @@
             </intent-filter>
         </activity>
 
-        <!-- Login vorhanden, aber NICHT Launcher -->
+        <!-- Admin-Anmeldung (schützt die Experten-Einstellungen; die App selbst
+             ist ohne Anmeldung voll nutzbar) -->
         <activity
             android:name=".Login"
             android:exported="false"

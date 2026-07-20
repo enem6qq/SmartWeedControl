@@ -51,7 +51,7 @@ public class SessionsFragment extends Fragment {
 
     private void refreshSessions() {
         sessionsContainer.removeAllViews();
-        List<SessionStore.Session> sessions = SessionStore.listSessions();
+        List<SessionStore.Session> sessions = SessionStore.listSessions(requireContext());
 
         if (sessions.isEmpty()) {
             emptyState.setVisibility(View.VISIBLE);
@@ -96,22 +96,36 @@ public class SessionsFragment extends Fragment {
 
         // Antippen der Zeile = Session in der Analyse öffnen
         itemView.setOnClickListener(v -> {
+            androidx.navigation.NavController nav = NavHostFragment.findNavController(this);
+            // Doppelklick-Guard: nur navigieren, wenn wir noch auf dieser Seite stehen
+            if (nav.getCurrentDestination() == null
+                    || nav.getCurrentDestination().getId() != R.id.sessionsFragment) {
+                return;
+            }
             Bundle args = new Bundle();
             args.putString("imageDir", session.dir.getAbsolutePath());
-            NavHostFragment.findNavController(this)
-                    .navigate(R.id.action_sessionsFragment_to_AnalysisFragment, args);
+            nav.navigate(R.id.action_sessionsFragment_to_AnalysisFragment, args);
         });
 
-        // In den Papierkorb verschieben (mit Bestätigung)
+        // In den Papierkorb verschieben (mit Bestätigung). Das Kopieren läuft im
+        // Hintergrund — bei Sessions mit vielen Fotos würde es sonst den
+        // UI-Thread einfrieren (ANR).
         btnDelete.setOnClickListener(v -> new AlertDialog.Builder(requireContext())
                 .setTitle(R.string.session_delete_confirm_title)
                 .setMessage(getString(R.string.session_delete_confirm_message, session.dir.getName()))
                 .setPositiveButton(R.string.session_delete_action, (d, w) -> {
-                    int moved = trashManager.moveDirectoryToTrash(session.dir);
-                    Toast.makeText(requireContext(),
-                            getString(R.string.session_deleted, moved),
-                            Toast.LENGTH_SHORT).show();
-                    refreshSessions();
+                    btnDelete.setEnabled(false);
+                    new Thread(() -> {
+                        int moved = trashManager.moveDirectoryToTrash(session.dir);
+                        if (!isAdded()) return;
+                        requireActivity().runOnUiThread(() -> {
+                            if (!isAdded()) return;
+                            Toast.makeText(requireContext(),
+                                    getString(R.string.session_deleted, moved),
+                                    Toast.LENGTH_SHORT).show();
+                            refreshSessions();
+                        });
+                    }).start();
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show());

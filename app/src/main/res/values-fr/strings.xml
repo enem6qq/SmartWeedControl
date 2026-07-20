@@ -11,7 +11,6 @@
     <string name="summary_fragment_label">Résultats</string>
     <string name="sessions_fragment_label">Mes sessions</string>
     <string name="next">Suivant</string>
-    <string name="previous">Retour</string>
 
     <!-- Language Selection -->
     <string name="select_language">Choisir la langue</string>
@@ -32,7 +31,6 @@
     <!-- Aperçu des sessions -->
     <string name="sessions_empty">Aucune session pour l\'instant – prenez des photos avant/après sur l\'écran caméra.</string>
     <string name="session_photo_count">%1$d avant · %2$d après</string>
-    <string name="session_open">Ouvrir</string>
     <string name="session_delete_confirm_title">Déplacer vers la corbeille ?</string>
     <string name="session_delete_action">Vers la corbeille</string>
     <string name="session_delete_confirm_message">Toutes les images de la session \"%1$s\" seront déplacées vers la corbeille.</string>
@@ -81,7 +79,6 @@
 
     <!-- Toast Messages -->
     <string name="language_changed">Langue modifiée</string>
-    <string name="please_restart">Veuillez redémarrer l\'application pour un effet complet</string>
 
     <!-- Trash / Corbeille -->
     <string name="trash_title">Corbeille</string>
@@ -105,19 +102,13 @@
     <string name="trash_delete_confirm_title">Supprimer définitivement ?</string>
     <string name="trash_delete_confirm_message">\"%1$s\" sera supprimé définitivement. Cette action est irréversible.</string>
     <string name="trash_deleted_permanently">\"%1$s\" supprimé définitivement</string>
-    <string name="trash_moved_to_trash">Déplacé vers la corbeille</string>
-    <string name="trash_move_failed">Erreur lors de la suppression</string>
     <string name="btn_open_trash">Corbeille</string>
 
     <!-- Messages d'exécution (toasts / statut) -->
     <string name="toast_storage_permission_needed">L\'autorisation de stockage est nécessaire pour enregistrer les images.</string>
-    <string name="toast_allow_file_access">Veuillez autoriser l\'accès aux fichiers pour enregistrer les images dans le dossier Pictures.</string>
-    <string name="toast_storage_permission_for_results">L\'autorisation de stockage est nécessaire pour enregistrer les résultats</string>
     <string name="toast_pick_before_after">Veuillez sélectionner des images avant et après</string>
     <string name="toast_analysis_started">Analyse démarrée …</string>
     <string name="toast_image_open_failed">Impossible d\'ouvrir l\'image.</string>
-    <string name="toast_media_access_denied">Accès aux images refusé</string>
-    <string name="toast_storage_permission_save">L\'autorisation de stockage est nécessaire pour l\'enregistrement</string>
     <string name="toast_photo_saved">Image %1$s enregistrée dans %2$s</string>
     <string name="toast_photo_save_error">Erreur lors de l\'enregistrement</string>
     <string name="toast_image_imported">Image importée dans %1$s : %2$s</string>
@@ -140,7 +131,6 @@
     <string name="csc_target_range">Plage cible : %1$s–%2$s %%</string>
 
     <!-- Paramètres d'analyse (mode expert) -->
-    <string name="settings_title">Paramètres d\'analyse</string>
     <string name="settings_info">Paramètres experts : ces valeurs influencent l\'analyse d\'image et la recommandation. Ne les modifiez que si vous savez ce que vous faites.</string>
     <string name="settings_min_size">Taille minimale des objets (px)</string>
     <string name="settings_h_low">Teinte verte – limite inférieure (0–179)</string>
@@ -153,16 +143,8 @@
     <string name="settings_invalid">Valeur invalide – veuillez vérifier les saisies</string>
 
     <!-- Login -->
-    <string name="login_button_pressed">Bouton appuyé</string>
-    <string name="login_json_empty">Le fichier JSON est vide ou manquant !</string>
-    <string name="login_file_error">Erreur de lecture du fichier</string>
-    <string name="login_correct_password">Mot de passe correct</string>
-    <string name="login_wrong_credentials">Nom d\'utilisateur ou mot de passe incorrect</string>
-    <string name="login_json_error">Erreur de traitement du JSON</string>
     <string name="btn_login">Connexion</string>
-    <string name="label_username">Nom d\'utilisateur</string>
     <string name="label_password">Mot de passe</string>
-    <string name="hint_username">Saisissez votre nom d\'utilisateur</string>
     <string name="hint_password">Saisissez votre mot de passe</string>
 
 
@@ -181,4 +163,14 @@
     <string name="status_analysis_done_group">Analyse terminée (%1$d avant / %2$d après).</string>
     <string name="progress_image">Analyse de l\'image %1$d sur %2$d …</string>
     <string name="import_target_title">Importer comme image avant ou après ?</string>
+
+    <!-- v1.4: Admin-Bereich -->
+    <string name="admin_login_title">Espace admin</string>
+    <string name="admin_login_hint">La connexion admin déverrouille les paramètres experts de l\'analyse. L\'application est entièrement utilisable sans connexion.</string>
+    <string name="admin_wrong_password">Mot de passe incorrect</string>
+    <string name="admin_login_success">Admin déverrouillé</string>
+    <string name="admin_area_locked">Ces paramètres experts sont protégés par la connexion admin. La consultation est possible, la modification nécessite la connexion.</string>
+    <string name="admin_area_unlocked">Connecté en tant qu\'admin – les paramètres peuvent être modifiés.</string>
+    <string name="btn_admin_login">Se connecter en tant qu\'admin</string>
+    <string name="btn_admin_logout">Déconnecter l\'admin</string>
 </resources>

@@ -1,21 +1,19 @@
 package com.example.smartweed;
 
 import android.Manifest;
-import android.database.Cursor;
 import android.content.ContentResolver;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.provider.OpenableColumns;
-import android.media.MediaScannerConnection;
 import android.util.Log;
+import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.HapticFeedbackConstants;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.Toast;
 
@@ -30,6 +28,8 @@ import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.core.content.ContextCompat;
 import androidx.core.view.ViewCompat;
 import androidx.fragment.app.Fragment;
+import androidx.navigation.NavController;
+import androidx.navigation.Navigation;
 
 import com.example.smartweed.databinding.FragmentCameraBinding;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -37,6 +37,7 @@ import com.google.common.util.concurrent.ListenableFuture;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -44,63 +45,21 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+/**
+ * Kamera-Seite: Vorher-/Nachher-Fotos aufnehmen oder importieren.
+ * Die Bilder liegen im app-eigenen Speicher (keine Speicher-Berechtigung
+ * nötig); Fotos werden zusätzlich in die Galerie exportiert.
+ */
 public class CameraFragment extends Fragment {
 
     private FragmentCameraBinding binding;
     private ImageCapture imageCapture;
     private ExecutorService cameraExecutor;
 
-    private File publicImageDir;
+    private File sessionDir;
     private File beforeDir;
     private File afterDir;
     private String sessionDirName; // Timestamp-basierter Unterordner für diese Session
-
-    // Wartende Aktionen nach Permission-Grant (Android <11)
-    private String pendingPhotoSubfolder;
-    private Uri pendingImportUri;
-
-    // ===== RUNTIME-PERMISSION für Medien (Android 13+ vs. älter) =====
-    private boolean hasMediaPermission() {
-        if (Build.VERSION.SDK_INT >= 33) {
-            return ContextCompat.checkSelfPermission(requireContext(),
-                    Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED;
-        } else {
-            return ContextCompat.checkSelfPermission(requireContext(),
-                    Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
-        }
-    }
-
-    private final ActivityResultLauncher<String> mediaPermLauncher =
-            registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
-                if (isGranted) {
-                    navigateToAnalysis();
-                } else {
-                    Toast.makeText(requireContext(), R.string.toast_media_access_denied, Toast.LENGTH_LONG).show();
-                }
-            });
-
-    // Android <11: WRITE_EXTERNAL_STORAGE Runtime-Permission
-    private final ActivityResultLauncher<String> writePermLauncher =
-            registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
-                if (isGranted) {
-                    ensureDirectories();
-                    if (pendingPhotoSubfolder != null) {
-                        String sub = pendingPhotoSubfolder;
-                        pendingPhotoSubfolder = null;
-                        takePhoto(sub);
-                    } else if (pendingImportUri != null) {
-                        Uri uri = pendingImportUri;
-                        pendingImportUri = null;
-                        importImageToSmartWeedFolder(uri);
-                    }
-                } else {
-                    pendingPhotoSubfolder = null;
-                    pendingImportUri = null;
-                    Toast.makeText(requireContext(),
-                            R.string.toast_storage_permission_save,
-                            Toast.LENGTH_LONG).show();
-                }
-            });
 
     // Kamera-Permission
     private final ActivityResultLauncher<String> permissionLauncher =
@@ -113,7 +72,7 @@ public class CameraFragment extends Fragment {
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
                 if (result.getResultCode() == android.app.Activity.RESULT_OK && result.getData() != null) {
                     Uri uri = result.getData().getData();
-                    importImageToSmartWeedFolder(uri);
+                    if (uri != null) askImportTarget(uri);
                 }
             });
 
@@ -129,20 +88,13 @@ public class CameraFragment extends Fragment {
 
         cameraExecutor = Executors.newSingleThreadExecutor();
 
-        // Session-Ordner mit lesbarem Timestamp erstellen (Minutengenau: zwei kurz
+        // Session-Ordner mit lesbarem Timestamp erstellen (minutengenau: zwei kurz
         // aufeinanderfolgende Besuche der Kamera-Seite landen in derselben Session)
         sessionDirName = new SimpleDateFormat(SessionStore.SESSION_NAME_PATTERN, Locale.getDefault()).format(new Date());
-        File baseDir = SessionStore.getBaseDir();
-        publicImageDir = new File(baseDir, sessionDirName);
-
-        // Getrennte Unterordner für Vorher- und Nachher-Bilder
-        beforeDir = new File(publicImageDir, "vorher");
-        afterDir = new File(publicImageDir, "nachher");
-
-        // Ordner nur erstellen wenn Schreibberechtigung vorhanden (Android <11 braucht Runtime-Permission)
-        if (hasWritePermission()) {
-            ensureDirectories();
-        }
+        sessionDir = new File(SessionStore.getBaseDir(requireContext()), sessionDirName);
+        beforeDir = new File(sessionDir, SessionStore.BEFORE_DIR_NAME);
+        afterDir = new File(sessionDir, SessionStore.AFTER_DIR_NAME);
+        ensureDirectories();
 
         // Button-Elevation & kleine Press-Animation
         float elev = getResources().getDisplayMetrics().density * 3f;
@@ -157,23 +109,16 @@ public class CameraFragment extends Fragment {
         setPressFeedback(binding.buttonStartAnalysis);
 
         // Kamera-Preview automatisch starten
-        if (hasPermissions()) {
+        if (hasCameraPermission()) {
             startCameraPreview();
         } else {
             permissionLauncher.launch(Manifest.permission.CAMERA);
         }
 
-        // Foto Vorher aufnehmen
-        binding.buttonTakePhotoBefore.setOnClickListener(v -> {
-            takePhoto("vorher");
-        });
+        binding.buttonTakePhotoBefore.setOnClickListener(v -> takePhoto(SessionStore.BEFORE_DIR_NAME));
+        binding.buttonTakePhotoAfter.setOnClickListener(v -> takePhoto(SessionStore.AFTER_DIR_NAME));
 
-        // Foto Nachher aufnehmen
-        binding.buttonTakePhotoAfter.setOnClickListener(v -> {
-            takePhoto("nachher");
-        });
-
-        // Bild importieren (WhatsApp/Dateien etc.)
+        // Bild importieren (WhatsApp/Dateien etc.) — SAF braucht keine Berechtigung
         binding.buttonImportImage.setOnClickListener(v -> {
             Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
             intent.setType("image/*");
@@ -182,20 +127,7 @@ public class CameraFragment extends Fragment {
         });
 
         // Analyse starten -> zum AnalysisFragment navigieren (Pfad mitgeben)
-        if (binding.buttonStartAnalysis != null) {
-            binding.buttonStartAnalysis.setOnClickListener(v -> {
-                if (!hasMediaPermission()) {
-                    // für Android 13+ separat READ_MEDIA_IMAGES anfragen
-                    if (Build.VERSION.SDK_INT >= 33) {
-                        mediaPermLauncher.launch(Manifest.permission.READ_MEDIA_IMAGES);
-                    } else {
-                        mediaPermLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE);
-                    }
-                    return;
-                }
-                navigateToAnalysis();
-            });
-        }
+        binding.buttonStartAnalysis.setOnClickListener(v -> navigateToAnalysis());
 
         // Intro-Animation (Preview + Buttons sanft einblenden)
         prepForIntro(binding.previewCard, -18f);
@@ -206,13 +138,16 @@ public class CameraFragment extends Fragment {
         view.post(this::runIntroAnimations);
     }
 
-    private boolean hasPermissions() {
+    private boolean hasCameraPermission() {
         return ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
     }
 
     private void startCameraPreview() {
         ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(requireContext());
         cameraProviderFuture.addListener(() -> {
+            // Lifecycle-Guard: Der Provider kann fertig werden, nachdem der Nutzer
+            // die Seite bereits verlassen hat — dann ist binding null.
+            if (binding == null || !isAdded()) return;
             try {
                 ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
 
@@ -224,33 +159,28 @@ public class CameraFragment extends Fragment {
                 cameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture);
 
             } catch (ExecutionException | InterruptedException e) {
-                e.printStackTrace();
+                Log.e("Camera", "Kamera-Start fehlgeschlagen", e);
             }
         }, ContextCompat.getMainExecutor(requireContext()));
     }
 
     /** Navigiert zur Analyse-Seite und übergibt den Session-Bilderordner */
     private void navigateToAnalysis() {
+        NavController nav = Navigation.findNavController(requireView());
+        // Doppelklick-/Doppelnavigations-Guard: nur navigieren, wenn wir noch
+        // wirklich auf der Kamera-Seite stehen.
+        if (nav.getCurrentDestination() == null
+                || nav.getCurrentDestination().getId() != R.id.CameraFragment) {
+            return;
+        }
         Bundle args = new Bundle();
-        args.putString("imageDir", publicImageDir.getAbsolutePath());
-        androidx.navigation.NavController nav =
-                androidx.navigation.Navigation.findNavController(requireView());
+        args.putString("imageDir", sessionDir.getAbsolutePath());
         nav.navigate(R.id.action_CameraFragment_to_AnalysisFragment, args);
     }
 
-    /** Prüft ob Schreibzugriff auf externen Speicher vorhanden ist */
-    private boolean hasWritePermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Android 11+: MANAGE_EXTERNAL_STORAGE wird in MainActivity angefragt
-            return Environment.isExternalStorageManager();
-        }
-        return ContextCompat.checkSelfPermission(requireContext(),
-                Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
-    }
-
-    /** Erstellt die Session-Ordner (erneut), z.B. nach Permission-Grant */
+    /** Erstellt die Session-Ordner (app-eigener Speicher, keine Berechtigung nötig) */
     private void ensureDirectories() {
-        if (!publicImageDir.exists()) publicImageDir.mkdirs();
+        if (!sessionDir.exists()) sessionDir.mkdirs();
         if (!beforeDir.exists()) beforeDir.mkdirs();
         if (!afterDir.exists()) afterDir.mkdirs();
     }
@@ -258,57 +188,49 @@ public class CameraFragment extends Fragment {
     private void takePhoto(String subfolder) {
         if (imageCapture == null) return;
 
-        // Android <11: Schreibberechtigung prüfen
-        if (!hasWritePermission()) {
-            pendingPhotoSubfolder = subfolder;
-            writePermLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
-            return;
-        }
-
         // Millisekunden im Namen: zwei Fotos in derselben Sekunde überschreiben sich nicht
         String filename = "photo_" + new SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.getDefault()).format(new Date()) + ".jpg";
 
-        // Direkt in den app-eigenen Session-Unterordner speichern (vorher/nachher)
-        File targetDir = "vorher".equals(subfolder) ? beforeDir : afterDir;
+        File targetDir = SessionStore.BEFORE_DIR_NAME.equals(subfolder) ? beforeDir : afterDir;
         if (!targetDir.exists()) targetDir.mkdirs();
         File photoFile = new File(targetDir, filename);
         ImageCapture.OutputFileOptions outputOptions = new ImageCapture.OutputFileOptions.Builder(photoFile).build();
 
-        String label = getString("vorher".equals(subfolder) ? R.string.label_before : R.string.label_after);
+        String label = getString(SessionStore.BEFORE_DIR_NAME.equals(subfolder)
+                ? R.string.label_before : R.string.label_after);
+        // Application-Context vorab cachen: der Callback feuert asynchron und darf
+        // nicht auf requireContext() eines evtl. schon abgelösten Fragments zugreifen.
+        final Context appContext = requireContext().getApplicationContext();
+        final String toastText = getString(R.string.toast_photo_saved, label,
+                "SmartWeed/" + sessionDirName + "/" + subfolder);
+
         imageCapture.takePicture(
                 outputOptions,
-                ContextCompat.getMainExecutor(requireContext()),
+                ContextCompat.getMainExecutor(appContext),
                 new ImageCapture.OnImageSavedCallback() {
                     @Override
                     public void onImageSaved(@NonNull ImageCapture.OutputFileResults outputFileResults) {
-                        // MediaScanner benachrichtigen, damit das Bild sofort in Galerie/Picker sichtbar ist
-                        MediaScannerConnection.scanFile(requireContext(),
-                                new String[]{photoFile.getAbsolutePath()},
-                                new String[]{"image/jpeg"},
-                                null);
-                        binding.buttonTakePhotoBefore.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
-                        Toast.makeText(requireContext(),
-                                getString(R.string.toast_photo_saved, label,
-                                        "SmartWeed/" + sessionDirName + "/" + subfolder),
-                                Toast.LENGTH_SHORT).show();
+                        // Foto zusätzlich in die Galerie exportieren (Hintergrund)
+                        new Thread(() -> MediaExport.exportToGallery(
+                                appContext, photoFile, sessionDirName + "/" + subfolder)).start();
+
+                        Toast.makeText(appContext, toastText, Toast.LENGTH_SHORT).show();
+                        // UI-Feedback nur, wenn die View noch lebt
+                        if (binding != null && isAdded()) {
+                            binding.buttonTakePhotoBefore.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                        }
                     }
 
                     @Override
                     public void onError(@NonNull ImageCaptureException exception) {
-                        Toast.makeText(requireContext(), R.string.toast_photo_save_error, Toast.LENGTH_SHORT).show();
+                        Log.e("Camera", "Foto speichern fehlgeschlagen", exception);
+                        Toast.makeText(appContext, R.string.toast_photo_save_error, Toast.LENGTH_SHORT).show();
                     }
                 });
     }
 
-    private void importImageToSmartWeedFolder(Uri uri) {
-        // Android <11: Schreibberechtigung prüfen
-        if (!hasWritePermission()) {
-            pendingImportUri = uri;
-            writePermLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
-            return;
-        }
-
-        // Ins Session-Schema einsortieren: Vorher- oder Nachher-Bild?
+    /** Ins Session-Schema einsortieren: Vorher- oder Nachher-Bild? */
+    private void askImportTarget(Uri uri) {
         new android.app.AlertDialog.Builder(requireContext())
                 .setTitle(R.string.import_target_title)
                 .setPositiveButton(R.string.label_before, (d, w) -> copyImportedImage(uri, beforeDir))
@@ -321,7 +243,6 @@ public class CameraFragment extends Fragment {
         try {
             ContentResolver resolver = requireContext().getContentResolver();
             String name = getFileName(uri);
-            InputStream inputStream = resolver.openInputStream(uri);
 
             if (!targetDir.exists()) targetDir.mkdirs();
             File destFile = new File(targetDir, name);
@@ -332,21 +253,16 @@ public class CameraFragment extends Fragment {
                 String ext = (dot > 0) ? name.substring(dot) : "";
                 destFile = new File(targetDir, base + "_" + System.currentTimeMillis() + ext);
             }
-            FileOutputStream outputStream = new FileOutputStream(destFile);
 
-            byte[] buffer = new byte[4096];
-            int length;
-            while ((length = inputStream.read(buffer)) > 0) {
-                outputStream.write(buffer, 0, length);
+            try (InputStream inputStream = resolver.openInputStream(uri);
+                 OutputStream outputStream = new FileOutputStream(destFile)) {
+                if (inputStream == null) throw new java.io.IOException("openInputStream lieferte null");
+                byte[] buffer = new byte[8192];
+                int length;
+                while ((length = inputStream.read(buffer)) > 0) {
+                    outputStream.write(buffer, 0, length);
+                }
             }
-            outputStream.close();
-            inputStream.close();
-
-            // MediaScanner benachrichtigen, damit das Bild sofort in Galerie/Picker sichtbar ist
-            MediaScannerConnection.scanFile(requireContext(),
-                    new String[]{destFile.getAbsolutePath()},
-                    new String[]{"image/jpeg"},
-                    null);
 
             Toast.makeText(requireContext(),
                     getString(R.string.toast_image_imported,

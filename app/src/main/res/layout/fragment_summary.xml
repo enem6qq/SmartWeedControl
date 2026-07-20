@@ -456,21 +456,6 @@
                     android:adjustViewBounds="true"
                     android:contentDescription="@string/label_before"/>
             </FrameLayout>
-
-            <FrameLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/bg_image_placeholder"
-                android:clipToOutline="true">
-
-                <ImageView
-                    android:id="@+id/ivStackedPanels"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:adjustViewBounds="true"
-                    android:contentDescription="@string/label_after"/>
-            </FrameLayout>
         </LinearLayout>
 
         <!-- Individual Pairs Results -->

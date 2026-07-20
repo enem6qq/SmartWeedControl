@@ -11,7 +11,6 @@
     <string name="summary_fragment_label">Results</string>
     <string name="sessions_fragment_label">My Sessions</string>
     <string name="next">Next</string>
-    <string name="previous">Previous</string>
 
     <!-- Language Selection -->
     <string name="select_language">Select Language</string>
@@ -32,7 +31,6 @@
     <!-- Sessions Overview -->
     <string name="sessions_empty">No sessions yet – take before/after photos on the camera screen.</string>
     <string name="session_photo_count">%1$d before · %2$d after</string>
-    <string name="session_open">Open</string>
     <string name="session_delete_confirm_title">Move to recycle bin?</string>
     <string name="session_delete_action">Move to recycle bin</string>
     <string name="session_delete_confirm_message">All images of session \"%1$s\" will be moved to the recycle bin.</string>
@@ -81,7 +79,6 @@
 
     <!-- Toast Messages -->
     <string name="language_changed">Language changed</string>
-    <string name="please_restart">Please restart the app for full effect</string>
 
     <!-- Trash / Recycle Bin -->
     <string name="trash_title">Recycle Bin</string>
@@ -105,19 +102,13 @@
     <string name="trash_delete_confirm_title">Delete permanently?</string>
     <string name="trash_delete_confirm_message">\"%1$s\" will be deleted permanently. This cannot be undone.</string>
     <string name="trash_deleted_permanently">\"%1$s\" deleted permanently</string>
-    <string name="trash_moved_to_trash">Moved to recycle bin</string>
-    <string name="trash_move_failed">Error while deleting</string>
     <string name="btn_open_trash">Recycle Bin</string>
 
     <!-- Runtime messages (toasts / status) -->
     <string name="toast_storage_permission_needed">Storage permission is required to save images.</string>
-    <string name="toast_allow_file_access">Please allow file access so images can be saved in the Pictures folder.</string>
-    <string name="toast_storage_permission_for_results">Storage permission is required to save the results</string>
     <string name="toast_pick_before_after">Please select before and after images</string>
     <string name="toast_analysis_started">Analysis started \u2026</string>
     <string name="toast_image_open_failed">Could not open image.</string>
-    <string name="toast_media_access_denied">Image access denied</string>
-    <string name="toast_storage_permission_save">Storage permission is required for saving</string>
     <string name="toast_photo_saved">%1$s image saved to %2$s</string>
     <string name="toast_photo_save_error">Error while saving</string>
     <string name="toast_image_imported">Image imported to %1$s: %2$s</string>
@@ -140,7 +131,6 @@
     <string name="csc_target_range">Target range: %1$s–%2$s %%</string>
 
     <!-- Analysis Settings (expert mode) -->
-    <string name="settings_title">Analysis Settings</string>
     <string name="settings_info">Expert settings: these values affect the image analysis and the recommendation. Only change them if you know what you are doing.</string>
     <string name="settings_min_size">Minimum object size (px)</string>
     <string name="settings_h_low">Green hue – lower bound (0–179)</string>
@@ -153,16 +143,8 @@
     <string name="settings_invalid">Invalid value – please check the inputs</string>
 
     <!-- Login -->
-    <string name="login_button_pressed">Button pressed</string>
-    <string name="login_json_empty">JSON file is empty or missing!</string>
-    <string name="login_file_error">Error reading file</string>
-    <string name="login_correct_password">Correct password</string>
-    <string name="login_wrong_credentials">Wrong username or password</string>
-    <string name="login_json_error">Error processing JSON</string>
     <string name="btn_login">Login</string>
-    <string name="label_username">Username</string>
     <string name="label_password">Password</string>
-    <string name="hint_username">Enter your username</string>
     <string name="hint_password">Enter your password</string>
 
 
@@ -181,4 +163,14 @@
     <string name="status_analysis_done_group">Analysis finished (%1$d before / %2$d after).</string>
     <string name="progress_image">Analyzing image %1$d of %2$d …</string>
     <string name="import_target_title">Import as before or after image?</string>
+
+    <!-- v1.4: Admin-Bereich -->
+    <string name="admin_login_title">Admin area</string>
+    <string name="admin_login_hint">The admin login unlocks the expert analysis settings. The app itself can be used without logging in.</string>
+    <string name="admin_wrong_password">Wrong password</string>
+    <string name="admin_login_success">Admin unlocked</string>
+    <string name="admin_area_locked">These expert settings are protected by the admin login. You can view them, but changing requires signing in.</string>
+    <string name="admin_area_unlocked">Signed in as admin – settings can be changed.</string>
+    <string name="btn_admin_login">Sign in as admin</string>
+    <string name="btn_admin_logout">Sign out admin</string>
 </resources>
