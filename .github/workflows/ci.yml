@@ -32,6 +32,7 @@ jobs:
         with:
           python-version: "3.8"
           cache: pip
+          cache-dependency-path: requirements-ci.txt
 
       - name: Chaquopy buildPython konfigurieren
         run: echo "chaquopy.buildPython=$(which python)" > local.properties
@@ -42,7 +43,7 @@ jobs:
       # validieren die Tests eine andere Bibliothek als die App ausliefert.
       - name: Python-Analyse-Tests (pytest)
         run: |
-          pip install --quiet "numpy==1.19.5" "opencv-python-headless==4.5.1.48" "pytest==8.3.4"
+          pip install --quiet -r requirements-ci.txt
           PYTHONPATH=app/src/main/python pytest app/src/test/python/ -v
 
       - name: Gradle Cache

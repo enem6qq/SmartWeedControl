@@ -1,0 +1,9 @@
+# Python-Abhängigkeiten für die CI-Tests (pytest-Lauf in .github/workflows/ci.yml).
+#
+# WICHTIG: numpy/opencv exakt auf dem Stand halten, den Chaquopy ins APK
+# paketiert (app/build.gradle pinnt opencv-python-headless==4.5.1.48 für
+# Python 3.8/cp38) — die Tests sollen dieselben Bibliotheken validieren,
+# die die App ausliefert.
+numpy==1.19.5
+opencv-python-headless==4.5.1.48
+pytest==8.3.4
