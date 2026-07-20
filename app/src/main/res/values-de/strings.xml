@@ -26,7 +26,7 @@
     <string name="home_subtitle">Digitale Entscheidungsunterstützung für die mechanische Unkrautkontrolle</string>
     <string name="status_ready">System bereit</string>
     <string name="btn_open_sessions">Meine Aufnahmen</string>
-    <string name="footer_info">SmartWeed v1.0 - Intelligente Unkrautbekämpfung</string>
+    <string name="footer_info">SmartWeed v%1$s - Intelligente Unkrautbekämpfung</string>
 
     <!-- Sessions-Übersicht -->
     <string name="sessions_empty">Noch keine Aufnahmen – mach auf der Kamera-Seite Vorher-/Nachher-Fotos.</string>
@@ -108,7 +108,6 @@
     <string name="toast_storage_permission_needed">Speicher-Berechtigung wird benötigt, um Bilder zu speichern.</string>
     <string name="toast_pick_before_after">Bitte Vorher- und Nachher-Bilder wählen</string>
     <string name="toast_analysis_started">Analyse gestartet …</string>
-    <string name="toast_image_open_failed">Konnte Bild nicht öffnen.</string>
     <string name="toast_photo_saved">%1$s-Bild gespeichert in %2$s</string>
     <string name="toast_photo_save_error">Fehler beim Speichern</string>
     <string name="toast_image_imported">Bild importiert in %1$s: %2$s</string>
@@ -160,7 +159,7 @@
     <string name="label_weed_cov">Unkraut:</string>
     <string name="weed_efficacy">Unkraut-Wirkungsgrad: %1$s</string>
     <string name="mode_label_c">" | Modus C: Reihen-Erkennung"</string>
-    <string name="status_analysis_done_group">Analyse abgeschlossen (%1$d vorher / %2$d nachher).</string>
+    <string name="status_analysis_done_group">Analyse abgeschlossen (%1$d vorher / %2$d nachher).%3$s</string>
     <string name="progress_image">Analysiere Bild %1$d von %2$d …</string>
     <string name="import_target_title">Als Vorher- oder Nachher-Bild importieren?</string>
 
@@ -173,4 +172,15 @@
     <string name="admin_area_unlocked">Als Admin angemeldet – Einstellungen können geändert werden.</string>
     <string name="btn_admin_login">Als Admin anmelden</string>
     <string name="btn_admin_logout">Admin abmelden</string>
+
+    <!-- v1.5 -->
+    <string name="camera_permission_denied">Kamera-Berechtigung verweigert – es können keine Fotos aufgenommen werden. Die Berechtigung kann in den System-Einstellungen erteilt werden.</string>
+    <string name="camera_unavailable">Auf diesem Gerät ist keine Kamera verfügbar.</string>
+    <string name="settings_reset_done">Einstellungen auf Standardwerte zurückgesetzt</string>
+    <string name="warning_light_spread">Hinweis: Die Helligkeit schwankt stark zwischen einzelnen Bildern einer Gruppe – Ausreißer (sehr dunkle/helle Fotos) prüfen.</string>
+    <string name="session_info_with_analyses">%1$s · %2$d Analysen</string>
+    <string name="pair_header">%1$s %2$d – %3$s</string>
+    <string name="trash_delete_failed">Datei konnte nicht gelöscht werden</string>
+    <string name="fullscreen_close">Schließen</string>
+    <string name="fullscreen_image_desc">Vollbild-Ansicht des Analysebilds</string>
 </resources>

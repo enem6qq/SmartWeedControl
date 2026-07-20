@@ -53,15 +53,23 @@ und Komponenten unterhalb einer Mindestgröße (Standard 50 px) werden entfernt.
 - **Modus A – ohne Unkrautfilter:** Bedeckungsgrad = Anteil aller grünen Pixel.
   Einfachster Modus; unterscheidet nicht zwischen Kultur und Unkraut.
 - **Modus B – Unkrautfilter:** Heuristik über Größe und Formfaktor entfernt
-  kleine, kompakte Objekte (typisches Unkraut) vor der Berechnung. Grenzen:
-  versagt, wenn Unkraut die Mehrheit stellt oder Gras-Unkräuter länglich wie
-  Getreide sind.
+  kleine, kompakte Objekte (typisches Unkraut) vor der Berechnung. Als
+  Referenzgröße für „typische Kulturpflanze" dient der **flächengewichtete**
+  Median der Komponentenflächen — so filtert der Modus auch dann korrekt,
+  wenn Unkraut die zahlenmäßige Mehrheit der Objekte stellt. Boden-Löcher
+  innerhalb einer Pflanze bleiben bei der Filterung unangetastet (die
+  Bedeckung wird nicht künstlich aufgefüllt). Grenze: versagt, wenn
+  Gras-Unkräuter länglich wie Getreide sind.
 - **Modus C – Reihen-Erkennung (empfohlen für das Projektziel):** Nutzt aus,
   dass Getreide in Reihen gesät wird. Zunächst wird die Bildrotation mit dem
-  am stärksten „gestreiften" Spaltenprofil gesucht; anschließend misst die
-  **Autokorrelation** dieses Profils den regelmäßigen Reihenabstand. Grün
-  **auf** den Reihen zählt als Kulturpflanze, Grün **zwischen** den Reihen als
-  Unkraut. Ergebnis: zwei getrennte Kennzahlen —
+  am stärksten „gestreiften" Spaltenprofil gesucht (Grobsuche in 1,5°- und
+  Feinsuche in 0,25°-Schritten, zusätzlich ein zweiter Durchlauf auf dem
+  transponierten Bild — damit werden auch **quer** liegende Reihen erkannt);
+  anschließend misst die **unverzerrte Autokorrelation** dieses Profils den
+  regelmäßigen Reihenabstand (die Normierung auf die Überlapplänge stellt
+  sicher, dass auch wenige, weit auseinanderliegende Reihen erkannt werden).
+  Grün **auf** den Reihen zählt als Kulturpflanze, Grün **zwischen** den
+  Reihen als Unkraut. Ergebnis: zwei getrennte Kennzahlen —
   - **Kultur-CSC** (Schaden an der Kulturpflanze, Zielband 8–12 %)
   - **Unkraut-Wirkungsgrad** (relative Abnahme des Unkrauts, je höher desto besser)
 
@@ -74,23 +82,36 @@ und Komponenten unterhalb einer Mindestgröße (Standard 50 px) werden entfernt.
   echte Reihen ≥ 0,68 Prominenz, reihenlose Profile ≤ 0,27; Schwelle 0,35).
   Werden keine klaren Reihen gefunden, fällt die Analyse transparent auf die
   Gesamtbedeckung zurück (mit Hinweis in der App). Bei der Gruppen-Auswertung
-  gilt Mehrheitsentscheid je Gruppe: Ein einzelnes Bild ohne erkannte Reihen
-  kippt nicht die gesamte Auswertung; die Kultur-/Unkraut-Mittelwerte stammen
-  ausschließlich aus den Bildern mit erkannten Reihen.
+  gilt Mehrheitsentscheid je Gruppe (mindestens die Hälfte der Bilder): Ein
+  einzelnes Bild ohne erkannte Reihen kippt nicht die gesamte Auswertung; die
+  Kultur-/Unkraut-Mittelwerte stammen ausschließlich aus den Bildern mit
+  erkannten Reihen.
 
 ## 4. Gruppen-Auswertung (mehrere Bilder)
 
 Für höhere Genauigkeit können mehrere Vorher- und Nachher-Bilder erfasst
 werden (Anzahl darf sich unterscheiden). Die Bedeckungsgrade werden **je
 Gruppe gemittelt**, der CSC wird aus den Gruppenmittelwerten berechnet.
-Zusätzlich prüft die App, ob sich die mittlere Helligkeit von Vorher- und
-Nachher-Gruppe stark unterscheidet, und warnt dann vor einem möglichen
-Beleuchtungs-Bias.
+Zwei Plausibilitäts-Warnungen sichern die Beleuchtung ab:
 
-## 5. Validierung an echten Feldbildern (Stand v1.3)
+1. **Gruppen-Bias:** Die mittlere Helligkeit von Vorher- und Nachher-Gruppe
+   unterscheidet sich stark (systematischer Beleuchtungs-Bias).
+2. **Ausreißer-Streuung:** Einzelbilder *innerhalb* einer Gruppe streuen
+   stark (z. B. ein sehr dunkles und ein sehr helles Vorher-Bild) — im
+   Gruppenmittel würde sich das aufheben, obwohl beide Bilder einzeln
+   segmentierungskritisch sind.
 
-Erste Kalibrierung an 14 realen Feldfotos (Sonnenlicht, verschiedene
-Bewuchsdichten) plus synthetischen Kontrollbildern:
+Wichtig fürs Aufnahmeprotokoll: Alle Bilder einer Auswertung sollten aus
+ähnlicher Höhe und möglichst senkrecht (Nadir) aufgenommen werden — die
+Gruppen-Mittelung setzt voraus, dass jedes Bild eine vergleichbare Fläche
+repräsentiert (keine automatische Perspektiv-/Maßstabskorrektur).
+
+## 5. Validierung an echten Feldbildern (Stand v1.5)
+
+Erstkalibrierung (v1.3) an 14 realen Feldfotos; inzwischen liegen 24 Fotos
+unter `testdaten/feldbilder/` (Sonnenlicht, verschiedene Bewuchsdichten),
+gegen die jede Algorithmus-Änderung nachvalidiert wird — zusätzlich zu den
+synthetischen Kontrollbildern der automatischen Testsuite:
 
 - **Segmentierung:** ExG+Otsu segmentiert die Pflanzen auf allen Realbildern
   sauber und ist sichtbar robuster als HSV (die feste HSV-Schwelle verfehlt
@@ -103,8 +124,9 @@ Bewuchsdichten) plus synthetischen Kontrollbildern:
 
 ### Bekannte Grenzen / nächste Schritte
 
-- Die Reihen-Erkennung setzt näherungsweise senkrechte Aufnahmen mit klar
-  sichtbaren Reihen voraus; bei jungem, dichtem Mischbewuchs ist keine
+- Die Reihen-Erkennung setzt näherungsweise senkrechte Aufnahmen (Nadir) mit
+  klar sichtbaren Reihen voraus; die Orientierung der Reihen im Bild ist seit
+  v1.5 egal (längs oder quer). Bei jungem, dichtem Mischbewuchs ist keine
   zuverlässige Reihentrennung möglich (dann greift der Rückfall auf die
   Gesamtbedeckung).
 - Die bisherige Kalibrierung erfolgte an *einzelnen* Feldbildern. Für die

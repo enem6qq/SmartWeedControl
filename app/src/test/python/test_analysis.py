@@ -98,10 +98,22 @@ def test_exg_robust_gegen_helligkeit(brightness):
     assert iou(seg(img, "exg"), truth) > 0.9
 
 
-def test_hsv_bei_normallicht_korrekt(_=None):
+def test_hsv_bei_normallicht_korrekt():
     img, crop, weed = make_field(brightness=1.0)
     truth = cv2.bitwise_or(crop, weed)
     assert iou(seg(img, "hsv"), truth) > 0.9
+
+
+def test_hsv_schwaeche_bei_dunkelheit_dokumentiert():
+    """Beleg für die dokumentierte HSV-Schwäche (Motivation für ExG als
+    Standard): Bei dunklem Licht fällt HSV deutlich hinter ExG zurück,
+    weil Sättigung/Helligkeit unter die festen SV_MIN-Grenzen rutschen."""
+    img, crop, weed = make_field(brightness=0.45)
+    truth = cv2.bitwise_or(crop, weed)
+    iou_hsv = iou(seg(img, "hsv"), truth)
+    iou_exg = iou(seg(img, "exg"), truth)
+    assert iou_exg > 0.9
+    assert iou_hsv < iou_exg
 
 
 def test_exg_halluziniert_nicht_auf_boden():
@@ -153,6 +165,96 @@ def test_reihen_leere_maske_abgelehnt():
     assert not ok
 
 
+def test_reihen_quer_im_bild_erkannt():
+    """Horizontale Reihen (quer zur Suchachse): der Transponier-Durchlauf
+    deckt die Orientierungen ab, die die ±45°-Winkelsuche nicht erreicht."""
+    img, _, _ = make_field(angle_deg=0)
+    mask = analysis._remove_small_components(seg(img, "exg"), 50)
+    mask_quer = np.ascontiguousarray(mask.T)
+    ok, band, info = analysis._detect_rows(mask_quer)
+    assert ok, info
+    assert band is not None and band.shape == mask_quer.shape
+
+
+def test_reihen_wenige_weite_reihen_erkannt():
+    """Regression: Die frühere verzerrte (biased) Autokorrelation dämpfte
+    große Reihenabstände — Felder mit wenigen, weiten Reihen fielen
+    systematisch durch die Mindeststärke."""
+    m = np.zeros((900, 1200), np.uint8)
+    for i in range(1, 5):                      # 4 Reihen, Abstand 240 px
+        x = i * 240
+        cv2.rectangle(m, (x - 25, 0), (x + 25, 899), 255, -1)
+    ok, _, info = analysis._detect_rows(m)
+    assert ok, info
+
+
+def test_reihen_extreme_streifenmaske_abgelehnt():
+    """Regression: Extreme Streifenformate erzeugten bei der Rotation
+    Treppenartefakte, die eine Scheinperiodizität vortäuschten."""
+    ok, _, info = analysis._detect_rows(np.full((1, 2000), 255, np.uint8))
+    assert not ok, info
+
+
+def test_reihen_vollflaechige_maske_abgelehnt():
+    ok, _, info = analysis._detect_rows(np.full((900, 1200), 255, np.uint8))
+    assert not ok, info
+
+
+# ---------------------------------------------------------------------------
+# Unkrautfilter (Modus B)
+# ---------------------------------------------------------------------------
+def test_unkrautfilter_fuellt_keine_loecher():
+    """Regression v1.4-Bug: drawContours(FILLED) malte Boden-Löcher innerhalb
+    von Pflanzen aus und überschätzte die Bedeckung massiv (20% -> 44%)."""
+    m = np.zeros((400, 400), np.uint8)
+    cv2.circle(m, (200, 200), 150, 255, -1)
+    cv2.circle(m, (200, 200), 110, 0, -1)      # Boden-Loch in der Pflanze
+    wf = analysis._weed_filter_mask(m)
+    cov_in = (m > 0).mean()
+    cov_out = (wf > 0).mean()
+    assert abs(cov_out - cov_in) < 0.005
+
+
+def test_unkrautfilter_bei_unkraut_mehrheit():
+    """Regression v1.4-Bug: Stellte Unkraut die Komponenten-Mehrheit, war der
+    einfache Median selbst eine Unkrautgröße und der Filter entfernte nichts.
+    Der flächengewichtete Median nimmt die Kultur-Streifen als Referenz."""
+    rng = np.random.default_rng(7)
+    m = np.zeros((900, 1200), np.uint8)
+    for i in range(1, 16):                     # 15 Kultur-Streifen
+        x = i * 75
+        cv2.rectangle(m, (x - 14, 0), (x + 14, 899), 255, -1)
+    cov_rows_only = (m > 0).mean() * 100
+    for _ in range(60):                        # 60 kleine Unkraut-Blobs
+        cv2.circle(m, (int(rng.integers(0, 1200)), int(rng.integers(0, 900))),
+                   int(rng.integers(5, 12)), 255, -1)
+    cov_with_blobs = (m > 0).mean() * 100
+    cov_out = (analysis._weed_filter_mask(m) > 0).mean() * 100
+    # Die freistehenden Blobs müssen (fast) vollständig verschwinden
+    assert cov_out < cov_rows_only + 0.5
+    assert cov_out < cov_with_blobs - 0.3
+
+
+def test_unkrautfilter_leere_maske():
+    wf = analysis._weed_filter_mask(np.zeros((100, 100), np.uint8))
+    assert (wf > 0).sum() == 0
+
+
+# ---------------------------------------------------------------------------
+# Extrembilder / Robustheit
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("img", [
+    np.zeros((100, 100, 3), np.uint8),                 # komplett schwarz
+    np.full((100, 100, 3), 255, np.uint8),             # komplett weiß
+    np.full((1, 1, 3), 128, np.uint8),                 # 1x1
+    np.full((1, 500, 3), 128, np.uint8),               # extremes Seitenverhältnis
+])
+def test_segmentierung_extrembilder_crashen_nicht(img):
+    for method in ("exg", "hsv"):
+        mask = seg(img, method)
+        assert mask.shape == img.shape[:2]
+
+
 def test_reihen_trennen_kultur_und_unkraut():
     img, crop, weed = make_field(angle_deg=10, weed_frac=1.0)
     mask = analysis._remove_small_components(seg(img, "exg"), 50)
@@ -200,6 +302,25 @@ def test_helligkeitswarnung(tmp_path):
     assert s["brightness_warning"] is True
 
 
+def test_helligkeitswarnung_negativfall(tmp_path):
+    items = [_item("before", 0, 8.0, 7.8, 100),
+             _item("after", 0, 6.0, 5.9, 110)]
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    assert s["brightness_warning"] is False
+    assert s["brightness_spread_warning"] is False
+
+
+def test_helligkeits_streuung_trotz_gleichem_mittel(tmp_path):
+    """Ein sehr dunkles + sehr helles Vorher-Bild heben sich im Gruppenmittel
+    auf — die Streuungs-Warnung erkennt die Ausreißer trotzdem."""
+    items = [_item("before", 0, 8.0, 7.8, 40),
+             _item("before", 1, 8.0, 7.8, 180),
+             _item("after", 0, 6.0, 5.9, 110)]
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    assert s["brightness_warning"] is False        # Mittel 110 vs. 110
+    assert s["brightness_spread_warning"] is True  # Streuung 140 > 40
+
+
 def test_overview_key_fehlt_ohne_originale(tmp_path):
     """Regression: JSON-null würde in Android zum String 'null'."""
     items = [_item("before", 0, 1.0, 1.0, 100), _item("after", 0, 0.9, 0.9, 100)]
@@ -221,3 +342,56 @@ def test_rows_mehrheits_aggregation(tmp_path):
         it.pop("coverage_crop_percent"); it.pop("coverage_weed_percent")
     s2 = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
     assert s2["rows_detected"] is False        # 0/3 vorher = keine Mehrheit
+
+
+def test_gruppe_leer_und_einseitig(tmp_path):
+    """Leere Item-Liste und nur-Vorher-Gruppe dürfen nicht crashen und müssen
+    gültiges JSON mit None-Mitteln liefern."""
+    s = json.loads(analysis.build_group_summary("[]", str(tmp_path)))
+    assert s["count_before"] == 0 and s["count_after"] == 0
+    assert s["avg_before"]["bw"] is None
+    assert s["delta"]["bw"] is None
+    assert "overview" not in s["combo"]
+
+    only_before = [_item("before", 0, 8.0, 7.8, 100)]
+    s2 = json.loads(analysis.build_group_summary(json.dumps(only_before), str(tmp_path)))
+    assert s2["count_before"] == 1 and s2["count_after"] == 0
+    assert s2["avg_after"]["bw"] is None
+    assert s2["delta"]["bw"] is None
+
+
+# ---------------------------------------------------------------------------
+# analyze_image End-to-End (JSON-Kontrakt + geschriebene Dateien)
+# ---------------------------------------------------------------------------
+def test_analyze_image_end_to_end(tmp_path):
+    import os
+    img, _, _ = make_field()
+    src = str(tmp_path / "feld.jpg")
+    cv2.imwrite(src, img)
+    out_dir = str(tmp_path / "out")
+
+    item = json.loads(analysis.analyze_image(src, out_dir, "before", 0,
+                                             weed_filter=True, row_mode=True,
+                                             method="exg"))
+    # Pflicht-Schlüssel und Typen
+    assert item["file"] == "feld.jpg"
+    assert item["tag"] == "before" and item["index"] == 0
+    for key in ("brightness", "coverage_bw_percent", "coverage_filtered_percent",
+                "coverage_weedfiltered_percent"):
+        assert isinstance(item[key], float), key
+    assert isinstance(item["rows_detected"], bool)
+    # Alle gemeldeten Ausgabedateien müssen wirklich existieren
+    for name, p in item["outputs"].items():
+        assert os.path.isfile(p), f"outputs[{name}] fehlt: {p}"
+    # .nomedia schützt die Detailbilder vor der Galerie
+    assert os.path.isfile(os.path.join(out_dir, "details", ".nomedia"))
+
+
+def test_analyze_image_fehlerpfade(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        analysis.analyze_image(str(tmp_path / "fehlt.jpg"), str(tmp_path), "before", 0)
+    kaputt = str(tmp_path / "kaputt.jpg")
+    with open(kaputt, "w") as f:
+        f.write("kein bild")
+    with pytest.raises(ValueError):
+        analysis.analyze_image(kaputt, str(tmp_path), "before", 0)

@@ -49,22 +49,28 @@ public class TrashFragment extends Fragment {
         // Auto-Cleanup beim Oeffnen (im Hintergrund, dann Liste aktualisieren)
         runInBackground(() -> trashManager.autoCleanup(), () -> { });
 
-        // Papierkorb leeren Button
-        buttonEmptyTrash.setOnClickListener(v -> {
-            int count = trashManager.getTrashCount();
-            if (count == 0) {
-                Toast.makeText(requireContext(), R.string.trash_already_empty, Toast.LENGTH_SHORT).show();
-                return;
-            }
-            new AlertDialog.Builder(requireContext())
-                    .setTitle(R.string.trash_empty_confirm_title)
-                    .setMessage(getString(R.string.trash_empty_confirm_message, count))
-                    .setPositiveButton(R.string.trash_delete_permanently, (d, w) ->
-                            runInBackground(() -> trashManager.emptyTrash(), () ->
-                                    Toast.makeText(requireContext(), R.string.trash_emptied, Toast.LENGTH_SHORT).show()))
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show();
-        });
+        // Papierkorb leeren Button (auch das Zaehlen liest die Metadaten-Datei
+        // -> im Hintergrund, erst danach den Dialog zeigen)
+        buttonEmptyTrash.setOnClickListener(v -> new Thread(() -> {
+            final int count = trashManager.getTrashCount();
+            android.app.Activity activity = getActivity();
+            if (activity == null) return;
+            activity.runOnUiThread(() -> {
+                if (!isAdded()) return;
+                if (count == 0) {
+                    Toast.makeText(requireContext(), R.string.trash_already_empty, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                new AlertDialog.Builder(requireContext())
+                        .setTitle(R.string.trash_empty_confirm_title)
+                        .setMessage(getString(R.string.trash_empty_confirm_message, count))
+                        .setPositiveButton(R.string.trash_delete_permanently, (d, w) ->
+                                runInBackground(() -> trashManager.emptyTrash(), () ->
+                                        Toast.makeText(requireContext(), R.string.trash_emptied, Toast.LENGTH_SHORT).show()))
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+            });
+        }).start());
 
         refreshTrashList();
     }
@@ -73,8 +79,11 @@ public class TrashFragment extends Fragment {
     private void runInBackground(Runnable work, Runnable onDone) {
         new Thread(() -> {
             work.run();
-            if (!isAdded()) return;
-            requireActivity().runOnUiThread(() -> {
+            // getActivity() EINMAL holen statt isAdded()+requireActivity():
+            // zwischen Check und Aufruf könnte das Fragment detached werden
+            android.app.Activity activity = getActivity();
+            if (activity == null) return;
+            activity.runOnUiThread(() -> {
                 if (!isAdded()) return;
                 onDone.run();
                 refreshTrashList();
@@ -83,24 +92,31 @@ public class TrashFragment extends Fragment {
     }
 
     private void refreshTrashList() {
-        trashItemsContainer.removeAllViews();
-        List<TrashManager.TrashItem> items = trashManager.getTrashItems();
+        // Metadaten-Datei + exists()-Checks pro Eintrag laufen im Hintergrund
+        new Thread(() -> {
+            final List<TrashManager.TrashItem> items = trashManager.getTrashItems();
+            android.app.Activity activity = getActivity();
+            if (activity == null) return;
+            activity.runOnUiThread(() -> {
+                if (!isAdded() || trashItemsContainer == null) return;
+                trashItemsContainer.removeAllViews();
+                if (items.isEmpty()) {
+                    emptyState.setVisibility(View.VISIBLE);
+                    trashItemsContainer.setVisibility(View.GONE);
+                    buttonEmptyTrash.setVisibility(View.GONE);
+                    tvTrashCount.setText(R.string.trash_no_items);
+                } else {
+                    emptyState.setVisibility(View.GONE);
+                    trashItemsContainer.setVisibility(View.VISIBLE);
+                    buttonEmptyTrash.setVisibility(View.VISIBLE);
+                    tvTrashCount.setText(getString(R.string.trash_item_count, items.size()));
 
-        if (items.isEmpty()) {
-            emptyState.setVisibility(View.VISIBLE);
-            trashItemsContainer.setVisibility(View.GONE);
-            buttonEmptyTrash.setVisibility(View.GONE);
-            tvTrashCount.setText(R.string.trash_no_items);
-        } else {
-            emptyState.setVisibility(View.GONE);
-            trashItemsContainer.setVisibility(View.VISIBLE);
-            buttonEmptyTrash.setVisibility(View.VISIBLE);
-            tvTrashCount.setText(getString(R.string.trash_item_count, items.size()));
-
-            for (TrashManager.TrashItem item : items) {
-                addTrashItemView(item);
-            }
-        }
+                    for (TrashManager.TrashItem item : items) {
+                        addTrashItemView(item);
+                    }
+                }
+            });
+        }).start();
     }
 
     private void addTrashItemView(TrashManager.TrashItem item) {
@@ -165,17 +181,22 @@ public class TrashFragment extends Fragment {
                     .show();
         });
 
-        // Endgueltig loeschen
+        // Endgueltig loeschen (Rueckgabewert respektieren: bei Fehlschlag keinen
+        // Erfolg vortaeuschen)
         btnDelete.setOnClickListener(v -> {
             new AlertDialog.Builder(requireContext())
                     .setTitle(R.string.trash_delete_confirm_title)
                     .setMessage(getString(R.string.trash_delete_confirm_message, item.originalName))
-                    .setPositiveButton(R.string.trash_delete_permanently, (d, w) ->
-                            runInBackground(
-                                    () -> trashManager.deletePermanently(item.trashName),
-                                    () -> Toast.makeText(requireContext(),
-                                            getString(R.string.trash_deleted_permanently, item.originalName),
-                                            Toast.LENGTH_SHORT).show()))
+                    .setPositiveButton(R.string.trash_delete_permanently, (d, w) -> {
+                        final boolean[] success = new boolean[1];
+                        runInBackground(
+                                () -> success[0] = trashManager.deletePermanently(item.trashName),
+                                () -> Toast.makeText(requireContext(),
+                                        success[0]
+                                                ? getString(R.string.trash_deleted_permanently, item.originalName)
+                                                : getString(R.string.trash_delete_failed),
+                                        Toast.LENGTH_SHORT).show());
+                    })
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
         });

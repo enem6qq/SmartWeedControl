@@ -43,18 +43,34 @@ public final class MediaExport {
                 values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
                 values.put(MediaStore.Images.Media.RELATIVE_PATH,
                         Environment.DIRECTORY_PICTURES + "/" + relative);
+                // IS_PENDING: Galerie-Apps sehen den Eintrag erst, wenn die
+                // Datei fertig geschrieben ist (keine halbfertigen Bilder)
+                values.put(MediaStore.Images.Media.IS_PENDING, 1);
                 Uri uri = context.getContentResolver()
                         .insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
                 if (uri == null) {
                     Log.w(TAG, "MediaStore-Insert fehlgeschlagen: " + src.getName());
                     return;
                 }
+                boolean written = false;
                 try (InputStream in = new FileInputStream(src);
                      OutputStream out = context.getContentResolver().openOutputStream(uri)) {
-                    if (out == null) return;
-                    byte[] buf = new byte[8192];
-                    int n;
-                    while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+                    if (out != null) {
+                        byte[] buf = new byte[8192];
+                        int n;
+                        while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+                        written = true;
+                    }
+                } finally {
+                    if (written) {
+                        ContentValues done = new ContentValues();
+                        done.put(MediaStore.Images.Media.IS_PENDING, 0);
+                        context.getContentResolver().update(uri, done, null, null);
+                    } else {
+                        // Fehlschlag: Geister-Eintrag entfernen statt ihn
+                        // dauerhaft (unsichtbar/leer) im MediaStore zu lassen
+                        context.getContentResolver().delete(uri, null, null);
+                    }
                 }
             } else {
                 File dstDir = new File(

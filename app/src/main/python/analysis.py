@@ -1,6 +1,6 @@
 # app/src/main/python/analysis.py
 #
-# Bildanalyse für SmartWeedControl (v1.4)
+# Bildanalyse für SmartWeedControl (v1.5)
 #
 # Ablauf: Die App analysiert jedes Bild einzeln (analyze_image) und fasst
 # anschließend alle Vorher-/Nachher-Bilder zu einer Gruppen-Auswertung zusammen
@@ -110,12 +110,23 @@ def _ensure_detail_dir(out_dir):
     return detail_dir
 
 
+def _imwrite(path, img, params=None):
+    """cv2.imwrite mit Fehlerprüfung: liefert bei vollem Speicher o. Ä. still
+    False — dann stünden im Ergebnis-JSON Pfade auf nicht existierende Dateien,
+    die die App später als Bilder laden will."""
+    ok = cv2.imwrite(path, img, params if params is not None else [])
+    if not ok:
+        raise IOError(f"cannot write image: {path}")
+    return path
+
+
 # -------------------------------
 # Segmentierung Pflanze vs. Boden
 # -------------------------------
 def _hsv_mask(bgr, h_low, h_high):
-    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
+    # Direkt BGR->HSV (identisches Ergebnis wie der Umweg über RGB,
+    # spart eine Vollbild-Zwischenkopie)
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
     lower = np.array([h_low, SV_MIN, SV_MIN], dtype=np.uint8)
     upper = np.array([h_high, 255, 255], dtype=np.uint8)
     return cv2.inRange(hsv, lower, upper)
@@ -143,7 +154,9 @@ def _exg_otsu_mask(bgr):
     if float((positive > 0).mean()) >= EXG_UNIMODAL_FRACTION:
         return positive
 
-    exg8 = np.clip((exg + 1.0) * 127.5, 0, 255).astype(np.uint8)
+    # Vollen Wertebereich [-1..2] auf 0..255 abbilden (kein Clipping bei +1,
+    # das das Otsu-Histogramm oben stauchen würde)
+    exg8 = np.clip((exg + 1.0) / 3.0 * 255.0, 0, 255).astype(np.uint8)
     _, otsu = cv2.threshold(exg8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return cv2.bitwise_and(otsu, positive)
 
@@ -161,12 +174,13 @@ def _segment_plants(bgr, method, h_low, h_high):
 
 
 def _remove_small_components(mask, min_size):
+    # Vektorisiert statt Schleife: die frühere Variante machte pro BEHALTENER
+    # Komponente einen Vollbild-Vergleich (labels == i) — bei dichten Beständen
+    # mit tausenden Pflanzen dauerte das auf dem Gerät zweistellige Sekunden.
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-    filtered = np.zeros_like(mask)
-    for i in range(1, num_labels):
-        if stats[i, cv2.CC_STAT_AREA] >= min_size:
-            filtered[labels == i] = 255
-    return filtered
+    keep = stats[:, cv2.CC_STAT_AREA] >= min_size
+    keep[0] = False  # Hintergrund-Label nie übernehmen
+    return keep[labels].astype(np.uint8) * 255
 
 
 def _coverage_percent(mask):
@@ -177,28 +191,56 @@ def _coverage_percent(mask):
 # Modus B: Unkrautfilter (Heuristik Größe + Form)
 # -------------------------------
 def _weed_filter_mask(filtered_mask):
-    contours, _ = cv2.findContours(filtered_mask.copy(), cv2.RETR_EXTERNAL,
-                                   cv2.CHAIN_APPROX_SIMPLE)
-    weed_filtered = np.zeros_like(filtered_mask)
+    """Entfernt kleine, kompakte Objekte (typisches Unkraut) aus der Maske.
+
+    Zwei bewusste Design-Punkte (beide waren früher fehlerhaft):
+    - Die Originalmaske wird GEFILTERT statt behaltene Konturen neu zu zeichnen:
+      cv2.drawContours(..., FILLED) hatte alle Boden-Löcher innerhalb einer
+      Pflanze mit ausgemalt und die Bedeckung so massiv überschätzt
+      (gemessen: Ringmaske 20 % -> 44 %). Jetzt werden nur die als Unkraut
+      erkannten Komponenten aus der Maske gelöscht — Löcher bleiben Löcher.
+    - Referenzfläche ist der FLÄCHENGEWICHTETE Median (die Komponentengröße,
+      oberhalb derer die Hälfte der gesamten Pflanzenfläche liegt) statt des
+      einfachen Median: Stellt Unkraut die zahlenmäßige Mehrheit der
+      Komponenten, war der einfache Median selbst eine Unkrautgröße und der
+      Filter entfernte gar nichts — ausgerechnet bei hohem Unkrautdruck."""
+    contours, hierarchy = cv2.findContours(filtered_mask.copy(), cv2.RETR_CCOMP,
+                                           cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
-        return weed_filtered
+        return np.zeros_like(filtered_mask)
+
+    # Nur Außenkonturen betrachten (RETR_CCOMP: Ebene 0 = Objektrand,
+    # Ebene 1 = Lochrand). Anders als RETR_EXTERNAL erfasst das auch
+    # Objekte, die innerhalb des Lochs eines anderen Objekts liegen.
+    outer = [cnt for idx, cnt in enumerate(contours)
+             if hierarchy is None or hierarchy[0][idx][3] < 0]
+    if not outer:
+        return np.zeros_like(filtered_mask)
 
     areas, form_factors = [], []
-    for cnt in contours:
+    for cnt in outer:
         a = cv2.contourArea(cnt)
         p = cv2.arcLength(cnt, True)
         ff = (p ** 2) / (4.0 * np.pi * a) if (a > 0 and p > 0) else float("inf")
         areas.append(a)
         form_factors.append(ff)
 
-    median_area = float(np.median(areas))
-    size_threshold = WEED_SIZE_FRACTION * median_area
+    # Flächengewichteter Median als Kultur-Referenzgröße
+    order = np.argsort(areas)[::-1]
+    sorted_areas = np.asarray(areas, dtype=np.float64)[order]
+    cum = np.cumsum(sorted_areas)
+    total = cum[-1]
+    if total <= 0:
+        return np.zeros_like(filtered_mask)
+    ref_area = float(sorted_areas[int(np.searchsorted(cum, total / 2.0))])
+    size_threshold = WEED_SIZE_FRACTION * ref_area
 
-    for idx, cnt in enumerate(contours):
-        is_weed = (areas[idx] < size_threshold) and (form_factors[idx] < WEED_FORM_FACTOR_THRESHOLD)
-        if not is_weed:
-            cv2.drawContours(weed_filtered, [cnt], -1, 255, cv2.FILLED)
-    return weed_filtered
+    # Unkraut-Komponenten aus der ORIGINALMASKE löschen (Löcher unangetastet)
+    weed_paint = np.zeros_like(filtered_mask)
+    for idx, cnt in enumerate(outer):
+        if (areas[idx] < size_threshold) and (form_factors[idx] < WEED_FORM_FACTOR_THRESHOLD):
+            cv2.drawContours(weed_paint, [cnt], -1, 255, cv2.FILLED)
+    return cv2.bitwise_and(filtered_mask, cv2.bitwise_not(weed_paint))
 
 
 # -------------------------------
@@ -207,6 +249,26 @@ def _weed_filter_mask(filtered_mask):
 def _detect_rows(plant_mask):
     """Findet Saatreihen über die Autokorrelation des Spaltenprofils.
 
+    Die Winkelsuche des inneren Detektors deckt ±45° ab — grob senkrechte
+    Reihen. Schlägt sie fehl, wird zusätzlich die TRANSPONIERTE Maske geprüft
+    (entspricht +90°): So werden auch quer im Bild liegende Reihen erkannt,
+    zusammen deckt das alle Orientierungen ab.
+    Rückgabe: (ok, band_mask, info)."""
+    ok, band, info = _detect_rows_oriented(plant_mask)
+    if ok:
+        return ok, band, info
+    ok_t, band_t, info_t = _detect_rows_oriented(np.ascontiguousarray(plant_mask.T))
+    if ok_t:
+        info_t["transposed"] = True
+        if "angle" in info_t:
+            info_t["angle"] = round(float(info_t["angle"]) + 90.0, 1)
+        return True, np.ascontiguousarray(band_t.T), info_t
+    return ok, band, info
+
+
+def _detect_rows_oriented(plant_mask):
+    """Innerer Reihen-Detektor (Winkelsuche ±45°).
+
     Ablauf: (1) beste Drehung suchen, sodass das Spaltenprofil maximal
     "gestreift" ist; (2) Autokorrelation des Profils bestimmen — eine klare
     Spitze bei Lag L bedeutet ein regelmäßiges Reihenraster mit Abstand L;
@@ -214,6 +276,11 @@ def _detect_rows(plant_mask):
     auf gepolstertem Canvas, damit keine Bildecken verloren gehen.
     Rückgabe: (ok, band_mask, info)."""
     h, w = plant_mask.shape
+
+    # Schutz: extreme Streifenformate erzeugen bei der Rotation Treppen-
+    # artefakte, die eine Scheinperiodizität vortäuschen können.
+    if min(h, w) < 32:
+        return False, None, {"reason": "image_too_small"}
 
     # Schutz: Auf (fast) leeren Masken kann keine Reihenstruktur bestehen.
     coverage = float((plant_mask > 0).mean()) * 100.0
@@ -231,14 +298,22 @@ def _detect_rows(plant_mask):
 
     def profile_score(angle):
         M = cv2.getRotationMatrix2D((sw / 2, sh / 2), angle, 1.0)
-        rot = cv2.warpAffine(small, M, (sw, sh), flags=cv2.INTER_NEAREST)
+        # INTER_LINEAR beim Scoring glättet Treppenartefakte der Binärmaske
+        rot = cv2.warpAffine(small, M, (sw, sh), flags=cv2.INTER_LINEAR)
         prof = rot.sum(axis=0).astype(np.float32)
         if prof.sum() == 0:
             return 0.0
         return float(prof.std() / (prof.mean() + 1e-6))
 
+    # Grobsuche in 1.5°-Schritten, danach Feinsuche in 0.25°-Schritten:
+    # Der Restfehler der Grobsuche (bis 0.75°) kann bei engen Reihen das
+    # Kamm-Band um etliche Pixel versetzen.
     best_angle, best_score = 0.0, -1.0
     for a in np.arange(-45, 45.1, 1.5):
+        s = profile_score(a)
+        if s > best_score:
+            best_score, best_angle = s, a
+    for a in np.arange(best_angle - 1.5, best_angle + 1.501, 0.25):
         s = profile_score(a)
         if s > best_score:
             best_score, best_angle = s, a
@@ -255,7 +330,12 @@ def _detect_rows(plant_mask):
     seg = seg - seg.mean()
     m = len(seg)
 
+    # UNVERZERRTE (unbiased) Autokorrelation: np.correlate summiert bei Lag L
+    # nur m-L Produkte — ohne Ausgleich wäre ac[L] implizit um (m-L)/m
+    # gedämpft und Bilder mit wenigen, weiten Reihen fielen systematisch
+    # durch die Mindeststärke. Deshalb erst auf die Überlapplänge normieren.
     ac = np.correlate(seg, seg, mode="full")[m - 1:]
+    ac = ac / np.arange(m, 0, -1, dtype=np.float64)
     if ac[0] <= 0:
         return False, None, {"reason": "flat_profile"}
     ac = ac / ac[0]
@@ -365,7 +445,7 @@ def _make_labeled_panel(bgr, plant_mask, filtered_mask, cov_bw, cov_f,
 def analyze_image(path, out_dir, tag, index,
                   weed_filter=False, row_mode=False,
                   min_size=MIN_SIZE, h_low=H_LOW_DEFAULT, h_high=H_HIGH_DEFAULT,
-                  method=METHOD_HSV):
+                  method=METHOD_EXG):
     """
     Analysiert EIN Bild und legt die Detailbilder unter <out_dir>/details/ ab.
     - tag: "before" oder "after", index: Position innerhalb der Gruppe
@@ -409,7 +489,7 @@ def analyze_image(path, out_dir, tag, index,
             overlay = _row_overlay(bgr, crop_mask, weed_mask)
             overlay = _resize_to_height(overlay, min(MAX_PANEL_HEIGHT, overlay.shape[0]))
             overlay_path = os.path.join(detail_dir, f"{tag}_{index:02d}_reihen.jpg")
-            cv2.imwrite(overlay_path, overlay, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+            _imwrite(overlay_path, overlay, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
 
     # Dateien ablegen: Masken verlustfrei als PNG, Fotos/Panels als JPEG
     prefix = f"{tag}_{index:02d}"
@@ -418,19 +498,19 @@ def analyze_image(path, out_dir, tag, index,
     fil_path = os.path.join(detail_dir, f"{prefix}_gefiltert_{min_size}px.png")
     panel_path = os.path.join(detail_dir, f"{prefix}_panel.jpg")
 
-    cv2.imwrite(orig_path, bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-    cv2.imwrite(bw_path, plant_mask)
-    cv2.imwrite(fil_path, filtered)
+    _imwrite(orig_path, bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    _imwrite(bw_path, plant_mask)
+    _imwrite(fil_path, filtered)
 
     wf_path = None
     if weed_filtered_mask is not None:
         wf_path = os.path.join(detail_dir, f"{prefix}_unkrautgefiltert.png")
-        cv2.imwrite(wf_path, weed_filtered_mask)
+        _imwrite(wf_path, weed_filtered_mask)
 
     panel = _make_labeled_panel(bgr, plant_mask, filtered, cov_bw, cov_f,
                                 weed_filtered_mask, cov_wf)
     panel = _resize_to_height(panel, min(MAX_PANEL_HEIGHT, panel.shape[0]))
-    cv2.imwrite(panel_path, panel, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    _imwrite(panel_path, panel, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
 
     item = {
         "file": os.path.basename(path),
@@ -458,7 +538,9 @@ def analyze_image(path, out_dir, tag, index,
 
     print(f"[PY] analyze_image {prefix}: bw={cov_bw}% f={cov_f}% "
           f"wf={cov_wf} crop={cov_crop} weed={cov_weed} bright={brightness}")
-    return json.dumps(item, ensure_ascii=False)
+    # allow_nan=False als Wächter: NaN/Inf würde sonst zu ungültigem JSON,
+    # das die Java-Seite erst beim Parsen crashen ließe
+    return json.dumps(item, ensure_ascii=False, allow_nan=False)
 
 
 # ==========================================================
@@ -480,10 +562,12 @@ def _build_overview(before_items, after_items, out_dir):
                 imgs.append(_resize_to_height(im, OVERVIEW_STRIP_HEIGHT))
         if not imgs:
             return None
+        # Einmal konkatenieren statt in der Schleife (vermeidet O(n²)-Kopien)
         gap = np.ones((OVERVIEW_STRIP_HEIGHT, 8, 3), np.uint8) * 255
-        row = imgs[0]
+        parts = [imgs[0]]
         for im in imgs[1:]:
-            row = np.concatenate([row, gap, im], axis=1)
+            parts.extend([gap, im])
+        row = np.concatenate(parts, axis=1)
         cv2.putText(row, label, (14, 34), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 0), 5)
         cv2.putText(row, label, (14, 34), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
         return row
@@ -496,12 +580,13 @@ def _build_overview(before_items, after_items, out_dir):
     target_w = max(r.shape[1] for r in rows)
     rows = [_pad_to_width(r, target_w) for r in rows]
     gap = np.ones((10, target_w, 3), np.uint8) * 255
-    overview = rows[0]
+    parts = [rows[0]]
     for r in rows[1:]:
-        overview = np.concatenate([overview, gap, r], axis=0)
+        parts.extend([gap, r])
+    overview = np.concatenate(parts, axis=0)
     overview = _maybe_downscale_long_side(overview, MAX_OVERVIEW_WIDTH)
     path = os.path.join(out_dir, "uebersicht_vorher_nachher.jpg")
-    cv2.imwrite(path, overview, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
+    _imwrite(path, overview, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
     return path
 
 
@@ -537,18 +622,30 @@ def build_group_summary(items_json, out_dir):
     rows_detected = None
     if row_mode:
         # Feinere Aggregation statt all(): Reihen gelten je GRUPPE als erkannt,
-        # wenn die Mehrheit ihrer Bilder Reihen zeigt. Ein einzelner Ausreißer
-        # kippt so nicht mehr die gesamte Auswertung; die crop/weed-Mittelwerte
-        # stammen ohnehin nur aus den Bildern MIT erkannten Reihen (_mean_of
-        # überspringt fehlende Schlüssel).
+        # wenn MINDESTENS DIE HÄLFTE ihrer Bilder Reihen zeigt (bei 1 von 2
+        # Bildern also ja). Ein einzelner Ausreißer kippt so nicht mehr die
+        # gesamte Auswertung; die crop/weed-Mittelwerte stammen ohnehin nur aus
+        # den Bildern MIT erkannten Reihen (_mean_of überspringt fehlende
+        # Schlüssel).
         def group_rows_ok(group):
             flags = [bool(i.get("rows_detected")) for i in group if "rows_detected" in i]
             return bool(flags) and sum(flags) * 2 >= len(flags)
         rows_detected = group_rows_ok(before) and group_rows_ok(after)
 
+    # Warnung 1: Die GRUPPEN-Mittelwerte der Helligkeit weichen stark ab
+    # (systematischer Beleuchtungs-Bias vorher vs. nachher).
     brightness_warning = False
     if avg_b.get("brightness") is not None and avg_a.get("brightness") is not None:
         brightness_warning = abs(avg_b["brightness"] - avg_a["brightness"]) > BRIGHTNESS_WARN_DELTA
+
+    # Warnung 2: EINZELBILDER streuen stark (z. B. ein sehr dunkles und ein
+    # sehr helles Vorher-Bild) — im Gruppenmittel würde sich das aufheben,
+    # obwohl beide Bilder einzeln segmentierungskritisch sind.
+    def group_spread(group):
+        vals = [i.get("brightness") for i in group if i.get("brightness") is not None]
+        return (max(vals) - min(vals)) if len(vals) >= 2 else 0.0
+    brightness_spread_warning = (group_spread(before) > BRIGHTNESS_WARN_DELTA
+                                 or group_spread(after) > BRIGHTNESS_WARN_DELTA)
 
     overview_path = _build_overview(before, after, out_dir)
 
@@ -560,6 +657,7 @@ def build_group_summary(items_json, out_dir):
         "row_mode": row_mode,
         "rows_detected": rows_detected,
         "brightness_warning": brightness_warning,
+        "brightness_spread_warning": brightness_spread_warning,
         "out_dir": out_dir,
         "avg_before": avg_b,
         "avg_after": avg_a,
@@ -576,5 +674,6 @@ def build_group_summary(items_json, out_dir):
         "items": items,
     }
     print(f"[PY] group summary: {len(before)} vorher / {len(after)} nachher, "
-          f"rows={rows_detected}, bright_warn={brightness_warning}")
-    return json.dumps(result, ensure_ascii=False)
+          f"rows={rows_detected}, bright_warn={brightness_warning}, "
+          f"spread_warn={brightness_spread_warning}")
+    return json.dumps(result, ensure_ascii=False, allow_nan=False)

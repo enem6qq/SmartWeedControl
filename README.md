@@ -124,8 +124,9 @@ zum Download.
 ## Testdaten
 
 `testdaten/feldbilder/` enthält 24 echte Feldfotos (Wintergetreide, frühes
-Stadium, Sonnenlicht), an denen die Segmentierung und Reihen-Erkennung
-kalibriert wurden (siehe [METHODIK.md](METHODIK.md) §5).
+Stadium, Sonnenlicht). Die Erstkalibrierung (v1.3) erfolgte an 14 dieser
+Fotos; inzwischen wird jede Algorithmus-Änderung gegen alle 24 nachvalidiert
+(siehe [METHODIK.md](METHODIK.md) §5).
 
 ## Hinweise / bekannte Einschränkungen
 
@@ -139,3 +140,14 @@ kalibriert wurden (siehe [METHODIK.md](METHODIK.md) §5).
 - Die früheren Platzhalter-Screens „Monitoring“ und „Manuell“ (Traktor-/
   Striegelsteuerung) wurden entfernt — sie hatten keine Funktion. Die
   Git-Historie enthält sie weiterhin, falls die Idee wieder aufgegriffen wird.
+- **Python 3.8 / OpenCV 4.5.1 sind veraltet** (Python 3.8 erhält seit
+  Oktober 2024 keine Sicherheitsupdates mehr): Die Versionen sind durch das
+  Chaquopy-Paket-Repository vorgegeben — nur für Python 3.8 (cp38) existieren
+  dort passende OpenCV-Wheels. Da die App komplett offline arbeitet und nur
+  selbst aufgenommene bzw. bewusst importierte Bilder verarbeitet, ist das
+  Risiko begrenzt. Vor einer Play-Store-Veröffentlichung prüfen, ob neuere
+  Chaquopy-Versionen aktuellere Python/OpenCV-Kombinationen anbieten.
+- **Reihen-Orientierung:** Seit v1.5 erkennt Modus C Saatreihen in jeder
+  Orientierung (längs oder quer im Bild). Wichtig bleibt: möglichst senkrecht
+  von oben fotografieren und innerhalb einer Auswertung eine ähnliche
+  Aufnahmehöhe einhalten.

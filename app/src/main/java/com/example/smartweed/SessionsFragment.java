@@ -20,7 +20,6 @@ import com.bumptech.glide.load.engine.DiskCacheStrategy;
 import com.bumptech.glide.signature.ObjectKey;
 
 import java.util.List;
-import java.util.Locale;
 
 /**
  * "Meine Aufnahmen": Übersicht aller Sessions (Feldeinsätze).
@@ -50,20 +49,28 @@ public class SessionsFragment extends Fragment {
     }
 
     private void refreshSessions() {
-        sessionsContainer.removeAllViews();
-        List<SessionStore.Session> sessions = SessionStore.listSessions(requireContext());
-
-        if (sessions.isEmpty()) {
-            emptyState.setVisibility(View.VISIBLE);
-            sessionsContainer.setVisibility(View.GONE);
-            return;
-        }
-        emptyState.setVisibility(View.GONE);
-        sessionsContainer.setVisibility(View.VISIBLE);
-
-        for (SessionStore.Session session : sessions) {
-            addSessionView(session);
-        }
+        // Sessions im Hintergrund einlesen (listSessions läuft rekursiv über
+        // alle Analyse-/Detail-Ordner — auf dem UI-Thread droht Jank)
+        final android.content.Context appCtx = requireContext().getApplicationContext();
+        new Thread(() -> {
+            final List<SessionStore.Session> sessions = SessionStore.listSessions(appCtx);
+            android.app.Activity activity = getActivity();
+            if (activity == null) return;
+            activity.runOnUiThread(() -> {
+                if (!isAdded() || sessionsContainer == null) return;
+                sessionsContainer.removeAllViews();
+                if (sessions.isEmpty()) {
+                    emptyState.setVisibility(View.VISIBLE);
+                    sessionsContainer.setVisibility(View.GONE);
+                    return;
+                }
+                emptyState.setVisibility(View.GONE);
+                sessionsContainer.setVisibility(View.VISIBLE);
+                for (SessionStore.Session session : sessions) {
+                    addSessionView(session);
+                }
+            });
+        }).start();
     }
 
     private void addSessionView(SessionStore.Session session) {
@@ -76,13 +83,14 @@ public class SessionsFragment extends Fragment {
 
         tvName.setText(session.dir.getName());
 
-        StringBuilder info = new StringBuilder(getString(R.string.session_photo_count,
-                session.beforeCount, session.afterCount));
+        // Vollständige Format-Strings statt Konkatenation im Code: jede Sprache
+        // kontrolliert die Satzstellung selbst
+        String info = getString(R.string.session_photo_count,
+                session.beforeCount, session.afterCount);
         if (session.analysisCount > 0) {
-            info.append(String.format(Locale.getDefault(), " · %d ", session.analysisCount))
-                .append(getString(R.string.analysis_fragment_label));
+            info = getString(R.string.session_info_with_analyses, info, session.analysisCount);
         }
-        tvInfo.setText(info.toString());
+        tvInfo.setText(info);
 
         if (session.thumbnail != null) {
             Glide.with(this)
@@ -117,8 +125,11 @@ public class SessionsFragment extends Fragment {
                     btnDelete.setEnabled(false);
                     new Thread(() -> {
                         int moved = trashManager.moveDirectoryToTrash(session.dir);
-                        if (!isAdded()) return;
-                        requireActivity().runOnUiThread(() -> {
+                        // getActivity() EINMAL holen statt isAdded()+requireActivity():
+                        // zwischen Check und Aufruf könnte das Fragment detached werden
+                        android.app.Activity activity = getActivity();
+                        if (activity == null) return;
+                        activity.runOnUiThread(() -> {
                             if (!isAdded()) return;
                             Toast.makeText(requireContext(),
                                     getString(R.string.session_deleted, moved),

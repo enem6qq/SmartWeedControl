@@ -91,13 +91,17 @@ public class SummaryFragment extends Fragment {
                     .setTitle(R.string.session_delete_confirm_title)
                     .setMessage(R.string.analysis_discard_confirm_message)
                     .setPositiveButton(R.string.session_delete_action, (d, w) -> {
-                        // Kopieren in den Papierkorb im Hintergrund (sonst ANR bei vielen Bildern)
+                        // Verschieben in den Papierkorb im Hintergrund (sonst ANR bei vielen Bildern)
                         final android.content.Context appCtx = requireContext().getApplicationContext();
                         binding.btnDiscardAnalysis.setEnabled(false);
                         new Thread(() -> {
                             int moved = new TrashManager(appCtx).moveDirectoryToTrash(new File(path));
-                            if (!isAdded()) return;
-                            requireActivity().runOnUiThread(() -> {
+                            // getActivity() EINMAL holen statt isAdded()+requireActivity():
+                            // zwischen Check und Aufruf könnte das Fragment sonst
+                            // detached werden (IllegalStateException)
+                            android.app.Activity activity = getActivity();
+                            if (activity == null) return;
+                            activity.runOnUiThread(() -> {
                                 if (!isAdded()) return;
                                 Toast.makeText(requireContext(),
                                         getString(R.string.session_deleted, moved),
@@ -164,7 +168,14 @@ public class SummaryFragment extends Fragment {
     private void handleGroupResult(@NonNull JSONObject root) {
         JSONObject avgB = root.optJSONObject("avg_before");
         JSONObject avgA = root.optJSONObject("avg_after");
-        if (avgB == null || avgA == null) return;
+        if (avgB == null || avgA == null) {
+            // Nicht still zurückkehren: sonst bliebe der Status dauerhaft auf
+            // "Analysiere Bild N von N …" stehen
+            binding.tvStatus.setText(R.string.status_result_parse_error);
+            binding.tvRecommendation.setText("");
+            safeResetFields();
+            return;
+        }
 
         boolean weedFilter = root.optBoolean("weed_filter", false);
         boolean rowMode = root.optBoolean("row_mode", false);
@@ -229,10 +240,14 @@ public class SummaryFragment extends Fragment {
             binding.tvWeedEfficacy.setVisibility(View.GONE);
         }
 
-        // Plausibilitäts-Warnungen (Licht / Reihen nicht erkannt)
+        // Plausibilitäts-Warnungen (Licht / Streuung / Reihen nicht erkannt)
         StringBuilder warn = new StringBuilder();
         if (root.optBoolean("brightness_warning", false)) {
             warn.append(getString(R.string.warning_light));
+        }
+        if (root.optBoolean("brightness_spread_warning", false)) {
+            if (warn.length() > 0) warn.append("\n");
+            warn.append(getString(R.string.warning_light_spread));
         }
         if (rowMode && !rowsDetected) {
             if (warn.length() > 0) warn.append("\n");
@@ -256,9 +271,11 @@ public class SummaryFragment extends Fragment {
 
         renderItems(root.optJSONArray("items"));
 
+        // Modus-Label als Platzhalter im Format-String (statt Konkatenation im
+        // Code): jede Sprache kontrolliert die komplette Satzstellung selbst
         String modeLabel = getString(rowMode ? R.string.mode_label_c
                 : (weedFilter ? R.string.mode_label_b : R.string.mode_label_a));
-        binding.tvStatus.setText(getString(R.string.status_analysis_done_group, nBefore, nAfter) + modeLabel);
+        binding.tvStatus.setText(getString(R.string.status_analysis_done_group, nBefore, nAfter, modeLabel));
     }
 
     /** Einzelergebnisse pro Bild (erst alle Vorher-, dann alle Nachher-Bilder) */
@@ -283,8 +300,9 @@ public class SummaryFragment extends Fragment {
             android.widget.TextView metrics = itemView.findViewById(R.id.tvPairMetrics);
             ImageView img = itemView.findViewById(R.id.ivPairOriginal);
 
-            header.setText(getString(isBefore ? R.string.label_before : R.string.label_after)
-                    + " " + idx + " – " + it.optString("file", ""));
+            header.setText(getString(R.string.pair_header,
+                    getString(isBefore ? R.string.label_before : R.string.label_after),
+                    idx, it.optString("file", "")));
 
             StringBuilder sb = new StringBuilder();
             sb.append(getString(R.string.label_bw)).append(" ")
@@ -378,15 +396,16 @@ public class SummaryFragment extends Fragment {
     // Hilfsfunktionen
     // ===================================================
 
-    /** Lädt Pfad/URI in eine ImageView (unterstützt file paths, file://, content://) */
-    private void loadInto(@NonNull ImageView target, @NonNull String pathOrUri) {
+    /** Lädt Pfad/URI in eine ImageView (unterstützt file paths, file://, content://).
+     *  Statisch, damit auch der FullscreenImageDialog denselben Ladepfad nutzt. */
+    private static void loadInto(@NonNull ImageView target, @NonNull String pathOrUri) {
         String p = normalizePath(pathOrUri);
         if (TextUtils.isEmpty(p)) {
             Glide.with(target).clear(target);
             return;
         }
 
-        if (p.startsWith("content://") || p.startsWith("file://")) {
+        if (p.startsWith("content://")) {
             Glide.with(target)
                     .load(Uri.parse(p))
                     .diskCacheStrategy(DiskCacheStrategy.NONE)
@@ -406,7 +425,7 @@ public class SummaryFragment extends Fragment {
     }
 
     /** Normalisiert Pfad: trimmt, entfernt "file://", belässt content:// */
-    private String normalizePath(String raw) {
+    private static String normalizePath(String raw) {
         if (raw == null) return null;
         String s = raw.trim();
         if (s.startsWith("file://")) {
@@ -510,26 +529,10 @@ public class SummaryFragment extends Fragment {
 
             String raw = (getArguments() != null) ? getArguments().getString(ARG_PATH) : null;
             if (!TextUtils.isEmpty(raw)) {
-                String path = raw.trim();
                 try {
-                    if (path.startsWith("content://") || path.startsWith("file://")) {
-                        Glide.with(image)
-                                .load(Uri.parse(path))
-                                .diskCacheStrategy(DiskCacheStrategy.NONE)
-                                .skipMemoryCache(true)
-                                .fitCenter()
-                                .into(image);
-                    } else {
-                        if (path.startsWith("file://")) path = path.substring(7);
-                        File f = new File(path);
-                        Glide.with(image)
-                                .load(f)
-                                .diskCacheStrategy(DiskCacheStrategy.NONE)
-                                .skipMemoryCache(true)
-                                .signature(new ObjectKey(f.exists() ? f.lastModified() : System.currentTimeMillis()))
-                                .fitCenter()
-                                .into(image);
-                    }
+                    // Gemeinsamer Ladepfad mit dem SummaryFragment (statt der
+                    // früheren, teils toten Duplikat-Logik hier im Dialog)
+                    loadInto(image, raw);
                 } catch (Exception ignore) {
                     // graceful no-op
                 }

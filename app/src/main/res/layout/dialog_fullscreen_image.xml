@@ -12,12 +12,13 @@
         android:layout_height="match_parent"
         android:background="@color/background_dark"/>
 
-    <!-- Fullscreen Image -->
+    <!-- Fullscreen Image (neutrale Beschreibung: kann Vorher- ODER
+         Nachher-/Analysebild sein) -->
     <ImageView
         android:id="@+id/fullscreenImage"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:contentDescription="@string/label_before"
+        android:contentDescription="@string/fullscreen_image_desc"
         android:adjustViewBounds="true"
         android:scaleType="fitCenter"
         android:layout_margin="16dp"/>
@@ -33,12 +34,14 @@
         android:gravity="center"
         android:background="@drawable/bg_card_soft"
         android:clickable="true"
-        android:focusable="true">
+        android:focusable="true"
+        android:contentDescription="@string/fullscreen_close">
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="✕"
+            android:importantForAccessibility="no"
             android:textSize="20sp"
             android:textStyle="bold"
             android:textColor="@color/text_primary"/>

@@ -54,11 +54,15 @@ public class HomeFragment extends Fragment {
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
+        // Footer-Version zur Laufzeit aus BuildConfig statt hartcodiert im String
+        String footer = getString(R.string.footer_info, BuildConfig.VERSION_NAME);
+        binding.footerInfo.setText(footer);
+
         // Accessibility
         binding.titleHeader.setContentDescription(getString(R.string.home_title));
         binding.subtitle.setContentDescription(getString(R.string.home_subtitle));
         binding.statusContainer.setContentDescription(getString(R.string.status_ready));
-        binding.footerInfo.setContentDescription(getString(R.string.footer_info));
+        binding.footerInfo.setContentDescription(footer);
 
         // Premium-Schatten für Buttons
         float elevPrimary = getResources().getDisplayMetrics().density * 12f;

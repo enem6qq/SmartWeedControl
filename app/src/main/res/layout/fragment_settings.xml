@@ -134,6 +134,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_min_size"
+                android:labelFor="@+id/etMinSize"
                 android:textSize="13sp"
                 android:textColor="@color/text_secondary"/>
 
@@ -153,6 +154,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_h_low"
+                android:labelFor="@+id/etHueLow"
                 android:textSize="13sp"
                 android:textColor="@color/text_secondary"/>
 
@@ -172,6 +174,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_h_high"
+                android:labelFor="@+id/etHueHigh"
                 android:textSize="13sp"
                 android:textColor="@color/text_secondary"/>
 
@@ -209,6 +212,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_csc_low"
+                android:labelFor="@+id/etCscLow"
                 android:textSize="13sp"
                 android:textColor="@color/text_secondary"/>
 
@@ -228,6 +232,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_csc_high"
+                android:labelFor="@+id/etCscHigh"
                 android:textSize="13sp"
                 android:textColor="@color/text_secondary"/>
 

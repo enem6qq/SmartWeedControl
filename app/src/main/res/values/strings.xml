@@ -26,7 +26,7 @@
     <string name="home_subtitle">Digital decision support for mechanical weed control</string>
     <string name="status_ready">System ready</string>
     <string name="btn_open_sessions">My Sessions</string>
-    <string name="footer_info">SmartWeed v1.0 - Intelligent Weed Control</string>
+    <string name="footer_info">SmartWeed v%1$s - Intelligent Weed Control</string>
 
     <!-- Sessions Overview -->
     <string name="sessions_empty">No sessions yet – take before/after photos on the camera screen.</string>
@@ -108,7 +108,6 @@
     <string name="toast_storage_permission_needed">Storage permission is required to save images.</string>
     <string name="toast_pick_before_after">Please select before and after images</string>
     <string name="toast_analysis_started">Analysis started \u2026</string>
-    <string name="toast_image_open_failed">Could not open image.</string>
     <string name="toast_photo_saved">%1$s image saved to %2$s</string>
     <string name="toast_photo_save_error">Error while saving</string>
     <string name="toast_image_imported">Image imported to %1$s: %2$s</string>
@@ -160,7 +159,7 @@
     <string name="label_weed_cov">Weed:</string>
     <string name="weed_efficacy">Weed efficacy: %1$s</string>
     <string name="mode_label_c">" | Mode C: Row detection"</string>
-    <string name="status_analysis_done_group">Analysis finished (%1$d before / %2$d after).</string>
+    <string name="status_analysis_done_group">Analysis finished (%1$d before / %2$d after).%3$s</string>
     <string name="progress_image">Analyzing image %1$d of %2$d …</string>
     <string name="import_target_title">Import as before or after image?</string>
 
@@ -173,4 +172,15 @@
     <string name="admin_area_unlocked">Signed in as admin – settings can be changed.</string>
     <string name="btn_admin_login">Sign in as admin</string>
     <string name="btn_admin_logout">Sign out admin</string>
+
+    <!-- v1.5 -->
+    <string name="camera_permission_denied">Camera permission denied – photos cannot be taken. You can grant the permission in the system settings.</string>
+    <string name="camera_unavailable">No camera available on this device.</string>
+    <string name="settings_reset_done">Settings reset to defaults</string>
+    <string name="warning_light_spread">Note: brightness varies strongly between individual images of a group – check outliers (very dark/bright photos).</string>
+    <string name="session_info_with_analyses">%1$s · %2$d analyses</string>
+    <string name="pair_header">%1$s %2$d – %3$s</string>
+    <string name="trash_delete_failed">Could not delete the file</string>
+    <string name="fullscreen_close">Close</string>
+    <string name="fullscreen_image_desc">Full-screen view of the analysis image</string>
 </resources>
