@@ -139,4 +139,56 @@ public class CscCalculatorTest {
         assertEquals(CscCalculator.Recommendation.OPTIMAL,
                 CscCalculator.recommendForCoverage(1.0, 0.9, 8.0, 12.0));
     }
+
+    // ---------- v1.6: Grenzwerte und Eingabe-Validierung ----------
+
+    @Test
+    public void compute_negativeInputs_returnNull() {
+        // Bedeckungsgrade sind per Definition 0..100: negative Eingaben sind
+        // Datenfehler — vorher ergab after=-5 kommentarlos einen CSC von 150 %
+        assertNull(CscCalculator.compute(-1.0, 5.0));
+        assertNull(CscCalculator.compute(10.0, -5.0));
+    }
+
+    @Test
+    public void recommend_customBand_exactBoundariesInclusive() {
+        // Die Inklusivität der Bandgrenzen muss auch für KONFIGURIERTE Bänder
+        // gelten (bisher nur fürs Default-Band getestet)
+        assertEquals(CscCalculator.Recommendation.OPTIMAL, CscCalculator.recommend(5.0, 5.0, 15.0));
+        assertEquals(CscCalculator.Recommendation.OPTIMAL, CscCalculator.recommend(15.0, 5.0, 15.0));
+    }
+
+    @Test
+    public void recommend_degenerateBand_isNormalized() {
+        // bandLow > bandHigh: defensiv tauschen statt nie OPTIMAL zu liefern
+        assertEquals(CscCalculator.Recommendation.OPTIMAL, CscCalculator.recommend(10.0, 12.0, 8.0));
+    }
+
+    @Test
+    public void recommend_singleArgOverload_delegatesToDefaultBand() {
+        // Regressionsschutz: Der 1-Arg-Overload muss exakt dem Default-Band folgen
+        assertEquals(CscCalculator.recommend(7.99, CscCalculator.DEFAULT_BAND_LOW, CscCalculator.DEFAULT_BAND_HIGH),
+                CscCalculator.recommend(7.99));
+        assertEquals(CscCalculator.recommend(12.0, CscCalculator.DEFAULT_BAND_LOW, CscCalculator.DEFAULT_BAND_HIGH),
+                CscCalculator.recommend(12.0));
+    }
+
+    @Test
+    public void coverage_minPlantCoverageThreshold_exactBoundary() {
+        // Exakt AUF der Schwelle (0.1) gilt als echter Bewuchs (< statt <=),
+        // knapp darunter als NO_VEGETATION
+        assertEquals(CscCalculator.Recommendation.OPTIMAL,
+                CscCalculator.recommendForCoverage(
+                        CscCalculator.MIN_PLANT_COVERAGE_PERCENT,
+                        CscCalculator.MIN_PLANT_COVERAGE_PERCENT * 0.9, 8.0, 12.0));
+        assertEquals(CscCalculator.Recommendation.NO_VEGETATION,
+                CscCalculator.recommendForCoverage(0.09, 0.0, 8.0, 12.0));
+    }
+
+    @Test
+    public void coverage_negativeAfter_notAvailable() {
+        // Unplausible Nachher-Bedeckung darf keine Empfehlung erzeugen
+        assertEquals(CscCalculator.Recommendation.NOT_AVAILABLE,
+                CscCalculator.recommendForCoverage(20.0, -1.0, 8.0, 12.0));
+    }
 }

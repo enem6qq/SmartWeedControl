@@ -202,6 +202,8 @@ public class HomeFragment extends Fragment {
     }
 
     private void runPremiumIntroAnimations() {
+        // view.post kann einen Frame nach Zerstörung der View feuern
+        if (binding == null) return;
         final View card = binding.headerCard;
         int cx = (card.getLeft() + card.getRight()) / 2;
         int cy = (card.getTop() + card.getBottom()) / 2;

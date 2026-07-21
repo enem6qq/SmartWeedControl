@@ -31,6 +31,7 @@ public class SessionsFragment extends Fragment {
     private LinearLayout sessionsContainer;
     private LinearLayout emptyState;
     private TrashManager trashManager;
+    private AlertDialog activeDialog; // für dismiss in onDestroyView
 
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
@@ -118,11 +119,16 @@ public class SessionsFragment extends Fragment {
         // In den Papierkorb verschieben (mit Bestätigung). Das Kopieren läuft im
         // Hintergrund — bei Sessions mit vielen Fotos würde es sonst den
         // UI-Thread einfrieren (ANR).
-        btnDelete.setOnClickListener(v -> new AlertDialog.Builder(requireContext())
+        btnDelete.setOnClickListener(v -> activeDialog = new AlertDialog.Builder(requireContext())
                 .setTitle(R.string.session_delete_confirm_title)
                 .setMessage(getString(R.string.session_delete_confirm_message, session.dir.getName()))
                 .setPositiveButton(R.string.session_delete_action, (d, w) -> {
                     btnDelete.setEnabled(false);
+                    // Auch die Zeile sperren: Ein Tap würde sonst die Analyse
+                    // einer Session öffnen, deren Bilder gerade parallel in
+                    // den Papierkorb wandern
+                    itemView.setEnabled(false);
+                    itemView.setAlpha(0.5f);
                     new Thread(() -> {
                         int moved = trashManager.moveDirectoryToTrash(session.dir);
                         // getActivity() EINMAL holen statt isAdded()+requireActivity():
@@ -132,7 +138,7 @@ public class SessionsFragment extends Fragment {
                         activity.runOnUiThread(() -> {
                             if (!isAdded()) return;
                             Toast.makeText(requireContext(),
-                                    getString(R.string.session_deleted, moved),
+                                    getResources().getQuantityString(R.plurals.session_deleted, moved, moved),
                                     Toast.LENGTH_SHORT).show();
                             refreshSessions();
                         });
@@ -142,5 +148,17 @@ public class SessionsFragment extends Fragment {
                 .show());
 
         sessionsContainer.addView(itemView);
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        sessionsContainer = null;
+        emptyState = null;
+        // Offenen Bestätigungsdialog schließen (sonst WindowLeak bei Rotation)
+        if (activeDialog != null) {
+            activeDialog.dismiss();
+            activeDialog = null;
+        }
     }
 }

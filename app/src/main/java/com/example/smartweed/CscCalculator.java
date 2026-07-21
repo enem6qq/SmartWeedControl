@@ -39,12 +39,14 @@ public final class CscCalculator {
 
     /**
      * CSC in Prozent, oder null wenn die Eingaben unbrauchbar sind
-     * (fehlende Werte oder Vorher-Bedeckung von 0 %).
+     * (fehlende Werte, negative Bedeckungen oder Vorher-Bedeckung von 0 %).
+     * Bedeckungsgrade sind per Definition 0..100 — eine negative Nachher-
+     * Bedeckung ergäbe sonst kommentarlos einen CSC über 100 %.
      */
     public static Double compute(Double coverageBefore, Double coverageAfter) {
         if (coverageBefore == null || coverageAfter == null) return null;
         if (Double.isNaN(coverageBefore) || Double.isNaN(coverageAfter)) return null;
-        if (coverageBefore <= 0) return null;
+        if (coverageBefore <= 0 || coverageAfter < 0) return null;
         return (coverageBefore - coverageAfter) / coverageBefore * 100.0;
     }
 
@@ -56,6 +58,14 @@ public final class CscCalculator {
     /** Empfehlung anhand eines konfigurierbaren Zielbands. */
     public static Recommendation recommend(Double csc, double bandLow, double bandHigh) {
         if (csc == null || Double.isNaN(csc)) return Recommendation.NOT_AVAILABLE;
+        // Degeneriertes Band defensiv normalisieren: Mit bandLow > bandHigh
+        // wäre sonst KEIN Wert je OPTIMAL. AnalysisSettings.save validiert das
+        // zwar, aber als öffentliche API soll die Methode selbst robust sein.
+        if (bandLow > bandHigh) {
+            double t = bandLow;
+            bandLow = bandHigh;
+            bandHigh = t;
+        }
         if (csc < 0) return Recommendation.CHECK_IMAGES;
         if (csc < bandLow) return Recommendation.MORE_AGGRESSIVE;
         if (csc <= bandHigh) return Recommendation.OPTIMAL;

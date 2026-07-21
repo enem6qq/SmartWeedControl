@@ -46,7 +46,11 @@ public final class SessionStore {
     public static File getBaseDir(Context context) {
         File external = context.getExternalFilesDir(null);
         File base = new File(external != null ? external : context.getFilesDir(), "SmartWeed");
-        if (!base.exists()) base.mkdirs();
+        if (!base.exists() && !base.mkdirs()) {
+            // Aufrufer scheitern dann zwar sichtbar (Speichern/Listen schlägt
+            // fehl), aber ohne diese Zeile fehlte im Log die eigentliche Ursache
+            android.util.Log.e("SessionStore", "Could not create base dir: " + base.getAbsolutePath());
+        }
         return base;
     }
 
@@ -73,9 +77,19 @@ public final class SessionStore {
             s.beforeCount = countImages(new File(dir, BEFORE_DIR_NAME));
             s.afterCount = countImages(new File(dir, AFTER_DIR_NAME));
 
+            // Nur Analyse-Ordner mit tatsächlichem Bild-Inhalt zählen: Ein vor
+            // dem ersten Ergebnis abgebrochener Lauf (z. B. Prozess-Tod)
+            // hinterlässt einen leeren Ordner — der ließe die Session sonst
+            // dauerhaft als "0 Fotos, 1 Analyse" in der Übersicht stehen.
             File[] analyses = dir.listFiles(f ->
                     f.isDirectory() && f.getName().startsWith(ANALYSIS_PREFIX));
-            s.analysisCount = (analyses == null) ? 0 : analyses.length;
+            int analysisCount = 0;
+            if (analyses != null) {
+                for (File a : analyses) {
+                    if (findFirstImage(a) != null) analysisCount++;
+                }
+            }
+            s.analysisCount = analysisCount;
 
             s.thumbnail = findFirstImage(new File(dir, BEFORE_DIR_NAME));
             if (s.thumbnail == null) s.thumbnail = findFirstImage(new File(dir, AFTER_DIR_NAME));

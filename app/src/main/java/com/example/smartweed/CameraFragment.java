@@ -56,7 +56,16 @@ public class CameraFragment extends Fragment {
 
     private FragmentCameraBinding binding;
     private ImageCapture imageCapture;
-    private ExecutorService ioExecutor; // Import-Kopien & Galerie-Export im Hintergrund
+    // App-lebenslanger Executor für Import-Kopien & Galerie-Export: bewusst
+    // STATISCH und nie heruntergefahren. Ein per-Fragment-Executor mit
+    // shutdown() in onDestroyView crashte reproduzierbar: der
+    // takePicture-Callback läuft auf dem Main-Executor des App-Context und
+    // feuert auch NACH Zerstörung der View — execute() auf dem bereits
+    // heruntergefahrenen Executor warf eine RejectedExecutionException auf
+    // dem Main-Thread (Foto aufnehmen + sofort zurück navigieren). Der
+    // Galerie-Export soll in dem Fall ja gerade noch fertig laufen.
+    private static final ExecutorService IO_EXECUTOR = Executors.newSingleThreadExecutor();
+    private android.app.AlertDialog activeDialog; // für dismiss in onDestroyView
 
     private File sessionDir;
     private File beforeDir;
@@ -94,16 +103,19 @@ public class CameraFragment extends Fragment {
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        ioExecutor = Executors.newSingleThreadExecutor();
-
         // Session-Name mit lesbarem Timestamp (minutengenau: zwei kurz
         // aufeinanderfolgende Besuche der Kamera-Seite landen in derselben Session).
         // Locale.US: Dateisystem-Namen dürfen nicht von locale-abhängigen Ziffern
         // abhängen. Über savedInstanceState gerettet, damit eine Rotation über
         // eine Minutengrenze die Aufnahme nicht in zwei Sessions splittet.
+        // Der sessionDirName-null-Guard deckt zusätzlich den BACK-STACK-Fall ab:
+        // Beim Zurückkehren von der Analyse-Seite läuft onViewCreated erneut mit
+        // savedInstanceState == null, die Fragment-Instanz (und damit das Feld)
+        // lebt aber weiter — ohne Guard bekämen die Nachher-Fotos eine NEUE
+        // Session und die Analyse sähe die Vorher-Bilder nicht mehr.
         if (savedInstanceState != null && savedInstanceState.getString(STATE_SESSION_NAME) != null) {
             sessionDirName = savedInstanceState.getString(STATE_SESSION_NAME);
-        } else {
+        } else if (sessionDirName == null) {
             sessionDirName = new SimpleDateFormat(SessionStore.SESSION_NAME_PATTERN, Locale.US).format(new Date());
         }
         sessionDir = new File(SessionStore.getBaseDir(requireContext()), sessionDirName);
@@ -242,7 +254,7 @@ public class CameraFragment extends Fragment {
                     @Override
                     public void onImageSaved(@NonNull ImageCapture.OutputFileResults outputFileResults) {
                         // Foto zusätzlich in die Galerie exportieren (Hintergrund)
-                        ioExecutor.execute(() -> MediaExport.exportToGallery(
+                        IO_EXECUTOR.execute(() -> MediaExport.exportToGallery(
                                 appContext, photoFile, sessionDirName + "/" + subfolder));
 
                         Toast.makeText(appContext, toastText, Toast.LENGTH_SHORT).show();
@@ -264,7 +276,7 @@ public class CameraFragment extends Fragment {
 
     /** Ins Session-Schema einsortieren: Vorher- oder Nachher-Bild? */
     private void askImportTarget(Uri uri) {
-        new android.app.AlertDialog.Builder(requireContext())
+        activeDialog = new android.app.AlertDialog.Builder(requireContext())
                 .setTitle(R.string.import_target_title)
                 .setPositiveButton(R.string.label_before, (d, w) -> copyImportedImage(uri, beforeDir))
                 .setNegativeButton(R.string.label_after, (d, w) -> copyImportedImage(uri, afterDir))
@@ -273,6 +285,9 @@ public class CameraFragment extends Fragment {
     }
 
     private void copyImportedImage(Uri uri, File targetDir) {
+        // Dialog-Klicks können das Fragment theoretisch überleben — dann gäbe
+        // requireContext() eine IllegalStateException statt eines sauberen Abbruchs
+        if (!isAdded()) return;
         // Name + Context auf dem UI-Thread ermitteln, die (potenziell mehrere MB
         // große) Kopie dann im Hintergrund — sonst droht Jank/ANR.
         final ContentResolver resolver = requireContext().getContentResolver();
@@ -281,7 +296,7 @@ public class CameraFragment extends Fragment {
         final String importedFmt = getString(R.string.toast_image_imported,
                 "SmartWeed/" + sessionDirName + "/" + targetDir.getName(), name);
 
-        ioExecutor.execute(() -> {
+        IO_EXECUTOR.execute(() -> {
             try {
                 if (!targetDir.exists()) targetDir.mkdirs();
                 File destFile = new File(targetDir, name);
@@ -347,6 +362,8 @@ public class CameraFragment extends Fragment {
     }
 
     private void runIntroAnimations() {
+        // view.post kann einen Frame nach Zerstörung der View feuern
+        if (binding == null) return;
         animateIn(binding.previewCard, 60);
         animateIn(binding.buttonTakePhotoBefore, 120);
         animateIn(binding.buttonTakePhotoAfter, 160);
@@ -383,7 +400,11 @@ public class CameraFragment extends Fragment {
     public void onDestroyView() {
         super.onDestroyView();
         binding = null;
-        // Laufende Import-/Export-Aufgaben zu Ende bringen, dann herunterfahren
-        if (ioExecutor != null) ioExecutor.shutdown();
+        // Offene Dialoge schließen (sonst WindowLeak bei Rotation).
+        // IO_EXECUTOR läuft bewusst weiter — siehe Kommentar an der Deklaration.
+        if (activeDialog != null) {
+            activeDialog.dismiss();
+            activeDialog = null;
+        }
     }
 }
