@@ -20,6 +20,7 @@ public final class AnalysisSettings {
     private static final String KEY_CSC_LOW_BITS = "csc_band_low_bits";   // double als Long-Bits
     private static final String KEY_CSC_HIGH_BITS = "csc_band_high_bits"; // double als Long-Bits
     private static final String KEY_METHOD = "segmentation_method";
+    private static final String KEY_FRAME_CROP = "frame_crop";
 
     public static final int DEFAULT_MIN_SIZE = 50;
     public static final int DEFAULT_H_LOW = 35;
@@ -28,7 +29,16 @@ public final class AnalysisSettings {
     /** Segmentierungsmethoden (müssen zu analysis.py passen) */
     public static final String METHOD_HSV = "hsv";
     public static final String METHOD_EXG = "exg";
+    public static final String METHOD_EXGR = "exgr";
     public static final String DEFAULT_METHOD = METHOD_EXG;
+
+    /**
+     * Nur das Innere eines roten Zählrahmens auswerten. Standardmäßig an: Ohne
+     * gefundenen Rahmen wertet analysis.py ohnehin das ganze Bild aus und
+     * meldet das (frame_found=false) — Fotos ohne Rahmen funktionieren also
+     * weiter wie bisher.
+     */
+    public static final boolean DEFAULT_FRAME_CROP = true;
 
     private final SharedPreferences prefs;
 
@@ -44,9 +54,15 @@ public final class AnalysisSettings {
     public String getMethod() { return prefs.getString(KEY_METHOD, DEFAULT_METHOD); }
 
     public void setMethod(String method) {
-        if (METHOD_HSV.equals(method) || METHOD_EXG.equals(method)) {
+        if (METHOD_HSV.equals(method) || METHOD_EXG.equals(method) || METHOD_EXGR.equals(method)) {
             prefs.edit().putString(KEY_METHOD, method).apply();
         }
+    }
+
+    public boolean getFrameCrop() { return prefs.getBoolean(KEY_FRAME_CROP, DEFAULT_FRAME_CROP); }
+
+    public void setFrameCrop(boolean frameCrop) {
+        prefs.edit().putBoolean(KEY_FRAME_CROP, frameCrop).apply();
     }
     // Bänder verlustfrei als Double-Bits gespeichert: Der frühere float-Cast
     // machte aus 8.3 den Wert 8.300000190... — ein CSC exakt auf der

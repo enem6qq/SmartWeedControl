@@ -6,6 +6,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
@@ -35,6 +36,7 @@ public class SettingsFragment extends Fragment {
     private EditText etCscLow;
     private EditText etCscHigh;
     private RadioGroup rgMethod;
+    private CheckBox cbFrameCrop;
     private Button save;
     private Button reset;
     private TextView tvAdminLockInfo;
@@ -58,6 +60,7 @@ public class SettingsFragment extends Fragment {
         etCscLow  = view.findViewById(R.id.etCscLow);
         etCscHigh = view.findViewById(R.id.etCscHigh);
         rgMethod  = view.findViewById(R.id.rgMethod);
+        cbFrameCrop = view.findViewById(R.id.cbFrameCrop);
         save  = view.findViewById(R.id.buttonSaveSettings);
         reset = view.findViewById(R.id.buttonResetSettings);
         tvAdminLockInfo = view.findViewById(R.id.tvAdminLockInfo);
@@ -116,6 +119,19 @@ public class SettingsFragment extends Fragment {
             View child = rgMethod.getChildAt(i);
             if (child instanceof RadioButton) child.setEnabled(enabled);
         }
+        cbFrameCrop.setEnabled(enabled);
+    }
+
+    private int radioIdForMethod(String method) {
+        if (AnalysisSettings.METHOD_HSV.equals(method)) return R.id.rbMethodHsv;
+        if (AnalysisSettings.METHOD_EXGR.equals(method)) return R.id.rbMethodExgr;
+        return R.id.rbMethodExg;
+    }
+
+    private String methodForRadioId(int id) {
+        if (id == R.id.rbMethodHsv) return AnalysisSettings.METHOD_HSV;
+        if (id == R.id.rbMethodExgr) return AnalysisSettings.METHOD_EXGR;
+        return AnalysisSettings.METHOD_EXG;
     }
 
     private void populateFields() {
@@ -124,8 +140,8 @@ public class SettingsFragment extends Fragment {
         etHueHigh.setText(String.valueOf(settings.getHueHigh()));
         etCscLow.setText(String.format(Locale.US, "%.1f", settings.getCscBandLow()));
         etCscHigh.setText(String.format(Locale.US, "%.1f", settings.getCscBandHigh()));
-        rgMethod.check(AnalysisSettings.METHOD_HSV.equals(settings.getMethod())
-                ? R.id.rbMethodHsv : R.id.rbMethodExg);
+        rgMethod.check(radioIdForMethod(settings.getMethod()));
+        cbFrameCrop.setChecked(settings.getFrameCrop());
     }
 
     private void saveFields() {
@@ -139,8 +155,8 @@ public class SettingsFragment extends Fragment {
             double cscHigh = Double.parseDouble(etCscHigh.getText().toString().trim().replace(',', '.'));
 
             if (settings.save(minSize, hueLow, hueHigh, cscLow, cscHigh)) {
-                settings.setMethod(rgMethod.getCheckedRadioButtonId() == R.id.rbMethodHsv
-                        ? AnalysisSettings.METHOD_HSV : AnalysisSettings.METHOD_EXG);
+                settings.setMethod(methodForRadioId(rgMethod.getCheckedRadioButtonId()));
+                settings.setFrameCrop(cbFrameCrop.isChecked());
                 Toast.makeText(requireContext(), R.string.settings_saved, Toast.LENGTH_SHORT).show();
             } else {
                 Toast.makeText(requireContext(), R.string.settings_invalid, Toast.LENGTH_LONG).show();

@@ -324,6 +324,7 @@ public class AnalysisFragment extends Fragment {
         final int hueLow  = settings.getHueLow();
         final int hueHigh = settings.getHueHigh();
         final String method = settings.getMethod();
+        final boolean frameCrop = settings.getFrameCrop();
 
         // Unveränderliche KOPIEN der Auswahllisten: Der Nutzer kann während der
         // Analyse zurück navigieren und neue Bilder wählen (clear() auf dem
@@ -359,14 +360,14 @@ public class AnalysisFragment extends Fragment {
                     analysisVM.progress.postValue(new int[]{++done, total});
                     PyObject r = module.callAttr("analyze_image",
                             beforePaths.get(i), outDir.getAbsolutePath(), "before", i,
-                            weedFilter, rowMode, minSize, hueLow, hueHigh, method);
+                            weedFilter, rowMode, minSize, hueLow, hueHigh, method, frameCrop);
                     items.put(new JSONObject(r.toString()));
                 }
                 for (int i = 0; i < afterPaths.size(); i++) {
                     analysisVM.progress.postValue(new int[]{++done, total});
                     PyObject r = module.callAttr("analyze_image",
                             afterPaths.get(i), outDir.getAbsolutePath(), "after", i,
-                            weedFilter, rowMode, minSize, hueLow, hueHigh, method);
+                            weedFilter, rowMode, minSize, hueLow, hueHigh, method, frameCrop);
                     items.put(new JSONObject(r.toString()));
                 }
                 analysisVM.progress.postValue(null);

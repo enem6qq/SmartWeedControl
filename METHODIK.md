@@ -27,12 +27,37 @@ Unkrautwirkung hoch, während die Kulturpflanze den Eingriff innerhalb von
 
 ## 2. Segmentierung Pflanze vs. Boden
 
-Zwei Verfahren stehen zur Wahl (Analyse-Einstellungen → Segmentierung):
+### Vorverarbeitung: Zählrahmen (seit v1.7)
+
+Liegt ein **roter Zählrahmen** im Bild, wertet die App nur sein Inneres aus
+(Einstellung „Nur Zählrahmen auswerten“, Standard: an). Das Innere wird als
+größtes Loch in der Rot-Maske gefunden, perspektivisch zu einem Quadrat
+entzerrt (Originalauflösung, damit die Mindestgröße ihre Bedeutung behält)
+und mit 6 % Sicherheitsrand beschnitten. Blätter über dem Rahmen werden durch
+schrittweises Schließen der Lücken überbrückt; eine Ringprüfung (außen
+überwiegend Rot, innen kaum Rot, Rot nicht großflächig) verhindert
+Fehlalarme auf rötlichem Boden oder roten Geräten. Ohne erkannten Rahmen
+wird das ganze Bild ausgewertet und das in der App angezeigt; ein
+Kontrollbild mit eingezeichnetem Ausschnitt liegt im `details/`-Ordner.
+
+Warum: Auf Vollbildern zählte die Segmentierung Schatten und Kleidung
+(Hose) als Pflanze und lieferte so einen scheinbar plausiblen, aber falschen
+CSC (gemessen: 34 % bzw. 43 % statt eines negativen Werts im Rahmen). Der
+Rahmen ist zudem genau die Fläche, die auch bonitiert wird. Hinweis für die
+Praxis: Graue Drahtrahmen mit rotem oder orangem Klebeband umwickeln.
+
+### Verfahren
+
+Drei Verfahren stehen zur Wahl (Analyse-Einstellungen → Segmentierung):
 
 - **ExG + Otsu (Standard, empfohlen):** Excess-Green-Index
   `ExG = 2·g − r − b` auf normalisierten RGB-Kanälen, gefolgt von einem
-  automatischen Otsu-Schwellwert. Der Schwellwert passt sich jedem Bild an
-  und ist dadurch robust gegen wechselnde Beleuchtung (Sonne/Wolken/Tageszeit).
+  automatischen Otsu-Schwellwert, der sich jedem Bild anpasst. Bekannte
+  Grenze (gemessen in v1.7): Diese bildabhängige Schwelle **wandert mit dem
+  Licht** — bewölkt ~0,06–0,09, Sonne ~0,14, Sonne mit dichtem Bestand bis
+  0,21. Bei Sonne werden dünne Blätter unterschätzt, bei Wolkenlicht fransen
+  die Blattränder in den Boden aus. Ein Lichtwechsel zwischen Vorher und
+  Nachher verschiebt den CSC deshalb in eine Richtung (siehe Licht-Warnung).
   Zwei Schutzmechanismen sichern die unimodalen Grenzfälle ab, in denen Otsu
   keine sinnvolle Trennung finden kann: Auf vegetationsfreien Bildern
   verhindert eine ExG-Untergrenze Geister-Detektionen auf Bodenrauschen, und
@@ -42,6 +67,16 @@ Zwei Verfahren stehen zur Wahl (Analyse-Einstellungen → Segmentierung):
   Grundlage: Woebbecke et al. (1995), Meyer & Neto (2008) — der Standard-
   Vegetationsindex der Agrar-Bildanalyse und die im Businessplan genannte
   Zielmethodik.
+- **ExGR (seit v1.7, wählbar):** `ExGR = ExG − ExR` mit `ExR = 1,4·r − g`
+  und **fester Schwelle 0** (Meyer & Neto 2008) — ohne bildabhängige Schwelle
+  und damit ohne deren Licht-Drift; der im Exposé genannte Index. Auf den
+  Zählrahmen-Fotos folgt ExGR den Blättern bei Wolkenlicht enger und erfasst
+  dichte Bestände in der Sonne vollständiger. An Blatträndern greift es leicht
+  in beschatteten Boden über (JPEG-Farbunterabtastung). Auf den 24 Feldbildern
+  weicht es je nach Boden in **beide** Richtungen ab (z. B. feld_08 10 → 37 %,
+  feld_19 13 → 4 %). Bewusst **nicht Standard**, solange keine Referenzmessung
+  (Canopeo / manuelle Auszählung) entscheidet, welches Verfahren näher an der
+  Wahrheit liegt.
 - **HSV-Farbschwelle (klassisch):** feste Grünton-Grenzen (H 35–85). Einfach
   und schnell, aber empfindlich gegenüber Beleuchtungsschwankungen.
 
@@ -102,7 +137,7 @@ und Komponenten unterhalb einer Mindestgröße (Standard 50 px) werden entfernt.
 Für höhere Genauigkeit können mehrere Vorher- und Nachher-Bilder erfasst
 werden (Anzahl darf sich unterscheiden). Die Bedeckungsgrade werden **je
 Gruppe gemittelt**, der CSC wird aus den Gruppenmittelwerten berechnet.
-Zwei Plausibilitäts-Warnungen sichern die Beleuchtung ab:
+Drei Plausibilitäts-Warnungen sichern die Beleuchtung ab:
 
 1. **Gruppen-Bias:** Die mittlere Helligkeit von Vorher- und Nachher-Gruppe
    unterscheidet sich stark (systematischer Beleuchtungs-Bias).
@@ -110,6 +145,13 @@ Zwei Plausibilitäts-Warnungen sichern die Beleuchtung ab:
    stark (z. B. ein sehr dunkles und ein sehr helles Vorher-Bild) — im
    Gruppenmittel würde sich das aufheben, obwohl beide Bilder einzeln
    segmentierungskritisch sind.
+3. **Lichtart (seit v1.7):** Vorher- und Nachher-Gruppe wurden bei
+   verschiedenem Licht aufgenommen (Sonne vs. bewölkt). Die Helligkeit allein
+   erkennt das nicht (gemessen: Sonne 136 vs. Wolken 125). Gemessen wird die
+   **Hell-Dunkel-Spanne des Bodens** (90./10. Perzentil der Grauwerte außerhalb
+   der Pflanzen): Sonne 2,24–3,56, bewölkt 1,61–1,95. Ab 2,1 gilt ein Bild als
+   „Sonne“; gewarnt wird, wenn die Gruppen mehrheitlich verschieden eingestuft
+   sind. **Vorläufig** kalibriert (2 Bildserien, 1 Kamera, knappe Lücke).
 
 Wichtig fürs Aufnahmeprotokoll: Alle Bilder einer Auswertung sollten aus
 ähnlicher Höhe und möglichst senkrecht (Nadir) aufgenommen werden — die
@@ -132,6 +174,34 @@ synthetischen Kontrollbildern der automatischen Testsuite:
   Kontrollbildern ohne Reihen. Bei klar erkennbaren Reihen trennt die Methode
   Kultur (auf der Reihe) und Unkraut (dazwischen) zutreffend.
 
+## 6. Validierung an Zählrahmen-Fotos (v1.7)
+
+Zwei Bildserien aus einem früheren Striegelversuch (Lfd. 1 und Lfd. 17, je 3
+Fotos vorher / nachher / 14 Tage danach, roter Zählrahmen, Sonne und Wolken
+gemischt). Die Fotos liegen nicht im Repository (fremde Versuchsdaten).
+
+| Prüfung | Ergebnis |
+|---|---|
+| Zählrahmen erkannt | 17 von 18 Fotos (verfehlt: ein Schenkel zu ~85 % von Blättern verdeckt) |
+| Fehlalarme Zählrahmen | 0 von 22 Feldbildern ohne Rahmen; beide Feldbilder mit Rahmen erkannt |
+| Reihen-Erkennung im Rahmen | 11 von 18 statt 1 von 18 (Fix im Prominenz-Fenster, s. u.) |
+| Licht-Warnung | 4 von 4 Vergleichen richtig (3× Sonne/Wolken gewarnt, 1× Sonne/Sonne nicht) |
+| 24 Feldbilder ohne Rahmen-Option | identische Werte wie v1.6 (Regression geprüft) |
+
+**Reihen-Erkennung in kleinen Ausschnitten:** Im 0,5-m-Rahmen liegen nur 3–4
+Reihen; der Reihenabstand liegt dann knapp unter der Suchobergrenze (ein
+Drittel der Profillänge). Die Prominenz-Berechnung schnitt ihr Fenster genau
+dort ab und verdeckte das Tal rechts vom Peak — echte Reihen fielen durch.
+Das Fenster reicht jetzt bis zur halben Profillänge. Grenze: Bei größeren
+Pflanzen (14 Tage nach der Behandlung) ragen Blattspitzen zwischen die
+Reihen und werden als „Unkraut“ gezählt.
+
+**Befund zum CSC:** Beide Serien ergeben einen **negativen** CSC (Lfd. 1:
+−94 %, Lfd. 17: −42 %, ExG+Otsu im Rahmen). Ursache sind die Aufnahmen selbst:
+„Nachher“ entstand offenbar Tage später (Pflanzen sichtbar gewachsen) und bei
+anderem Licht. Die App zeigt korrekt „Bildpaar prüfen“. Für den CSC müssen
+Vorher und Nachher direkt nacheinander an derselben Stelle aufgenommen werden.
+
 ### Bekannte Grenzen / nächste Schritte
 
 - Die Reihen-Erkennung setzt näherungsweise senkrechte Aufnahmen (Nadir) mit
@@ -145,11 +215,16 @@ synthetischen Kontrollbildern der automatischen Testsuite:
   diesen Paaren.
 - **Geplant:** Abgleich der gemessenen Bedeckungsgrade gegen eine
   Referenzmessung (z. B. die frei verfügbare App *Canopeo* der Oklahoma State
-  University) sowie gegen manuelle Auszählung.
+  University) sowie gegen manuelle Auszählung. Erst damit lässt sich
+  entscheiden, ob ExGR statt ExG+Otsu Standard werden sollte.
+- Die Licht-Warnung ist an 18 Fotos einer Kamera kalibriert; mit den eigenen
+  Versuchsfotos (Sonne/Wolken) ist die Schwelle 2,1 zu überprüfen.
 
 ## Quellen
 
 - Rasmussen, J. et al. – Arbeiten zur mechanischen Unkrautregulierung / CSC
+- Rasmussen, J., Mathiasen, H. & Bibby, B. M. (2010): *Timing of
+  post-emergence weed harrowing.* Weed Research 50, 436–446.
 - Woebbecke, D. M. et al. (1995): *Color indices for weed identification.*
 - Meyer, G. E. & Neto, J. C. (2008): *Verification of color vegetation indices.*
 - Canopeo (Oklahoma State University) – App zur Messung der Grünbedeckung

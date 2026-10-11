@@ -571,3 +571,195 @@ def test_item_json_ohne_erkannte_reihen(tmp_path):
     assert "coverage_crop_percent" not in item
     assert "coverage_weed_percent" not in item
     assert "row_overlay" not in item["outputs"]
+
+
+# ---------------------------------------------------------------------------
+# v1.7: Zählrahmen, ExGR, Licht-Warnung, Reihen in kleinen Ausschnitten
+# ---------------------------------------------------------------------------
+FRAME_RED = (40, 40, 220)     # BGR, kräftiges Rot (Sonne)
+FRAME_PINK = (175, 160, 255)  # BGR, verwaschenes Rosa (Wolken: H~175, S~95)
+
+
+def make_frame_scene(frame_color=FRAME_RED, w=1500, h=1125, inner=560, bar=45,
+                     inside_frac=0.10, outside_frac=0.45, leaf_over_bar=True, seed=7):
+    """Boden mit Zählrahmen. Innen und außen bewusst VERSCHIEDEN dicht
+    bewachsen, damit Rahmen- und Vollbild-Auswertung unterscheidbar sind.
+    Rückgabe: (bild, soll_bedeckung_innen_in_prozent)."""
+    rng = np.random.default_rng(seed)
+    # Bodenton wie auf den echten Feldbildern (H~16, S~65, V~153)
+    img = np.clip(np.full((h, w, 3), (115, 135, 153), np.float32)
+                  + rng.normal(0, 8, (h, w, 3)), 0, 255).astype(np.uint8)
+    x0, y0 = (w - inner) // 2, (h - inner) // 2
+    # Außen: dichte senkrechte Grünstreifen
+    plant = np.zeros((h, w), np.uint8)
+    step = 40
+    stripe = int(step * outside_frac)
+    for x in range(0, w, step):
+        plant[:, x:x + stripe] = 255
+    # Innen: weniger dichte waagrechte Streifen (exakt bekannter Anteil)
+    plant[y0:y0 + inner, x0:x0 + inner] = 0
+    istep = 40
+    istripe = int(round(istep * inside_frac))
+    for y in range(y0, y0 + inner, istep):
+        plant[y:y + istripe, x0:x0 + inner] = 255
+    img[plant > 0] = (40, 150, 45)
+    # Rahmen (Ring) + Stiel: Inneres sichern, Fläche füllen, Inneres zurück
+    interior = img[y0:y0 + inner, x0:x0 + inner].copy()
+    cv2.rectangle(img, (x0 - bar, y0 - bar), (x0 + inner + bar, y0 + inner + bar), frame_color, -1)
+    img[y0:y0 + inner, x0:x0 + inner] = interior
+    cv2.rectangle(img, (w // 2 - 12, y0 + inner + bar), (w // 2 + 12, h), frame_color, -1)
+    if leaf_over_bar:   # Blatt unterbricht den roten Ring (wie im Feld)
+        cv2.line(img, (x0 + 200, y0 - bar - 10), (x0 + 215, y0 + 5), (40, 150, 45), 9)
+    soll = float((plant[y0:y0 + inner, x0:x0 + inner] > 0).mean() * 100)
+    return img, soll
+
+
+def test_rahmen_erkannt_und_nur_innen_ausgewertet(tmp_path):
+    import os
+    img, soll = make_frame_scene()
+    src = str(tmp_path / "rahmen.jpg")
+    cv2.imwrite(src, img, [cv2.IMWRITE_JPEG_QUALITY, 95])
+    mit = json.loads(analysis.analyze_image(src, str(tmp_path / "a"), "before", 0, frame_crop=True))
+    ohne = json.loads(analysis.analyze_image(src, str(tmp_path / "b"), "before", 0))
+    assert mit["frame_found"] is True
+    assert abs(mit["coverage_bw_percent"] - soll) < 3.0
+    # Vollbild enthält den dichten Außenbewuchs — deutlich mehr Grün
+    assert ohne["coverage_bw_percent"] > soll + 10
+    assert "frame_found" not in ohne
+    assert os.path.isfile(mit["outputs"]["frame_check"])
+
+
+def test_rahmen_verwaschen_rosa_erkannt():
+    """Bei Wolkenlicht wirkt der rote Rahmen blassrosa (S~65-95) — im Feld
+    wurde er mit der alten Sättigungsschwelle auf 2 von 3 Bildern verfehlt."""
+    img, _ = make_frame_scene(frame_color=FRAME_PINK)
+    roi, quad = analysis._crop_to_frame(img)
+    assert roi is not None
+    assert 440 <= roi.shape[0] <= 520          # Inneres 560 px minus Sicherheitsrand
+    # Kein Rahmenrest im Ausschnitt
+    assert (analysis._frame_red_mask(roi, 15) > 0).mean() < 0.005
+
+
+def test_rahmen_kein_fehlalarm():
+    img_field, _, _ = make_field()
+    assert analysis._crop_to_frame(img_field)[0] is None
+    assert analysis._crop_to_frame(make_chaos_image(3))[0] is None
+    # Rote Fläche OHNE Loch (z. B. rotes Gerät) ist kein Rahmen
+    blob = make_chaos_image(4)
+    cv2.rectangle(blob, (300, 200), (900, 700), FRAME_RED, -1)
+    assert analysis._crop_to_frame(blob)[0] is None
+    # Zu kleiner Rahmen (Inneres unter 8 % des Bildes) wird ignoriert
+    small, _ = make_frame_scene(inner=180, bar=20)
+    assert analysis._crop_to_frame(small)[0] is None
+
+
+def test_rahmen_fehlt_rueckfall_auf_ganzes_bild(tmp_path):
+    img, _, _ = make_field()
+    src = str(tmp_path / "feld.jpg")
+    cv2.imwrite(src, img)
+    mit = json.loads(analysis.analyze_image(src, str(tmp_path / "a"), "before", 0, frame_crop=True))
+    ohne = json.loads(analysis.analyze_image(src, str(tmp_path / "b"), "before", 0))
+    assert mit["frame_found"] is False
+    assert "frame_check" not in mit["outputs"]
+    assert mit["coverage_bw_percent"] == ohne["coverage_bw_percent"]
+
+
+def test_gruppe_rahmen_schluessel_nur_wenn_angefordert(tmp_path):
+    items = [_item("before", 0, 8.0, 7.8, 100), _item("after", 0, 6.0, 5.9, 100)]
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    assert "frame_crop" not in s and "frame_missing_count" not in s
+    items[0]["frame_found"] = True
+    items[1]["frame_found"] = False
+    s2 = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    assert s2["frame_crop"] is True and s2["frame_missing_count"] == 1
+
+
+def test_exgr_segmentierung():
+    img, soll = make_frame_scene(leaf_over_bar=False)
+    h, w = img.shape[:2]
+    inner = img[h // 2 - 250:h // 2 + 250, w // 2 - 250:w // 2 + 250]
+    cov = analysis._coverage_percent(analysis._segment_plants(inner, "exgr", 35, 85))
+    assert abs(cov - soll) < 3.0
+    # Reiner Boden: keine Pflanzen
+    soil = np.clip(np.full((400, 400, 3), (60, 95, 130), np.float32)
+                   + np.random.default_rng(1).normal(0, 10, (400, 400, 3)), 0, 255).astype(np.uint8)
+    assert analysis._coverage_percent(analysis._segment_plants(soil, "exgr", 35, 85)) < 0.5
+
+
+def test_exgr_end_to_end(tmp_path):
+    img, _, _ = make_field()
+    src = str(tmp_path / "feld.jpg")
+    cv2.imwrite(src, img)
+    item = json.loads(analysis.analyze_image(src, str(tmp_path / "o"), "before", 0,
+                                             row_mode=True, method="exgr"))
+    assert 2.0 < item["coverage_bw_percent"] < 30.0
+    assert item["rows_detected"] is True
+
+
+def make_soil(sunny, seed=2, size=500):
+    """Boden ohne Pflanzen. Sonne: harte Schlagschatten (Faktor 0.35) auf
+    einem Drittel der Fläche; Wolken: gleichmäßig, nur feine Körnung."""
+    rng = np.random.default_rng(seed)
+    img = np.full((size, size, 3), (70, 110, 150), np.float32) + rng.normal(0, 8, (size, size, 3))
+    if sunny:
+        for x in range(0, size, 90):
+            img[:, x:x + 30] *= 0.35
+    return np.clip(img, 0, 255).astype(np.uint8)
+
+
+def test_licht_spanne_sonne_vs_wolken():
+    empty = np.zeros((500, 500), np.uint8)
+    assert analysis._soil_light_span(make_soil(True), empty) >= analysis.LIGHT_SUN_SPAN
+    assert analysis._soil_light_span(make_soil(False), empty) < analysis.LIGHT_SUN_SPAN
+    # Fast vollflächig bewachsen: zu wenig Boden -> kein Wert
+    full = np.full((500, 500), 255, np.uint8)
+    assert analysis._soil_light_span(make_soil(True), full) is None
+
+
+def test_licht_warnung_gruppen(tmp_path):
+    def it(tag, span):
+        x = _item(tag, 0, 8.0, 7.8, 120)
+        if span is not None:
+            x["soil_light_span"] = span
+        return x
+    def warn(b, a):
+        s = analysis.build_group_summary(json.dumps([it("before", b), it("after", a)]), str(tmp_path))
+        return json.loads(s)["light_mismatch_warning"]
+    assert warn(2.5, 1.8) is True     # Sonne vorher, Wolken nachher
+    assert warn(2.5, 3.2) is False    # Sonne / Sonne (dichter Bestand)
+    assert warn(1.7, 1.9) is False    # Wolken / Wolken
+    assert warn(None, 1.8) is False   # nicht bestimmbar -> keine Warnung
+
+
+def test_reihen_in_rahmen_ausschnitt_erkannt():
+    """Regression v1.7: Im 0,5-m-Zählrahmen liegen nur 3-4 Reihen; der
+    Reihenabstand liegt dann knapp unter der Suchobergrenze (m/3). Das bei
+    hi abgeschnittene Prominenz-Fenster verdeckte das Tal rechts vom Peak —
+    echte Reihen fielen durch (im Feld: 1 von 18 Ausschnitten erkannt)."""
+    def leafy_rows(seed, size=500, spacing=160, first=40):
+        """Breite Reihen durch seitlich abstehende Blätter + vereinzeltes
+        Unkraut: Der AC-Peak wird breit, das Tal liegt rechts jenseits von hi.
+        Mit dem alten Fenster: 0 von 8 Masken erkannt (gemessen)."""
+        rng = np.random.default_rng(seed)
+        m = np.zeros((size, size), np.uint8)
+        x0 = first
+        while x0 < size:
+            for y in range(0, size, 20):
+                if rng.random() < 0.3:
+                    continue
+                cx = x0 + int(rng.normal(0, 6))
+                for _ in range(int(rng.integers(2, 5))):
+                    ang = rng.uniform(-np.pi / 2.2, np.pi / 2.2) + (np.pi if rng.random() < 0.5 else 0)
+                    length = rng.uniform(15, 70)
+                    cv2.line(m, (cx, y), (int(cx + length * np.sin(ang)),
+                                          int(y + length * np.cos(ang))), 255, 3)
+            x0 += spacing
+        for _ in range(40):
+            cv2.circle(m, (int(rng.integers(0, size)), int(rng.integers(0, size))),
+                       int(rng.integers(3, 8)), 255, -1)
+        return m
+
+    for seed in (0, 1, 2, 3):
+        ok, band, info = analysis._detect_rows(leafy_rows(seed))
+        assert ok, (seed, info)
+        assert abs(info["period"] - 160) <= 8, (seed, info)
