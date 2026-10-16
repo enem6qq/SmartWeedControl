@@ -187,6 +187,18 @@
     <string name="camera_unavailable">No camera available on this device.</string>
     <string name="settings_reset_done">Settings reset to defaults</string>
     <string name="warning_light_spread">Note: brightness varies strongly between individual images of a group – check outliers (very dark/bright photos).</string>
+
+    <!-- v1.7: Zählrahmen, ExGR, Lichtart -->
+    <string name="settings_method_exgr">ExGR (Excess Green − Excess Red) – fixed threshold, no light-dependent drift (Meyer &amp; Neto 2008)</string>
+    <string name="settings_frame_crop">Evaluate counting frame only</string>
+    <string name="settings_frame_crop_hint">If a red counting frame is visible, only its interior is analysed. Without a detectable frame the whole image is used and a note is shown. Tip: keep leaves off the frame.</string>
+    <string name="warning_light_mismatch">Note: the type of light differs between before and after (sun vs. overcast) – this can shift the CSC. Take before and after photos under the same light if possible.</string>
+    <plurals name="warning_frame_missing">
+        <item quantity="one">Counting frame not detected in %1$d image – the whole image was analysed there.</item>
+        <item quantity="other">Counting frame not detected in %1$d images – the whole image was analysed there.</item>
+    </plurals>
+    <string name="label_frame_found">Counting frame: detected</string>
+    <string name="label_frame_missing">Counting frame: not detected – whole image</string>
     <string name="session_info_with_analyses">%1$s · %2$d analyses</string>
     <string name="pair_header">%1$s %2$d – %3$s</string>
     <string name="trash_delete_failed">Could not delete the file</string>

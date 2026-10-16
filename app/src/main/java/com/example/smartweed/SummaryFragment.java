@@ -275,6 +275,16 @@ public class SummaryFragment extends Fragment {
             if (warn.length() > 0) warn.append("\n");
             warn.append(getString(R.string.warning_rows));
         }
+        if (root.optBoolean("light_mismatch_warning", false)) {
+            if (warn.length() > 0) warn.append("\n");
+            warn.append(getString(R.string.warning_light_mismatch));
+        }
+        int frameMissing = root.optInt("frame_missing_count", 0);
+        if (frameMissing > 0) {
+            if (warn.length() > 0) warn.append("\n");
+            warn.append(getResources().getQuantityString(R.plurals.warning_frame_missing,
+                    frameMissing, frameMissing));
+        }
         binding.tvAnalysisWarning.setText(warn.toString());
         binding.tvAnalysisWarning.setVisibility(warn.length() > 0 ? View.VISIBLE : View.GONE);
 
@@ -340,6 +350,11 @@ public class SummaryFragment extends Fragment {
             if (crop != null && weed != null) {
                 sb.append("\n").append(getString(R.string.label_crop)).append(" ").append(toPct(crop));
                 sb.append("   ").append(getString(R.string.label_weed_cov)).append(" ").append(toPct(weed));
+            }
+            // Zählrahmen-Status nur, wenn der Zuschnitt angefordert war
+            if (it.has("frame_found")) {
+                sb.append("\n").append(getString(it.optBoolean("frame_found", false)
+                        ? R.string.label_frame_found : R.string.label_frame_missing));
             }
             metrics.setText(sb.toString());
 

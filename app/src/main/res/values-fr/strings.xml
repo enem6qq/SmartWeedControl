@@ -187,6 +187,18 @@
     <string name="camera_unavailable">Aucune caméra disponible sur cet appareil.</string>
     <string name="settings_reset_done">Paramètres rétablis aux valeurs par défaut</string>
     <string name="warning_light_spread">Remarque : la luminosité varie fortement entre les images d\'un même groupe – vérifiez les photos très sombres/claires.</string>
+
+    <!-- v1.7: cadre de comptage, ExGR, type de lumière -->
+    <string name="settings_method_exgr">ExGR (Excess Green − Excess Red) – seuil fixe, sans dérive liée à la lumière (Meyer &amp; Neto 2008)</string>
+    <string name="settings_frame_crop">Analyser uniquement le cadre de comptage</string>
+    <string name="settings_frame_crop_hint">Si un cadre de comptage rouge est visible, seul son intérieur est analysé. Sans cadre détectable, l\'image entière est utilisée et une remarque s\'affiche. Astuce : écartez les feuilles du cadre.</string>
+    <string name="warning_light_mismatch">Remarque : le type de lumière diffère entre avant et après (soleil vs. ciel couvert) – cela peut décaler le CSC. Prenez si possible les photos avant et après sous la même lumière.</string>
+    <plurals name="warning_frame_missing">
+        <item quantity="one">Cadre de comptage non détecté sur %1$d image – l\'image entière y a été analysée.</item>
+        <item quantity="other">Cadre de comptage non détecté sur %1$d images – l\'image entière y a été analysée.</item>
+    </plurals>
+    <string name="label_frame_found">Cadre de comptage : détecté</string>
+    <string name="label_frame_missing">Cadre de comptage : non détecté – image entière</string>
     <string name="session_info_with_analyses">%1$s · %2$d analyses</string>
     <string name="pair_header">%1$s %2$d – %3$s</string>
     <string name="trash_delete_failed">Impossible de supprimer le fichier</string>

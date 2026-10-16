@@ -19,22 +19,24 @@ gestriegelt werden, liegt er darüber, sollte die Intensität reduziert werden.
   (Anzahl darf sich unterscheiden — die Bedeckungsgrade werden je Gruppe
   gemittelt). Drei Modi: A ohne Filter, B mit Unkrautfilter, **C mit
   Reihen-Erkennung** (trennt Kulturpflanze von Unkraut und liefert einen
-  Kultur-CSC plus Unkraut-Wirkungsgrad). Zwei Segmentierungsverfahren wählbar:
-  **ExG + Otsu** (robust gegen wechselndes Licht, Standard) oder HSV-Farbschwelle.
-  Analyse läuft lokal und offline via Python/OpenCV. Details siehe
-  [METHODIK.md](METHODIK.md).
+  Kultur-CSC plus Unkraut-Wirkungsgrad). Drei Segmentierungsverfahren wählbar:
+  **ExG + Otsu** (Standard), **ExGR** mit fester Schwelle oder HSV-Farbschwelle.
+  Liegt ein **roter Zählrahmen** im Bild, wird nur sein Inneres ausgewertet
+  (ohne erkannten Rahmen das ganze Bild, mit Hinweis). Analyse läuft lokal und
+  offline via Python/OpenCV. Details siehe [METHODIK.md](METHODIK.md).
 - **Ergebnis-Seite:** Großer CSC-Wert mit farbcodierter Handlungsempfehlung
   (Zielband standardmäßig 8–12 %: darunter „aggressiver striegeln", im Band
   „optimal", darüber „weniger aggressiv"; negativer CSC → Hinweis, das
   Bildpaar zu prüfen; kein Grünanteil → Hinweis „Kein Pflanzenbewuchs
   erkannt"), darunter Bedeckungsgrade, Differenzen und Bilder pro Paar;
-  bei mehreren Paaren mit Fortschrittsanzeige; Analysen können in den
+  bei mehreren Paaren mit Fortschrittsanzeige; Hinweise bei Lichtwechsel
+  (Sonne vs. bewölkt) und nicht erkanntem Zählrahmen; Analysen können in den
   Papierkorb verworfen werden
 - **Meine Aufnahmen:** Übersicht aller Sessions mit Vorschaubild und
   Bildanzahl — Antippen öffnet die Session direkt in der Analyse, das
   Papierkorb-Symbol verschiebt sie (wiederherstellbar) in den Papierkorb
 - **Analyse-Einstellungen (Experten-Modus):** Grünton-Schwellen, minimale
-  Objektgröße, Segmentierungsverfahren und CSC-Zielband sind über das Menü →
+  Objektgröße, Segmentierungsverfahren, Zählrahmen-Zuschnitt und CSC-Zielband sind über das Menü →
   „Einstellungen" anpassbar (z. B. für Feldtests mit anderen Kulturen).
   Änderungen erfordern die **Admin-Anmeldung** (siehe unten) — Ansehen ist
   für alle möglich, die App selbst läuft komplett ohne Anmeldung
@@ -134,9 +136,15 @@ Fotos; inzwischen wird jede Algorithmus-Änderung gegen alle 24 nachvalidiert
   „Gefiltert“) sind fest auf Deutsch, da sie in `analysis.py` ins Bild
   gerendert werden.
 - **Methodik:** Standard-Segmentierung ist **ExG + Otsu** (an echten
-  Feldbildern validiert, robust gegen wechselndes Licht); die klassische
-  HSV-Grünton-Schwelle bleibt in den Einstellungen als Alternative wählbar.
+  Feldbildern validiert). Ihre bildabhängige Schwelle wandert allerdings mit
+  dem Licht — Vorher- und Nachher-Fotos deshalb möglichst bei gleichem Licht
+  aufnehmen (die App warnt bei Sonne/Wolken-Wechsel). **ExGR** (feste Schwelle)
+  und die klassische HSV-Schwelle sind als Alternativen wählbar; ob ExGR
+  Standard werden sollte, entscheidet erst eine Referenzmessung.
   Details und Validierungsstand in [METHODIK.md](METHODIK.md).
+- **Zählrahmen:** Erkannt werden rote bzw. rosa Rahmen. Graue Drahtrahmen
+  vorher mit rotem oder orangem Klebeband umwickeln; Blätter nach Möglichkeit
+  vom Rahmen fernhalten.
 - Die früheren Platzhalter-Screens „Monitoring“ und „Manuell“ (Traktor-/
   Striegelsteuerung) wurden entfernt — sie hatten keine Funktion. Die
   Git-Historie enthält sie weiterhin, falls die Idee wieder aufgegriffen wird.

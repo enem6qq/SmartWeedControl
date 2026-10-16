@@ -1,17 +1,23 @@
 # app/src/main/python/analysis.py
 #
-# Bildanalyse für SmartWeedControl (v1.6)
+# Bildanalyse für SmartWeedControl (v1.7)
 #
 # Ablauf: Die App analysiert jedes Bild einzeln (analyze_image) und fasst
 # anschließend alle Vorher-/Nachher-Bilder zu einer Gruppen-Auswertung zusammen
 # (build_group_summary). Vorher- und Nachher-Gruppe dürfen unterschiedlich
 # viele Bilder enthalten — die Bedeckungsgrade werden je Gruppe gemittelt.
 #
+# Zählrahmen (optional): Liegt ein roter Zählrahmen im Bild, wird nur sein
+# Inneres ausgewertet (entzerrt, Originalauflösung). Ohne gefundenen Rahmen
+# fällt die Analyse auf das ganze Bild zurück (frame_found=false).
+#
 # Segmentierung (Pflanze vs. Boden), wählbar in den Experten-Einstellungen:
-#   - "hsv": fester Grünton-Bereich im HSV-Farbraum (klassisch)
-#   - "exg": Excess-Green-Index (2g−r−b) mit automatischem Otsu-Schwellwert —
-#            robust gegen wechselnde Lichtverhältnisse (Woebbecke 1995,
-#            Meyer & Neto 2008); entspricht der Zielmethodik im Businessplan.
+#   - "hsv":  fester Grünton-Bereich im HSV-Farbraum (klassisch)
+#   - "exg":  Excess-Green-Index (2g−r−b) mit automatischem Otsu-Schwellwert
+#             (Woebbecke 1995); Standard, an 24 Feldbildern validiert.
+#   - "exgr": Excess Green minus Excess Red mit fester Schwelle 0
+#             (Meyer & Neto 2008) — ohne bildabhängige Schwelle, daher ohne
+#             deren Licht-Drift (siehe _exgr_mask).
 #
 # Modus C (Reihen-Erkennung): Grün AUF den Saatreihen zählt als Kulturpflanze,
 # Grün ZWISCHEN den Reihen als Unkraut. Wird keine klare Reihenstruktur
@@ -35,6 +41,28 @@ EXG_UNIMODAL_FRACTION = 0.85  # ab diesem Grün-Anteil gilt das Bild als
 
 METHOD_HSV = "hsv"
 METHOD_EXG = "exg"
+METHOD_EXGR = "exgr"
+
+# Zählrahmen-Erkennung (roter/rosa Rahmen um die Bonitur-Fläche)
+FRAME_MIN_AREA_FRACTION = 0.08  # Rahmeninneres muss >= 8 % des Bildes einnehmen
+FRAME_MAX_ASPECT        = 1.6   # Seitenverhältnis des Inneren (Quadrat ~1.0)
+FRAME_MIN_SIDE          = 120   # Mindest-Kantenlänge des Inneren in px
+FRAME_MARGIN            = 0.06  # Sicherheitsrand nach innen (kein Rot im Ausschnitt)
+FRAME_CLOSE_KERNELS     = (15, 31, 51, 71, 91)  # Lücken durch Blätter schließen
+FRAME_MIN_FRAGMENT_PX   = 100   # kleinere Rot-Flecken sind Rauschen
+FRAME_MAX_RED_FRACTION  = 0.35  # mehr Rot im Bild = kein schmaler Rahmen
+FRAME_MIN_RING_RED      = 0.5   # direkt außerhalb des Inneren überwiegend Rot
+FRAME_MAX_INNER_RED     = 0.1   # im Inneren (fast) kein Rot
+
+# Licht-Warnung: Hell-Dunkel-Spanne des BODENS (90./10. Perzentil der Grauwerte
+# außerhalb der Pflanzen). Harte Sonnenschatten spreizen sie, diffuses
+# Wolkenlicht nicht (gemessen an 18 Rahmen-Ausschnitten: Sonne 2.24–3.56,
+# bewölkt 1.61–1.95). Ab LIGHT_SUN_SPAN gilt ein Bild als "Sonne"; gewarnt
+# wird, wenn Vorher- und Nachher-Gruppe mehrheitlich verschieden eingestuft
+# sind. VORLÄUFIG kalibriert (2 Bildserien, 1 Kamera, knappe Lücke).
+LIGHT_SUN_SPAN          = 2.1
+LIGHT_MIN_SOIL_FRACTION = 0.05   # ohne genug sichtbaren Boden kein Wert
+LIGHT_MIN_SOIL_PIXELS   = 1000
 
 # Maximalgrößen für RAM-schonende Verarbeitung/Anzeige
 MAX_SIDE_FOR_ANALYSIS = 1600
@@ -171,9 +199,36 @@ def _exg_otsu_mask(bgr):
     return cv2.bitwise_and(otsu, positive)
 
 
+def _chromatic(bgr):
+    """Normalisierte Farbanteile r, g, b (Summe 1) — helligkeitsunabhängig."""
+    f = bgr.astype(np.float32)
+    s = f[:, :, 0] + f[:, :, 1] + f[:, :, 2]
+    s[s == 0] = 1.0
+    return f[:, :, 2] / s, f[:, :, 1] / s, f[:, :, 0] / s
+
+
+def _exgr_mask(bgr):
+    """ExGR = ExG − ExR mit ExR = 1.4r − g, Schwelle fest bei 0
+    (Meyer & Neto 2008).
+
+    Hintergrund: Bei ExG+Otsu wandert die bildabhängige Schwelle mit dem Licht
+    (gemessen an 18 Rahmen-Ausschnitten: bewölkt ~0.06–0.09, Sonne ~0.14,
+    Sonne mit dichtem Bestand bis 0.21) — Sonne unterschätzt dünne Blätter,
+    Wolkenlicht lässt die Blattränder in den Boden ausfransen. ExGR braucht
+    keine bildabhängige Schwelle. Grenze: Farbbasierte Indizes greifen an
+    Blatträndern leicht in beschatteten Boden über (JPEG-Farbunterabtastung).
+    Nicht Standard, solange keine Referenzmessung vorliegt: Auf den 24
+    Feldbildern weicht ExGR je nach Boden in beide Richtungen ab."""
+    r, g, b = _chromatic(bgr)
+    exgr = (2.0 * g - r - b) - (1.4 * r - g)
+    return ((exgr > 0.0).astype(np.uint8)) * 255
+
+
 def _segment_plants(bgr, method, h_low, h_high):
     if method == METHOD_EXG:
         mask = _exg_otsu_mask(bgr)
+    elif method == METHOD_EXGR:
+        mask = _exgr_mask(bgr)
     else:
         mask = _hsv_mask(bgr, h_low, h_high)
     # Morphologisches Aufräumen: Pixelrauschen entfernen, kleine Löcher schließen
@@ -195,6 +250,124 @@ def _remove_small_components(mask, min_size):
 
 def _coverage_percent(mask):
     return round(float((mask == 255).sum()) / mask.size * 100.0, 2)
+
+
+def _soil_light_span(bgr, plant_mask):
+    """Hell-Dunkel-Spanne des Bodens: 90./10. Perzentil der Grauwerte auf allen
+    Pixeln außerhalb der (leicht erweiterten) Pflanzenmaske.
+
+    Misst, wie hart die Schatten sind (Sonne hoch, Wolken niedrig). Die
+    Erweiterung hält Blattränder fern. Hinweis: Sonnenbeschienener, gelblicher
+    Boden hat selbst einen leicht positiven ExG — Boden darum NICHT über
+    "ExG <= 0" bestimmen (das erfasst bei Sonne fast nur Schatten).
+    None, wenn zu wenig Boden sichtbar ist."""
+    soil = cv2.dilate(plant_mask, np.ones((7, 7), np.uint8)) == 0
+    n = int(soil.sum())
+    if n < LIGHT_MIN_SOIL_PIXELS or n < LIGHT_MIN_SOIL_FRACTION * soil.size:
+        return None
+    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)[soil].astype(np.float32)
+    p10, p90 = np.percentile(gray, 10), np.percentile(gray, 90)
+    return round(float(p90 / max(p10, 1.0)), 2)
+
+
+# -------------------------------
+# Zählrahmen-Erkennung
+# -------------------------------
+def _frame_red_mask(bgr, close):
+    """Rote bzw. rosa Rahmenpixel. Kräftiges Rot (H<=8) nur mit hoher Sättigung,
+    damit rötlicher Boden (H~16) nicht zählt; Rosa-Rot (H>=160) auch blasser:
+    Ein verwaschener Rahmen hat bei Bewölkung nur S~65-95 (gemessen)."""
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    h, s, v = cv2.split(hsv)
+    m = (((h <= 8) & (s >= 110) & (v >= 90)) |
+         ((h >= 160) & (s >= 50) & (v >= 120))).astype(np.uint8) * 255
+    # Erst verstreute Kleinstflecken entfernen: Auf rötlichem Boden fallen durch
+    # Rauschen ~1 % Einzelpixel in den Rot-Bereich, die das große Closing sonst
+    # zu einer vollflächigen "Rahmen"-Maske verschmelzen würde. Bewusst ein
+    # Flächenfilter statt Opening: Von Blättern zerschnittene, schmale
+    # Rahmenstücke bleiben so erhalten (ein Opening dünnte sie aus — im Feld
+    # wurden dann 2 von 18 Rahmen nicht mehr gefunden). Bekannte Grenze: Ist
+    # ein Schenkel großteils von Blättern verdeckt, bleiben nur Splitter, die
+    # von Bodenrauschen nicht unterscheidbar sind -> kein Rahmen, Rückfall auf
+    # das ganze Bild mit Hinweis (gemessen: 17 von 18 Feldfotos erkannt).
+    m = _remove_small_components(m, FRAME_MIN_FRAGMENT_PX)
+    return cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((close, close), np.uint8))
+
+
+def _looks_like_frame_ring(red, quad):
+    """Plausibilitätsprüfung: Ein Zählrahmen ist ein SCHMALER roter Ring.
+    Direkt außerhalb des Inneren muss überwiegend Rot liegen, im Inneren fast
+    keins, und Rot darf nicht große Teile des Bildes füllen (rötlicher Boden,
+    rote Geräte)."""
+    if float((red > 0).mean()) > FRAME_MAX_RED_FRACTION:
+        return False
+    inner = np.zeros(red.shape, np.uint8)
+    cv2.fillConvexPoly(inner, quad.astype(np.int32), 255)
+    side = float(np.mean([np.linalg.norm(quad[i] - quad[(i + 1) % 4]) for i in range(4)]))
+    k = max(3, int(side * 0.04)) | 1
+    ring = cv2.subtract(cv2.dilate(inner, np.ones((k, k), np.uint8)), inner)
+    ring_red = float((red[ring > 0] > 0).mean()) if (ring > 0).any() else 0.0
+    inner_red = float((red[inner > 0] > 0).mean())
+    return ring_red >= FRAME_MIN_RING_RED and inner_red <= FRAME_MAX_INNER_RED
+
+
+def _order_corners(pts):
+    """Ecken sortieren: oben-links, oben-rechts, unten-rechts, unten-links."""
+    pts = np.asarray(pts, dtype=np.float32)
+    s = pts.sum(axis=1)
+    d = np.diff(pts, axis=1).ravel()
+    return np.array([pts[np.argmin(s)], pts[np.argmin(d)],
+                     pts[np.argmax(s)], pts[np.argmax(d)]], dtype=np.float32)
+
+
+def _frame_inner_quad(bgr):
+    """Viereck des Rahmeninneren oder None.
+
+    Das Innere ist das größte LOCH in der Rahmenmaske. Blätter, die über den
+    Rahmen ragen, unterbrechen den Ring — deshalb werden Lücken mit wachsender
+    Kernelgröße geschlossen, bis ein plausibles Inneres (Mindestfläche,
+    annähernd quadratisch) entsteht."""
+    h, w = bgr.shape[:2]
+    min_area = FRAME_MIN_AREA_FRACTION * h * w
+    for k in FRAME_CLOSE_KERNELS:
+        red = _frame_red_mask(bgr, k)
+        contours, hier = cv2.findContours(red, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+        if hier is None:
+            continue
+        holes = [c for c, hh in zip(contours, hier[0]) if hh[3] != -1]
+        if not holes:
+            continue
+        hole = max(holes, key=cv2.contourArea)
+        if cv2.contourArea(hole) < min_area:
+            continue
+        hull = cv2.convexHull(hole)
+        approx = cv2.approxPolyDP(hull, 0.02 * cv2.arcLength(hull, True), True)
+        if len(approx) == 4:
+            quad = _order_corners(approx.reshape(4, 2))
+        else:
+            quad = _order_corners(cv2.boxPoints(cv2.minAreaRect(hull)))
+        sides = [float(np.linalg.norm(quad[i] - quad[(i + 1) % 4])) for i in range(4)]
+        if min(sides) < FRAME_MIN_SIDE or max(sides) / max(min(sides), 1.0) > FRAME_MAX_ASPECT:
+            continue
+        if not _looks_like_frame_ring(red, quad):
+            continue
+        return quad
+    return None
+
+
+def _crop_to_frame(bgr):
+    """Entzerrt das Rahmeninnere auf ein Quadrat in Originalauflösung.
+
+    Kantenlänge = mittlere gemessene Kante, damit min_size dieselbe Bedeutung
+    behält wie am Vollbild. Rückgabe: (ausschnitt, quad) oder (None, None)."""
+    quad = _frame_inner_quad(bgr)
+    if quad is None:
+        return None, None
+    side = int(round(np.mean([np.linalg.norm(quad[i] - quad[(i + 1) % 4]) for i in range(4)])))
+    dst = np.array([[0, 0], [side, 0], [side, side], [0, side]], dtype=np.float32)
+    warp = cv2.warpPerspective(bgr, cv2.getPerspectiveTransform(quad, dst), (side, side))
+    m = int(side * FRAME_MARGIN)
+    return np.ascontiguousarray(warp[m:side - m, m:side - m]), quad
 
 
 # -------------------------------
@@ -400,7 +573,13 @@ def _detect_rows_oriented(plant_mask):
     def peak_prominence(lag):
         half = max(5, lag // 2)
         left = ac[max(lo, lag - half):lag]
-        right = ac[lag + 1:min(hi, lag + half + 1)]
+        # Rechts über das Suchfenster hinaus schauen (bis zur halben
+        # Profillänge): Bei wenigen Reihen (Zählrahmen-Ausschnitt, 3-4 Reihen)
+        # liegt der Reihenabstand knapp unter hi — ein bei hi abgeschnittenes
+        # Fenster verdeckte das Tal rechts vom Peak und drückte die Prominenz
+        # echter Reihen unter die Schwelle (gemessen: 1 von 18 Ausschnitten
+        # erkannt, mit Fix 11 von 18; 24 Feldbilder unverändert).
+        right = ac[lag + 1:min(max(hi, m // 2), lag + half + 1)]
         return float(ac[lag] - max(left.min() if len(left) else ac[lag],
                                    right.min() if len(right) else ac[lag]))
 
@@ -526,10 +705,12 @@ def _make_labeled_panel(bgr, plant_mask, filtered_mask, cov_bw, cov_f,
 def analyze_image(path, out_dir, tag, index,
                   weed_filter=False, row_mode=False,
                   min_size=MIN_SIZE, h_low=H_LOW_DEFAULT, h_high=H_HIGH_DEFAULT,
-                  method=METHOD_EXG):
+                  method=METHOD_EXG, frame_crop=False):
     """
     Analysiert EIN Bild und legt die Detailbilder unter <out_dir>/details/ ab.
     - tag: "before" oder "after", index: Position innerhalb der Gruppe
+    - frame_crop: nur das Innere eines roten Zählrahmens auswerten (Rückfall
+      auf das ganze Bild, wenn keiner gefunden wird)
     Rückgabe: JSON-String (ein Item für build_group_summary).
     """
     path = str(path)
@@ -542,10 +723,29 @@ def analyze_image(path, out_dir, tag, index,
     if bgr is None:
         raise ValueError(f"cannot read image: {path}")
     bgr = _maybe_downscale_long_side(bgr, MAX_SIDE_FOR_ANALYSIS)
+    prefix = f"{tag}_{index:02d}"
+
+    # Zählrahmen: ab hier gilt nur noch das Rahmeninnere als Bild. Ein
+    # Kontrollbild mit eingezeichnetem Ausschnitt macht die Erkennung prüfbar.
+    frame_found = None
+    frame_check_path = None
+    if frame_crop:
+        roi, quad = _crop_to_frame(bgr)
+        frame_found = roi is not None
+        print(f"[PY] frame {prefix}: found={frame_found}")
+        if frame_found:
+            check = bgr.copy()
+            cv2.polylines(check, [quad.astype(np.int32)], True, (255, 255, 0),
+                          max(2, int(round(max(check.shape[:2]) / 250.0))))
+            check = _resize_to_height(check, min(MAX_PANEL_HEIGHT, check.shape[0]))
+            frame_check_path = os.path.join(detail_dir, f"{prefix}_rahmen.jpg")
+            _imwrite(frame_check_path, check, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+            bgr = roi
 
     brightness = round(float(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY).mean()), 1)
 
     plant_mask = _segment_plants(bgr, method, h_low, h_high)
+    soil_light_span = _soil_light_span(bgr, plant_mask)
     filtered = _remove_small_components(plant_mask, min_size)
     cov_bw = _coverage_percent(plant_mask)
     cov_f = _coverage_percent(filtered)
@@ -573,7 +773,6 @@ def analyze_image(path, out_dir, tag, index,
             _imwrite(overlay_path, overlay, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
 
     # Dateien ablegen: Masken verlustfrei als PNG, Fotos/Panels als JPEG
-    prefix = f"{tag}_{index:02d}"
     orig_path = os.path.join(detail_dir, f"{prefix}_original.jpg")
     bw_path = os.path.join(detail_dir, f"{prefix}_maske.png")
     fil_path = os.path.join(detail_dir, f"{prefix}_gefiltert_{min_size}px.png")
@@ -607,6 +806,12 @@ def analyze_image(path, out_dir, tag, index,
             "panel": panel_path,
         },
     }
+    if soil_light_span is not None:
+        item["soil_light_span"] = soil_light_span
+    if frame_found is not None:
+        item["frame_found"] = frame_found
+        if frame_check_path:
+            item["outputs"]["frame_check"] = frame_check_path
     if cov_wf is not None:
         item["coverage_weedfiltered_percent"] = cov_wf
         item["outputs"]["weed_filtered"] = wf_path
@@ -734,6 +939,18 @@ def build_group_summary(items_json, out_dir):
     brightness_spread_warning = (group_spread(before) > BRIGHTNESS_WARN_DELTA
                                  or group_spread(after) > BRIGHTNESS_WARN_DELTA)
 
+    # Warnung 3: Lichtart verschieden (Sonne vs. bewölkt). Die Helligkeit allein
+    # erkennt das nicht (gemessen: Sonne 136 vs. Wolken 125 — unter der
+    # Schwelle), wohl aber die Hell-Dunkel-Spanne des Bodens. Ein Lichtwechsel
+    # verschiebt die Segmentierung in eine Richtung und damit den CSC.
+    def group_sunny(group):
+        spans = [i["soil_light_span"] for i in group if i.get("soil_light_span") is not None]
+        if not spans:
+            return None
+        return sum(1 for s in spans if s >= LIGHT_SUN_SPAN) * 2 >= len(spans)
+    sun_b, sun_a = group_sunny(before), group_sunny(after)
+    light_mismatch_warning = sun_b is not None and sun_a is not None and sun_b != sun_a
+
     overview_path = _build_overview(before, after, out_dir)
 
     # Kontrakt Python->Java: Optionale Schlüssel werden durchgängig WEGGELASSEN
@@ -749,6 +966,7 @@ def build_group_summary(items_json, out_dir):
         "row_mode": row_mode,
         "brightness_warning": brightness_warning,
         "brightness_spread_warning": brightness_spread_warning,
+        "light_mismatch_warning": light_mismatch_warning,
         "out_dir": out_dir,
         "avg_before": avg_b,
         "avg_after": avg_a,
@@ -758,7 +976,13 @@ def build_group_summary(items_json, out_dir):
     }
     if rows_detected is not None:
         result["rows_detected"] = rows_detected
+    # Zählrahmen: nur gesetzt, wenn der Rahmen-Zuschnitt angefordert war
+    frame_items = [i for i in items if "frame_found" in i]
+    if frame_items:
+        result["frame_crop"] = True
+        result["frame_missing_count"] = sum(1 for i in frame_items if not i["frame_found"])
     print(f"[PY] group summary: {len(before)} vorher / {len(after)} nachher, "
           f"rows={rows_detected}, bright_warn={brightness_warning}, "
-          f"spread_warn={brightness_spread_warning}")
+          f"spread_warn={brightness_spread_warning}, light_warn={light_mismatch_warning}, "
+          f"frame_missing={result.get('frame_missing_count')}")
     return json.dumps(result, ensure_ascii=False, allow_nan=False)

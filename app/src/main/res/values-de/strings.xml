@@ -187,6 +187,18 @@
     <string name="camera_unavailable">Auf diesem Gerät ist keine Kamera verfügbar.</string>
     <string name="settings_reset_done">Einstellungen auf Standardwerte zurückgesetzt</string>
     <string name="warning_light_spread">Hinweis: Die Helligkeit schwankt stark zwischen einzelnen Bildern einer Gruppe – Ausreißer (sehr dunkle/helle Fotos) prüfen.</string>
+
+    <!-- v1.7: Zählrahmen, ExGR, Lichtart -->
+    <string name="settings_method_exgr">ExGR (Excess Green − Excess Red) – feste Schwelle, ohne lichtabhängige Drift (Meyer &amp; Neto 2008)</string>
+    <string name="settings_frame_crop">Nur Zählrahmen auswerten</string>
+    <string name="settings_frame_crop_hint">Ist ein roter Zählrahmen im Bild, wird nur sein Inneres ausgewertet. Ohne erkennbaren Rahmen wird das ganze Bild verwendet und ein Hinweis angezeigt. Tipp: Blätter vom Rahmen fernhalten.</string>
+    <string name="warning_light_mismatch">Hinweis: Die Lichtart unterscheidet sich zwischen Vorher und Nachher (Sonne vs. bewölkt) – das kann den CSC verschieben. Vorher- und Nachher-Fotos möglichst bei gleichem Licht aufnehmen.</string>
+    <plurals name="warning_frame_missing">
+        <item quantity="one">Zählrahmen in %1$d Bild nicht erkannt – dort wurde das ganze Bild ausgewertet.</item>
+        <item quantity="other">Zählrahmen in %1$d Bildern nicht erkannt – dort wurde das ganze Bild ausgewertet.</item>
+    </plurals>
+    <string name="label_frame_found">Zählrahmen: erkannt</string>
+    <string name="label_frame_missing">Zählrahmen: nicht erkannt – ganzes Bild</string>
     <string name="session_info_with_analyses">%1$s · %2$d Analysen</string>
     <string name="pair_header">%1$s %2$d – %3$s</string>
     <string name="trash_delete_failed">Datei konnte nicht gelöscht werden</string>

@@ -102,6 +102,16 @@
                     android:layout_marginBottom="8dp"/>
 
                 <RadioButton
+                    android:id="@+id/rbMethodExgr"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_method_exgr"
+                    android:textSize="14sp"
+                    android:textColor="@color/text_primary"
+                    android:paddingStart="8dp"
+                    android:layout_marginBottom="8dp"/>
+
+                <RadioButton
                     android:id="@+id/rbMethodHsv"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -110,6 +120,34 @@
                     android:textColor="@color/text_primary"
                     android:paddingStart="8dp"/>
             </RadioGroup>
+        </LinearLayout>
+
+        <!-- Zählrahmen -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_card"
+            android:padding="20dp"
+            android:layout_marginTop="16dp">
+
+            <CheckBox
+                android:id="@+id/cbFrameCrop"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_frame_crop"
+                android:textStyle="bold"
+                android:textSize="15sp"
+                android:textColor="@color/text_primary"
+                android:paddingStart="8dp"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/settings_frame_crop_hint"
+                android:textSize="13sp"
+                android:textColor="@color/text_secondary"/>
         </LinearLayout>
 
         <!-- Bildanalyse -->
