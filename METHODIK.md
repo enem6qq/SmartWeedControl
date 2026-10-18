@@ -158,6 +158,18 @@ Wichtig fürs Aufnahmeprotokoll: Alle Bilder einer Auswertung sollten aus
 Gruppen-Mittelung setzt voraus, dass jedes Bild eine vergleichbare Fläche
 repräsentiert (keine automatische Perspektiv-/Maßstabskorrektur).
 
+### Ergebnisbilder (seit v1.7.1)
+
+Das Übersichtsbild zeigt in der Titelleiste den **CSC derselben Basis wie die
+Ergebnis-Seite** (Modus C mit Reihen: Kulturbedeckung; Modus B:
+unkrautgefiltert, sonst gefiltert; Modus A: Pflanzenmaske), je Gruppe Anzahl
+und Mittelwert sowie unter jeder Bildkachel Nummer, Dateiname und
+Einzelwert. Beschriftungen stehen in eigenen Leisten statt im Foto, werden
+auf die verfügbare Breite eingepasst (nie abgeschnitten) und viele Bilder
+zeilenweise umbrochen. Die Auswertungs-Panels (Original | Pflanzenmaske |
+Gefiltert | Unkrautgefiltert) tragen je Spalte Titel und Bedeckungswert,
+Reihen-Overlay und Rahmen-Kontrollbild eine Legende.
+
 ## 5. Validierung an echten Feldbildern (Stand v1.5)
 
 Erstkalibrierung (v1.3) an 14 realen Feldfotos; inzwischen liegen 24 Fotos

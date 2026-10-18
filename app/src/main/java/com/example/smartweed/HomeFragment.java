@@ -205,8 +205,10 @@ public class HomeFragment extends Fragment {
         // view.post kann einen Frame nach Zerstörung der View feuern
         if (binding == null) return;
         final View card = binding.headerCard;
-        int cx = (card.getLeft() + card.getRight()) / 2;
-        int cy = (card.getTop() + card.getBottom()) / 2;
+        // Mittelpunkt in View-eigenen Koordinaten (createCircularReveal erwartet
+        // sie relativ zur View, nicht zum Parent — vorher lag er versetzt)
+        int cx = card.getWidth() / 2;
+        int cy = card.getHeight() / 2;
         float finalRadius = (float) Math.hypot(card.getWidth(), card.getHeight());
 
         // Premium Circular Reveal mit längerer Dauer
@@ -215,6 +217,9 @@ public class HomeFragment extends Fragment {
         reveal.setDuration(700);
         reveal.setInterpolator(easeOut);
         reveal.start();
+        // prepForIntro hatte die Karte um -30dp versetzt; ohne Rückführung blieb
+        // sie bis zum ersten Scrollen (Parallax) verschoben stehen
+        card.animate().translationY(0f).setDuration(500).setInterpolator(easeOut).start();
 
         // Logo Animation (wenn vorhanden)
         View logoContainer = binding.headerCard.findViewById(R.id.logoContainer);

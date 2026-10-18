@@ -94,24 +94,44 @@ public class AnalysisFragment extends Fragment {
 
     private void applyPickedUris(List<Uri> uris, boolean isBefore) {
         // Abbruch liefert eine LEERE Liste (nicht null) — die bestehende
-        // Auswahl muss dann erhalten bleiben. Vorher stand clear() VOR der
-        // Prüfung: Picker öffnen + Zurück drücken löschte die Auswahl.
+        // Auswahl muss dann erhalten bleiben.
         if (uris == null || uris.isEmpty()) return;
+        // Neue Bilder werden ANGEHÄNGT (Duplikate übersprungen): Einzelne
+        // Bilder lassen sich über das ✕ auf der Kachel wieder entfernen, die
+        // ganze Gruppe über "Alle entfernen".
         List<Uri> target = isBefore ? beforeUris : afterUris;
-        List<Uri> old = new ArrayList<>(target);
-        target.clear();
         for (Uri u : uris) {
+            if (target.contains(u)) continue;
             takePersistable(u);
             target.add(u);
         }
+        renderSelectedImages(isBefore);
+    }
+
+    private void removeFromSelection(Uri uri, boolean isBefore) {
+        List<Uri> target = isBefore ? beforeUris : afterUris;
+        if (!target.remove(uri)) return;
+        releaseUnusedPersistables(java.util.Collections.singletonList(uri));
+        renderSelectedImages(isBefore);
+    }
+
+    private void clearSelection(boolean isBefore) {
+        List<Uri> target = isBefore ? beforeUris : afterUris;
+        if (target.isEmpty()) return;
+        List<Uri> old = new ArrayList<>(target);
+        target.clear();
         releaseUnusedPersistables(old);
         renderSelectedImages(isBefore);
     }
 
     /** Gibt persistierte URI-Grants frei, die in keiner Auswahl mehr vorkommen —
      *  Android deckelt die Grants pro App (128 vor API 30, 512 danach); ohne
-     *  Freigabe schlagen neue Grants bei intensiver Langzeitnutzung fehl. */
+     *  Freigabe schlagen neue Grants bei intensiver Langzeitnutzung fehl.
+     *  Während eine Analyse läuft, wird NICHT freigegeben: Der Hintergrund-
+     *  Thread kopiert die Bilder seiner Auswahl ggf. noch — ein entzogener
+     *  Grant ließe die laufende Analyse mit SecurityException abbrechen. */
     private void releaseUnusedPersistables(List<Uri> removed) {
+        if (analysisVM != null && Boolean.TRUE.equals(analysisVM.running.getValue())) return;
         for (Uri u : removed) {
             if (beforeUris.contains(u) || afterUris.contains(u)) continue;
             if (!"content".equals(u.getScheme())) continue;
@@ -181,6 +201,8 @@ public class AnalysisFragment extends Fragment {
                 pickBeforeImages.launch(new String[]{"image/*"}));
         binding.buttonPickAfter.setOnClickListener(v ->
                 pickAfterImages.launch(new String[]{"image/*"}));
+        binding.btnClearBefore.setOnClickListener(v -> clearSelection(true));
+        binding.btnClearAfter.setOnClickListener(v -> clearSelection(false));
 
         // Analyse starten (Vorher- und Nachher-Gruppe dürfen unterschiedlich groß sein)
         binding.buttonRunAnalysis.setOnClickListener(v -> {
@@ -294,12 +316,18 @@ public class AnalysisFragment extends Fragment {
     private String getDisplayName(Uri uri) {
         String name = getString(R.string.unnamed);
         if ("content".equals(uri.getScheme())) {
+            // Nach Prozess-Tod oder Deinstallation der Quell-App kann der Grant
+            // entzogen sein: query() wirft dann SecurityException bzw.
+            // IllegalArgumentException — ungefangen stürzte die App beim
+            // Anzeigen der Auswahl ab. Dann bleibt es beim Platzhalter-Namen.
             try (Cursor c = requireContext().getContentResolver()
                     .query(uri, null, null, null, null)) {
                 if (c != null && c.moveToFirst()) {
                     int idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME);
                     if (idx >= 0) name = c.getString(idx);
                 }
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Dateiname nicht lesbar: " + uri, e);
             }
         } else if ("file".equals(uri.getScheme())) {
             String last = uri.getLastPathSegment();
@@ -383,18 +411,13 @@ public class AnalysisFragment extends Fragment {
                     Log.i(TAG, "analysis finished, " + items.length() + " items");
                 }
 
-                // Nur das fertige Übersichtsbild der Galerie melden — Masken und
-                // Einzelbilder liegen versteckt im details/-Unterordner (.nomedia).
-                JSONObject combo = new JSONObject(json).optJSONObject("combo");
-                String overview = (combo != null) ? combo.optString("overview", "") : "";
-                if (!overview.isEmpty()) {
-                    // Übersichtsbild in die öffentliche Galerie exportieren
-                    MediaExport.exportToGallery(appContext, new File(overview), "");
-                }
-
                 analysisVM.resultJson.postValue(json);
                 analysisVM.running.postValue(false);
                 analysisVM.error.postValue(null);
+
+                // Galerie-Export NACH dem Melden des Ergebnisses: Die
+                // Ergebnisseite wartet so nicht auf die MediaStore-Kopien.
+                exportResultsToGallery(appContext, outDir, new JSONObject(json));
 
             } catch (PyException pyEx) {
                 analysisVM.error.postValue(String.format(errPython, firstLine(pyEx.getMessage())));
@@ -419,6 +442,40 @@ public class AnalysisFragment extends Fragment {
                 }
             }
         });
+    }
+
+    /**
+     * Ergebnisbilder geordnet in die Galerie legen:
+     *   Pictures/SmartWeed/&lt;Session&gt;/&lt;Analyse_HH-mm-ss&gt;/
+     *     00_Uebersicht_&lt;Session&gt;.jpg
+     *     Vorher_01_Auswertung.jpg, Nachher_01_Auswertung.jpg, ...
+     * Masken und Zwischenbilder bleiben versteckt im details/-Ordner der App.
+     * Die führende "00_" sortiert die Übersicht im Ordner an den Anfang.
+     */
+    private static void exportResultsToGallery(Context ctx, File outDir, JSONObject result) {
+        String sub = MediaExport.analysisSubPath(outDir);
+        File session = outDir.getParentFile();
+        String sessionName = session != null ? session.getName() : outDir.getName();
+
+        JSONObject combo = result.optJSONObject("combo");
+        String overview = (combo != null) ? combo.optString("overview", "") : "";
+        if (!overview.isEmpty()) {
+            MediaExport.exportToGallery(ctx, new File(overview), sub,
+                    "00_Uebersicht_" + sessionName + ".jpg");
+        }
+        JSONArray items = result.optJSONArray("items");
+        if (items == null) return;
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject it = items.optJSONObject(i);
+            if (it == null) continue;
+            JSONObject outputs = it.optJSONObject("outputs");
+            String panel = (outputs != null) ? outputs.optString("panel", "") : "";
+            if (panel.isEmpty()) continue;
+            String group = "after".equals(it.optString("tag")) ? "Nachher" : "Vorher";
+            String name = String.format(Locale.US, "%s_%02d_Auswertung.jpg",
+                    group, it.optInt("index", i) + 1);
+            MediaExport.exportToGallery(ctx, new File(panel), sub, name);
+        }
     }
 
     /** Nach fehlgeschlagener Analyse keinen leeren Analyse-Ordner zurücklassen
@@ -481,72 +538,80 @@ public class AnalysisFragment extends Fragment {
     // UI-Rendering (ein Pfad für Vorher und Nachher)
     // ==============================
     private void renderSelectedImages(boolean isBefore) {
-        renderGroup(isBefore ? beforeUris : afterUris,
-                isBefore ? binding.imageBefore : binding.imageAfter,
-                isBefore ? binding.tvBeforeName : binding.tvAfterName,
-                isBefore ? binding.beforeContainer : binding.afterContainer);
-    }
+        if (binding == null) return;
+        List<Uri> uris = isBefore ? beforeUris : afterUris;
+        android.widget.TextView status = isBefore ? binding.tvBeforeName : binding.tvAfterName;
+        View clear = isBefore ? binding.btnClearBefore : binding.btnClearAfter;
+        View scroll = isBefore ? binding.scrollBefore : binding.scrollAfter;
+        ViewGroup container = isBefore ? binding.beforeContainer : binding.afterContainer;
 
-    private void renderGroup(List<Uri> uris, android.widget.ImageView single,
-                             android.widget.TextView nameView, ViewGroup container) {
         int count = uris.size();
-
-        // Single-Preview sichtbar nur bei 1 Bild, sonst verstecken
-        setVisibility(single, count == 1 ? View.VISIBLE : View.GONE);
-        setVisibility(nameView, count == 1 ? View.VISIBLE : View.GONE);
-
-        // Container sichtbar nur bei >=2; bei 0/1 leeren & verstecken
-        container.removeAllViews();
-        if (count >= 2) {
-            setVisibility(container, View.VISIBLE);
-            for (Uri u : uris) {
-                addThumbToContainer(container, u);
-            }
+        if (count == 0) {
+            status.setText(R.string.no_image_selected);
+        } else if (count == 1) {
+            status.setText(getDisplayName(uris.get(0)));
         } else {
-            setVisibility(container, View.GONE);
+            status.setText(getResources().getQuantityString(R.plurals.images_selected, count, count));
         }
+        clear.setVisibility(count > 0 ? View.VISIBLE : View.GONE);
+        scroll.setVisibility(count > 0 ? View.VISIBLE : View.GONE);
 
-        // Single-Preview Bild/Name befüllen bei genau 1 Bild.
-        // Glide statt setImageURI: setImageURI dekodiert das komplette Bild
-        // synchron auf dem UI-Thread (12 MP ≈ 48 MB) — Frame-Freeze und
-        // OOM-Risiko; Glide sampelt asynchron auf die View-Größe herunter.
-        if (count == 1) {
-            Uri u = uris.get(0);
-            Glide.with(this)
-                    .load(u)
-                    .diskCacheStrategy(DiskCacheStrategy.NONE)
-                    .skipMemoryCache(true)
-                    .fitCenter()
-                    .into(single);
-            nameView.setText(getDisplayName(u));
-        } else if (count == 0) {
-            Glide.with(this).clear(single); // laufende Glide-Ladung abbrechen
-            single.setImageDrawable(null);
-            nameView.setText(R.string.no_image_selected);
+        // Laufende Glide-Ladungen der alten Kacheln abbrechen, dann neu aufbauen
+        for (int i = 0; i < container.getChildCount(); i++) {
+            View tile = container.getChildAt(i);
+            View img = tile.findViewWithTag("thumb");
+            if (img instanceof android.widget.ImageView) Glide.with(this).clear(img);
+        }
+        container.removeAllViews();
+        for (Uri u : uris) {
+            container.addView(createThumbTile(u, isBefore));
         }
     }
 
-    private void addThumbToContainer(ViewGroup container, Uri uri) {
+    /** Kachel: Vorschaubild (antippen = Vollbild) mit ✕-Knopf zum Entfernen.
+     *  Glide statt setImageURI: dekodiert asynchron und auf Kachelgröße
+     *  heruntergesampelt (ein 12-MP-Foto wären sonst ~48 MB auf dem UI-Thread). */
+    private View createThumbTile(Uri uri, boolean isBefore) {
+        int size = dp(104);
+        android.widget.FrameLayout tile = new android.widget.FrameLayout(requireContext());
+        android.widget.LinearLayout.LayoutParams lp =
+                new android.widget.LinearLayout.LayoutParams(size, size);
+        lp.setMarginEnd(dp(8));
+        tile.setLayoutParams(lp);
+        tile.setBackgroundResource(R.drawable.bg_image_placeholder);
+        tile.setClipToOutline(true);
+
         android.widget.ImageView img = new android.widget.ImageView(requireContext());
-        img.setAdjustViewBounds(true);
-        img.setPadding(0, dp(4), 0, dp(2));
+        img.setTag("thumb");
+        img.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+        img.setContentDescription(getDisplayName(uri));
+        tile.addView(img, new android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         Glide.with(this)
                 .load(uri)
                 .diskCacheStrategy(DiskCacheStrategy.NONE)
                 .skipMemoryCache(true)
-                .fitCenter()
+                .override(size, size)
+                .centerCrop()
                 .into(img);
-
         // Der Fullscreen-Dialog kann content://-URIs direkt laden — keine
         // synchrone Kopie auf dem UI-Thread nötig.
         img.setOnClickListener(v ->
                 SummaryFragment.FullscreenImageDialog.show(this, uri.toString()));
 
-        container.addView(img);
-    }
-
-    private void setVisibility(View v, int visibility) {
-        if (v != null) v.setVisibility(visibility);
+        android.widget.ImageButton remove = new android.widget.ImageButton(requireContext());
+        remove.setImageResource(R.drawable.ic_close);
+        remove.setBackgroundResource(R.drawable.bg_thumb_remove);
+        remove.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+        remove.setPadding(dp(5), dp(5), dp(5), dp(5));
+        remove.setContentDescription(getString(R.string.cd_remove_image));
+        android.widget.FrameLayout.LayoutParams rlp =
+                new android.widget.FrameLayout.LayoutParams(dp(30), dp(30),
+                        android.view.Gravity.TOP | android.view.Gravity.END);
+        rlp.setMargins(0, dp(4), dp(4), 0);
+        tile.addView(remove, rlp);
+        remove.setOnClickListener(v -> removeFromSelection(uri, isBefore));
+        return tile;
     }
 
     private int dp(int v) {

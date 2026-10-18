@@ -17,7 +17,9 @@ gestriegelt werden, liegt er darüber, sollte die Intensität reduziert werden.
 - **Kamera-Seite:** Vorher-/Nachher-Fotos aufnehmen oder Bilder importieren
 - **Analyse-Seite:** Beliebig viele Vorher- und Nachher-Bilder auswählen
   (Anzahl darf sich unterscheiden — die Bedeckungsgrade werden je Gruppe
-  gemittelt). Drei Modi: A ohne Filter, B mit Unkrautfilter, **C mit
+  gemittelt). Die Auswahl erscheint als Vorschau-Kacheln: Antippen zeigt das
+  Bild groß, das ✕ entfernt ein versehentlich gewähltes Bild, „Alle
+  entfernen" leert die Gruppe; weitere Bilder werden angehängt. Drei Modi: A ohne Filter, B mit Unkrautfilter, **C mit
   Reihen-Erkennung** (trennt Kulturpflanze von Unkraut und liefert einen
   Kultur-CSC plus Unkraut-Wirkungsgrad). Drei Segmentierungsverfahren wählbar:
   **ExG + Otsu** (Standard), **ExGR** mit fester Schwelle oder HSV-Farbschwelle.
@@ -46,25 +48,33 @@ gestriegelt werden, liegt er darüber, sollte die Intensität reduziert werden.
 
 ## Ablage der Bilder
 
-Eine „Session" entspricht einem Feldeinsatz. Alle Arbeitsdaten liegen im
-**app-eigenen Speicher** (Scoped-Storage-konform, ohne Spezial-Berechtigungen):
+Eine „Session" entspricht einem Feldeinsatz. **Für Nutzer maßgeblich ist die
+Galerie** — dort liegt alles geordnet nach Session (seit v1.7.1, Hinweis
+auch in der App unter „Meine Aufnahmen" und auf der Ergebnis-Seite):
 
 ```
-Android/data/de.smartweedcontrol.app/files/SmartWeed/
-└── 2026-07-07_18-58/          ← Session (lesbarer Zeitstempel)
-    ├── vorher/                ← eigene Aufnahmen
+Pictures/SmartWeed/
+└── 2026-10-18_10-30/                 ← Session (Datum_Uhrzeit)
+    ├── vorher/                       ← Aufnahmen + importierte Bilder
+    │   └── vorher_20261018_103012_123.jpg
     ├── nachher/
-    └── Analyse_18-59-30/      ← Analyse-Ergebnis zur Session
-        ├── uebersicht_vorher_nachher.jpg   (Vergleichsbild)
-        └── details/           ← Masken (PNG), Panels & Reihen-Overlays
+    │   └── nachher_20261018_111502_456.jpg
+    └── Analyse_11-20-05/             ← eine Analyse
+        ├── 00_Uebersicht_2026-10-18_10-30.jpg   (Vergleichsbild mit CSC)
+        ├── Vorher_01_Auswertung.jpg             (Original | Masken)
+        └── Nachher_01_Auswertung.jpg
 ```
 
-Damit Fotos und Ergebnisse wie gewohnt sichtbar sind, exportiert die App
-eigene Aufnahmen und das Analyse-Übersichtsbild **zusätzlich in die Galerie**
-(`Pictures/SmartWeed/…`) — auf Android 10+ ohne jede Berechtigung über die
-MediaStore-API, auf Android 9 über die klassische Speicher-Berechtigung.
-Hinweis: Beim Deinstallieren der App werden die Session-Daten im App-Speicher
-entfernt; die Galerie-Kopien bleiben erhalten.
+Die Arbeitsdaten der App liegen zusätzlich im **app-eigenen Speicher**
+(`Android/data/<app>/files/SmartWeed/<Session>/…`, inkl. `details/` mit
+Masken als PNG und Reihen-Overlays). Dieser Ordner ist ab Android 11 im
+Dateimanager meist nicht sichtbar — deshalb der Galerie-Export. Auf
+Android 10+ braucht der Export keine Berechtigung (MediaStore), auf Android 9
+die klassische Speicher-Berechtigung. Beim Deinstallieren der App wird der
+App-Speicher entfernt; die Galerie-Kopien bleiben erhalten.
+
+HEIC-Bilder (z. B. iPhone) kann die Analyse nicht lesen — die App weist beim
+Import darauf hin; bitte als JPG/PNG speichern.
 
 ## Admin-Bereich
 

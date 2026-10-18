@@ -30,17 +30,46 @@ public final class MediaExport {
 
     private MediaExport() { }
 
+    /** Wurzelordner in der Galerie */
+    public static final String GALLERY_ROOT = "SmartWeed";
+
+    /**
+     * Für Menschen lesbarer Galerie-Pfad eines Session-Unterordners, z. B.
+     * "Pictures/SmartWeed/2026-10-18_10-30/Analyse_10-45-12" — wird in der App
+     * angezeigt, damit man die Bilder im Dateimanager/der Galerie wiederfindet.
+     */
+    public static String galleryPath(String subPath) {
+        return Environment.DIRECTORY_PICTURES + "/" + GALLERY_ROOT
+                + (subPath == null || subPath.isEmpty() ? "" : "/" + subPath);
+    }
+
+    /** Galerie-Unterordner einer Analyse: &lt;Session&gt;/&lt;Analyse_HH-mm-ss&gt; */
+    public static String analysisSubPath(File analysisDir) {
+        File session = analysisDir.getParentFile();
+        return (session != null ? session.getName() + "/" : "") + analysisDir.getName();
+    }
+
     /**
      * @param subPath Unterordner unterhalb von Pictures/SmartWeed ("" für keinen)
      */
     public static void exportToGallery(Context context, File src, String subPath) {
+        exportToGallery(context, src, subPath, null);
+    }
+
+    /**
+     * @param subPath     Unterordner unterhalb von Pictures/SmartWeed ("" für keinen)
+     * @param displayName Dateiname in der Galerie (null = Name der Quelldatei)
+     */
+    public static void exportToGallery(Context context, File src, String subPath, String displayName) {
         if (src == null || !src.exists()) return;
-        String relative = "SmartWeed" + (subPath == null || subPath.isEmpty() ? "" : "/" + subPath);
+        String relative = GALLERY_ROOT + (subPath == null || subPath.isEmpty() ? "" : "/" + subPath);
+        String name = (displayName == null || displayName.isEmpty()) ? src.getName() : displayName;
+        String mime = mimeFor(name);
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 ContentValues values = new ContentValues();
-                values.put(MediaStore.Images.Media.DISPLAY_NAME, src.getName());
-                values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+                values.put(MediaStore.Images.Media.DISPLAY_NAME, name);
+                values.put(MediaStore.Images.Media.MIME_TYPE, mime);
                 values.put(MediaStore.Images.Media.RELATIVE_PATH,
                         Environment.DIRECTORY_PICTURES + "/" + relative);
                 // IS_PENDING: Galerie-Apps sehen den Eintrag erst, wenn die
@@ -49,7 +78,7 @@ public final class MediaExport {
                 Uri uri = context.getContentResolver()
                         .insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
                 if (uri == null) {
-                    Log.w(TAG, "MediaStore-Insert fehlgeschlagen: " + src.getName());
+                    Log.w(TAG, "MediaStore-Insert fehlgeschlagen: " + name);
                     return;
                 }
                 boolean written = false;
@@ -83,7 +112,7 @@ public final class MediaExport {
                 // neue Analyse das Galerie-Bild der vorherigen ersetzt.
                 // MediaStore auf API 29+ nummeriert von sich aus durch;
                 // dieser Zweig zieht damit gleich.
-                File dst = uniqueFile(dstDir, src.getName());
+                File dst = uniqueFile(dstDir, name);
                 try (InputStream in = new FileInputStream(src);
                      OutputStream out = new FileOutputStream(dst)) {
                     byte[] buf = new byte[8192];
@@ -92,13 +121,23 @@ public final class MediaExport {
                 }
                 MediaScannerConnection.scanFile(context,
                         new String[]{dst.getAbsolutePath()},
-                        new String[]{"image/jpeg"}, null);
+                        new String[]{mime}, null);
             }
         } catch (Exception e) {
             // Galerie-Export ist "best effort" — die Analyse-Daten selbst liegen
             // sicher im App-Speicher.
             Log.e(TAG, "Galerie-Export fehlgeschlagen: " + src.getName(), e);
         }
+    }
+
+    /** MIME-Typ aus der Endung — importierte Bilder können auch PNG/WebP sein;
+     *  pauschal "image/jpeg" ließe die Galerie sie falsch dekodieren. */
+    static String mimeFor(String name) {
+        String n = name.toLowerCase(java.util.Locale.ROOT);
+        if (n.endsWith(".png")) return "image/png";
+        if (n.endsWith(".webp")) return "image/webp";
+        if (n.endsWith(".bmp")) return "image/bmp";
+        return "image/jpeg";
     }
 
     /** name.jpg -> name (1).jpg, name (2).jpg ... bis der Name frei ist */
