@@ -204,4 +204,15 @@
     <string name="trash_delete_failed">Could not delete the file</string>
     <string name="fullscreen_close">Close</string>
     <string name="fullscreen_image_desc">Full-screen view of the analysis image</string>
+
+    <!-- v1.7.1: Auswahl bearbeiten + Ablage -->
+    <string name="btn_clear_selection">Remove all</string>
+    <string name="cd_remove_image">Remove image from selection</string>
+    <plurals name="images_selected">
+        <item quantity="one">%1$d image selected</item>
+        <item quantity="other">%1$d images selected</item>
+    </plurals>
+    <string name="output_gallery_path">Saved in gallery: %1$s</string>
+    <string name="storage_info">Where are my images? Photos and results are also saved to the gallery, one folder per session:\nPictures/SmartWeed/&lt;date_time&gt;/\n• vorher – before photos\n• nachher – after photos\n• Analyse_&lt;time&gt; – overview and evaluation images</string>
+    <string name="toast_import_unsupported_format">Format not supported (e.g. HEIC). Please save the image as JPG or PNG.</string>
 </resources>

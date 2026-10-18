@@ -67,8 +67,21 @@ LIGHT_MIN_SOIL_PIXELS   = 1000
 # Maximalgrößen für RAM-schonende Verarbeitung/Anzeige
 MAX_SIDE_FOR_ANALYSIS = 1600
 MAX_PANEL_HEIGHT      = 720
-OVERVIEW_STRIP_HEIGHT = 240
+OVERVIEW_TILE_HEIGHT  = 300    # Kachelhöhe der Bilder im Übersichtsbild
+OVERVIEW_MIN_WIDTH    = 960    # Mindestbreite: Kopfzeilen nie abgeschnitten
 MAX_OVERVIEW_WIDTH    = 2400
+
+# Gestaltung der Ergebnisbilder (BGR). Beschriftung steht in eigenen Leisten
+# ÜBER/UNTER den Bildern statt im Foto — bleibt auf jedem Untergrund lesbar
+# und wird bei schmalen Hochformat-Bildern nicht abgeschnitten.
+UI_FONT       = cv2.FONT_HERSHEY_DUPLEX
+UI_BG         = (255, 255, 255)
+UI_TILE_BG    = (242, 242, 240)
+UI_ACCENT     = (60, 125, 46)     # #2E7D3C Grün (Titel, Vorher)
+UI_ACCENT_2   = (40, 110, 200)    # #C86E28 Orange (Nachher)
+UI_TEXT       = (38, 38, 38)
+UI_TEXT_MUTED = (118, 118, 118)
+UI_ON_ACCENT  = (255, 255, 255)
 
 # Unkrautfilter-Parameter (Modus B)
 # Formfaktor = P² / (4π × A)  — 1.0 = perfekter Kreis, >1 = unregelmäßiger
@@ -499,7 +512,8 @@ def _detect_rows_oriented(plant_mask):
     # INTER_AREA statt INTER_NEAREST: dichteerhaltend — dünne Reihen (<1-2 px
     # nach Skalierung) würden bei Nearest-Neighbor aliasen oder streckenweise
     # verschwinden und das Winkel-Scoring verfälschen.
-    scale = 400.0 / max(ph, pw)
+    # Nie hochskalieren (kleine Rahmen-Ausschnitte): das kostete nur Zeit
+    scale = min(1.0, 400.0 / max(ph, pw))
     small = cv2.resize(padded, (max(1, int(pw * scale)), max(1, int(ph * scale))),
                        interpolation=cv2.INTER_AREA)
     sh, sw = small.shape
@@ -531,8 +545,12 @@ def _detect_rows_oriented(plant_mask):
     prof = rot_full.sum(axis=0).astype(np.float32)
 
     # Nur den vegetationsbedeckten Profilabschnitt betrachten
+    # Maßgeblich ist die SPANNWEITE des bewachsenen Abschnitts, nicht die
+    # Zahl bewachsener Spalten: Für eine Periodizität braucht es mindestens
+    # zwei Reihenabstände. Die frühere Grenze "100 Spalten mit Grün" lehnte
+    # schmale Rahmen-Ausschnitte mit lückigen Reihen pauschal ab.
     nz = np.nonzero(prof)[0]
-    if len(nz) < 100:
+    if len(nz) == 0 or (nz[-1] - nz[0] + 1) < 2 * ROW_MIN_LAG:
         return False, None, {"reason": "profile_too_narrow"}
     seg = prof[nz[0]:nz[-1] + 1].astype(np.float64)
     seg = seg - seg.mean()
@@ -631,16 +649,16 @@ def _detect_rows_oriented(plant_mask):
             "strength": round(strength, 3), "prominence": round(prominence, 3)}
 
     # Phase: Verschiebung mit der höchsten aufsummierten Vegetation auf dem Raster
-    origin = nz[0]
+    origin = int(nz[0])
     best_phase = max(range(lag),
                      key=lambda p: float(prof[origin + p::lag].sum()) if origin + p < len(prof) else 0.0)
 
     band_hw = max(4, int(ROW_BAND_FRACTION * lag))
     band_rot = np.zeros((ph, pw), np.uint8)
-    pos = origin + best_phase
+    pos = int(origin + best_phase)    # cv2.rectangle verlangt Python-int
     n_rows = 0
     # <= statt <: eine Reihe exakt am Profilende bekommt sonst kein Band
-    while pos <= nz[-1]:
+    while pos <= int(nz[-1]):
         cv2.rectangle(band_rot, (max(0, pos - band_hw), 0),
                       (min(pw - 1, pos + band_hw), ph - 1), 255, -1)
         pos += lag
@@ -671,32 +689,152 @@ def _row_overlay(bgr, crop_mask, weed_mask):
 
 
 # -------------------------------
+# Beschriftung der Ergebnisbilder
+# -------------------------------
+_ASCII_MAP = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe",
+                            "Ü": "Ue", "ß": "ss", "Ø": "O", "≥": ">=", "–": "-",
+                            "·": "|", "é": "e", "è": "e", "à": "a", "ç": "c"})
+
+
+def _ascii(text):
+    """OpenCV-Hershey-Schriften kennen nur ASCII — Umlaute würden als '??'
+    erscheinen. Bekannte Zeichen werden umschrieben, der Rest entfernt."""
+    t = str(text).translate(_ASCII_MAP)
+    return t.encode("ascii", "ignore").decode("ascii")
+
+
+def _fit_text(text, max_w, scale, thickness=1, min_scale=0.4):
+    """Liefert (text, scale), sodass der Text in max_w Pixel passt: zuerst
+    verkleinern, notfalls mit '..' kürzen. Nie über den Rand hinaus."""
+    text = _ascii(text)
+    max_w = max(10, int(max_w))
+    w = cv2.getTextSize(text, UI_FONT, scale, thickness)[0][0]
+    if w > max_w:
+        scale = max(min_scale, scale * max_w / float(w))
+    while text and cv2.getTextSize(text, UI_FONT, scale, thickness)[0][0] > max_w:
+        text = text[:-3] + ".." if len(text) > 3 else text[:-1]
+    return text, scale
+
+
+def _put(img, text, x, y_center, max_w, scale, color, thickness=1, align="left"):
+    """Zeichnet Text vertikal zentriert auf y_center, kantengeglättet."""
+    text, scale = _fit_text(text, max_w, scale, thickness)
+    if not text:
+        return 0
+    (tw, th), _ = cv2.getTextSize(text, UI_FONT, scale, thickness)
+    if align == "center":
+        x = int(x + (max_w - tw) / 2)
+    elif align == "right":
+        x = int(x + max_w - tw)
+    cv2.putText(img, text, (int(x), int(y_center + th / 2)), UI_FONT, scale,
+                color, thickness, cv2.LINE_AA)
+    return tw
+
+
+def _band(width, height, text, bg=UI_BG, fg=UI_TEXT, scale=0.7, thickness=1,
+          align="left", pad=12):
+    band = np.empty((int(height), int(width), 3), np.uint8)
+    band[:] = bg
+    _put(band, text, pad, height / 2.0, width - 2 * pad, scale, fg, thickness, align)
+    return band
+
+
+def _with_caption(img, title, value, bar_h, scale):
+    """Bild mit zweizeiliger Titelleiste darüber: Titel (dunkel) und darunter
+    der Messwert (grün, fett). Zwei Zeilen statt nebeneinander, damit auch
+    schmale Hochformat-Teilbilder nichts abschneiden."""
+    w = img.shape[1]
+    bar = np.empty((bar_h, w, 3), np.uint8)
+    bar[:] = UI_BG
+    pad = max(6, int(bar_h * 0.12))
+    if value:
+        _put(bar, title, pad, bar_h * 0.30, w - 2 * pad, scale, UI_TEXT, 1)
+        _put(bar, value, pad, bar_h * 0.70, w - 2 * pad, scale * 1.15, UI_ACCENT, 2)
+    else:
+        _put(bar, title, pad, bar_h * 0.30, w - 2 * pad, scale, UI_TEXT, 1)
+    return np.concatenate([bar, img], axis=0)
+
+
+def _common_scale(texts, max_w, scale, thickness=1):
+    """Größte gemeinsame Schriftgröße, bei der ALLE Texte in max_w passen —
+    einheitliches Schriftbild über alle Teilbilder."""
+    for t in texts:
+        _, sc = _fit_text(t, max_w, scale, thickness)
+        scale = min(scale, sc)
+    return scale
+
+
+def _hstack(parts, gap, bg=UI_BG):
+    h = max(p.shape[0] for p in parts)
+    out = []
+    for i, p in enumerate(parts):
+        if p.shape[0] < h:
+            pad = np.empty((h - p.shape[0], p.shape[1], 3), np.uint8)
+            pad[:] = bg
+            p = np.concatenate([p, pad], axis=0)
+        if i:
+            g = np.empty((h, gap, 3), np.uint8)
+            g[:] = bg
+            out.append(g)
+        out.append(p)
+    return np.concatenate(out, axis=1)
+
+
+def _frame(img, margin, bg=UI_BG):
+    return cv2.copyMakeBorder(img, margin, margin, margin, margin,
+                              cv2.BORDER_CONSTANT, value=bg)
+
+
+# -------------------------------
 # Panel (Original | Maske | Gefiltert [+ Unkrautgefiltert])
 # -------------------------------
 def _make_labeled_panel(bgr, plant_mask, filtered_mask, cov_bw, cov_f,
-                        weed_filtered_mask=None, cov_wf=None):
-    def to_bgr(x):
-        return cv2.cvtColor(x, cv2.COLOR_GRAY2BGR)
+                        weed_filtered_mask=None, cov_wf=None, min_size=None,
+                        target_h=MAX_PANEL_HEIGHT):
+    """Nebeneinander: Original und Masken, jeweils mit Titelleiste und
+    Bedeckungswert. Die Teilbilder werden VOR dem Zusammensetzen auf die
+    Zielhöhe gebracht (spart bei 4 Spalten ~20 MB Zwischenbild)."""
+    h = min(int(target_h), bgr.shape[0])
 
-    left = bgr.copy()
-    mid = to_bgr(plant_mask)
-    right = to_bgr(filtered_mask)
+    def prep(x):
+        if x.ndim == 2:
+            x = cv2.cvtColor(x, cv2.COLOR_GRAY2BGR)
+        return _resize_to_height(x, h)
 
-    cv2.putText(left,  "Original",                 (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 0, 0), 2)
-    cv2.putText(mid,   f"SW: {cov_bw:.2f}%",       (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
-    cv2.putText(right, f"Gefiltert: {cov_f:.2f}%", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
-
-    gap = 10
-    spacer = np.ones((bgr.shape[0], gap, 3), dtype=np.uint8) * 255
-    panels = [left, spacer, mid, spacer, right]
-
+    filt_title = f"Gefiltert >= {int(min_size)} px" if min_size else "Gefiltert"
+    cols = [
+        ("Original", None, bgr),
+        ("Pflanzenmaske", f"{cov_bw:.2f} %", plant_mask),
+        (filt_title, f"{cov_f:.2f} %", filtered_mask),
+    ]
     if weed_filtered_mask is not None and cov_wf is not None:
-        wf_bgr = to_bgr(weed_filtered_mask)
-        cv2.putText(wf_bgr, f"Unkrautgef.: {cov_wf:.2f}%", (20, 40),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
-        panels.extend([spacer.copy(), wf_bgr])
+        cols.append(("Unkrautgefiltert", f"{cov_wf:.2f} %", weed_filtered_mask))
+    imgs = [prep(img) for _, _, img in cols]
+    col_w = min(im.shape[1] for im in imgs)
+    bar_h = max(56, int(round(h * 0.13)))
+    pad = max(6, int(bar_h * 0.12))
+    scale = _common_scale([t for t, _, _ in cols], col_w - 2 * pad, bar_h / 80.0)
+    gap = max(8, h // 60)
+    parts = [_with_caption(im, title, value, bar_h, scale)
+             for im, (title, value, _) in zip(imgs, cols)]
+    return _frame(_hstack(parts, gap), gap)
 
-    return np.concatenate(panels, axis=1)
+
+def _legend_band(width, entries, height=None):
+    """Legende als Leiste: farbiges Kästchen + Text je Eintrag."""
+    height = height or max(30, width // 40)
+    band = np.empty((height, width, 3), np.uint8)
+    band[:] = UI_BG
+    x = 12
+    box = int(height * 0.45)
+    scale = height / 48.0
+    slot = (width - 12) // max(1, len(entries))
+    for color, text in entries:
+        y0 = (height - box) // 2
+        cv2.rectangle(band, (x, y0), (x + box, y0 + box), color, -1)
+        _put(band, text, x + box + 8, height / 2.0, slot - box - 20, scale, UI_TEXT)
+        x += slot
+    return band
 
 
 # ==========================================================
@@ -738,6 +876,9 @@ def analyze_image(path, out_dir, tag, index,
             cv2.polylines(check, [quad.astype(np.int32)], True, (255, 255, 0),
                           max(2, int(round(max(check.shape[:2]) / 250.0))))
             check = _resize_to_height(check, min(MAX_PANEL_HEIGHT, check.shape[0]))
+            check = np.concatenate([check, _legend_band(check.shape[1], [
+                ((255, 255, 0), "Erkannter Zaehlrahmen - nur das Innere wird ausgewertet")])],
+                axis=0)
             frame_check_path = os.path.join(detail_dir, f"{prefix}_rahmen.jpg")
             _imwrite(frame_check_path, check, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
             bgr = roi
@@ -769,6 +910,9 @@ def analyze_image(path, out_dir, tag, index,
             cov_weed = _coverage_percent(weed_mask)
             overlay = _row_overlay(bgr, crop_mask, weed_mask)
             overlay = _resize_to_height(overlay, min(MAX_PANEL_HEIGHT, overlay.shape[0]))
+            overlay = np.concatenate([overlay, _legend_band(overlay.shape[1], [
+                ((60, 220, 60), f"Kultur (Reihe) {cov_crop:.2f} %"),
+                ((50, 50, 230), f"Unkraut (zw. Reihen) {cov_weed:.2f} %")])], axis=0)
             overlay_path = os.path.join(detail_dir, f"{tag}_{index:02d}_reihen.jpg")
             _imwrite(overlay_path, overlay, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
 
@@ -788,8 +932,7 @@ def analyze_image(path, out_dir, tag, index,
         _imwrite(wf_path, weed_filtered_mask)
 
     panel = _make_labeled_panel(bgr, plant_mask, filtered, cov_bw, cov_f,
-                                weed_filtered_mask, cov_wf)
-    panel = _resize_to_height(panel, min(MAX_PANEL_HEIGHT, panel.shape[0]))
+                                weed_filtered_mask, cov_wf, min_size=min_size)
     _imwrite(panel_path, panel, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
 
     item = {
@@ -837,45 +980,110 @@ def _mean_of(items, key):
     return round(float(np.mean(vals)), 2) if vals else None
 
 
-def _build_overview(before_items, after_items, out_dir):
-    """Übersichtsbild: obere Zeile alle Vorher-Originale, untere Zeile Nachher."""
-    def strip(items, label_fmt):
-        imgs = []
-        for it in items:
-            p = it.get("outputs", {}).get("original")
-            im = cv2.imread(p) if p else None
-            if im is not None:
-                imgs.append(_resize_to_height(im, OVERVIEW_STRIP_HEIGHT))
-        if not imgs:
-            return None
-        # Einmal konkatenieren statt in der Schleife (vermeidet O(n²)-Kopien)
-        gap = np.ones((OVERVIEW_STRIP_HEIGHT, 8, 3), np.uint8) * 255
-        parts = [imgs[0]]
-        for im in imgs[1:]:
-            parts.extend([gap, im])
-        row = np.concatenate(parts, axis=1)
-        # Beschriftung zählt die tatsächlich ANGEZEIGTEN Bilder — nicht
-        # lesbare Originale wurden oben übersprungen
-        label = label_fmt.format(len(imgs))
-        cv2.putText(row, label, (14, 34), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 0), 5)
-        cv2.putText(row, label, (14, 34), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
-        return row
+def _item_value(item, key):
+    v = item.get(key)
+    return f"{v:.1f} %" if isinstance(v, (int, float)) else "-"
 
-    top = strip(before_items, "Vorher ({})")
-    bottom = strip(after_items, "Nachher ({})")
-    if top is None and bottom is None:
+
+def _overview_tiles(items, key, tile_h):
+    tiles = []
+    max_w = int(tile_h * 1.6)          # Panorama-Bilder nicht endlos breit
+    for n, it in enumerate(items, 1):
+        p = it.get("outputs", {}).get("original")
+        im = cv2.imread(p) if p else None
+        if im is None:
+            continue
+        im = _resize_to_height(im, tile_h)
+        if im.shape[1] > max_w:
+            im = cv2.resize(im, (max_w, max(1, int(round(im.shape[0] * max_w / im.shape[1])))),
+                            interpolation=cv2.INTER_AREA)
+            pad = tile_h - im.shape[0]
+            im = cv2.copyMakeBorder(im, pad // 2, pad - pad // 2, 0, 0,
+                                    cv2.BORDER_CONSTANT, value=UI_TILE_BG)
+        cap_h = 36
+        cap = np.empty((cap_h, im.shape[1], 3), np.uint8)
+        cap[:] = UI_TILE_BG
+        vw = _put(cap, _item_value(it, key), 8, cap_h / 2.0, im.shape[1] - 16, 0.6,
+                  UI_TEXT, 2, align="right")
+        name = f"#{n}  {os.path.splitext(it.get('file', ''))[0]}" if it.get("file") else f"#{n}"
+        _put(cap, name, 8, cap_h / 2.0, max(10, im.shape[1] - 16 - vw - 10), 0.5, UI_TEXT_MUTED)
+        tiles.append(np.concatenate([im, cap], axis=0))
+    return tiles
+
+
+def _wrap_tiles(tiles, inner_w, gap):
+    """Kacheln zeilenweise umbrechen (statt bei vielen Bildern winzig zu skalieren)."""
+    lines, cur, cur_w = [], [], 0
+    for t in tiles:
+        w = t.shape[1] if not cur else cur_w + gap + t.shape[1]
+        if cur and w > inner_w:
+            lines.append(cur)
+            cur, w = [], t.shape[1]
+        cur.append(t)
+        cur_w = w
+    if cur:
+        lines.append(cur)
+    out = []
+    for line in lines:
+        row = _hstack(line, gap)
+        out.append(_pad_to_width(row, inner_w))
+    return out
+
+
+def _build_overview(before_items, after_items, out_dir, key="coverage_bw_percent",
+                    key_label="Bedeckung", csc=None, avg_before=None, avg_after=None):
+    """Übersichtsbild: Titelleiste, je Gruppe eine Kopfzeile (Anzahl, Mittel)
+    und die Bilder als Kacheln mit Nummer, Dateiname und Messwert."""
+    tile_h = OVERVIEW_TILE_HEIGHT
+    gap, margin = 12, 24
+    groups = []
+    for title, items, color, avg in (("VORHER", before_items, UI_ACCENT, avg_before),
+                                     ("NACHHER", after_items, UI_ACCENT_2, avg_after)):
+        tiles = _overview_tiles(items, key, tile_h)
+        if tiles:
+            groups.append((title, tiles, color, avg))
+    if not groups:
         return None
-    rows = [r for r in (top, bottom) if r is not None]
-    target_w = max(r.shape[1] for r in rows)
-    rows = [_pad_to_width(r, target_w) for r in rows]
-    gap = np.ones((10, target_w, 3), np.uint8) * 255
-    parts = [rows[0]]
-    for r in rows[1:]:
-        parts.extend([gap, r])
-    overview = np.concatenate(parts, axis=0)
+
+    natural = max(sum(t.shape[1] for t in g[1]) + gap * (len(g[1]) - 1) for g in groups)
+    inner_w = int(min(MAX_OVERVIEW_WIDTH - 2 * margin, max(OVERVIEW_MIN_WIDTH - 2 * margin, natural)))
+    width = inner_w + 2 * margin
+
+    blocks = []
+    # Titelleiste
+    head_h = 64
+    head = np.empty((head_h, width, 3), np.uint8)
+    head[:] = UI_ACCENT
+    right = f"CSC {csc:.1f} %" if isinstance(csc, (int, float)) else ""
+    rw = _put(head, right, margin, head_h / 2.0, inner_w, 0.95, UI_ON_ACCENT, 2,
+              align="right") if right else 0
+    _put(head, "SmartWeed  |  Vorher / Nachher", margin, head_h / 2.0,
+         inner_w - rw - 20, 0.95, UI_ON_ACCENT, 2)
+    blocks.append(head)
+
+    for title, tiles, color, avg in groups:
+        sec_h = 54
+        sec = np.empty((sec_h, width, 3), np.uint8)
+        sec[:] = UI_BG
+        cv2.rectangle(sec, (margin, 14), (margin + 6, sec_h - 8), color, -1)
+        tw = _put(sec, title, margin + 16, sec_h / 2.0 + 3, inner_w // 2, 0.8, color, 2)
+        n = len(tiles)
+        info = f"{n} {'Bild' if n == 1 else 'Bilder'}"
+        if isinstance(avg, (int, float)):
+            info += f"   |   Mittel {key_label}: {avg:.2f} %"
+        _put(sec, info, margin + 16 + tw + 24, sec_h / 2.0 + 3,
+             inner_w - tw - 40, 0.6, UI_TEXT_MUTED)
+        blocks.append(sec)
+        for line in _wrap_tiles(tiles, inner_w, gap):
+            blocks.append(cv2.copyMakeBorder(line, 0, gap, margin, margin,
+                                             cv2.BORDER_CONSTANT, value=UI_BG))
+
+    blocks.append(_band(width, 40, f"Werte: {key_label} in % der ausgewerteten Bildflaeche",
+                        fg=UI_TEXT_MUTED, scale=0.5, pad=margin))
+    overview = np.concatenate(blocks, axis=0)
     overview = _maybe_downscale_long_side(overview, MAX_OVERVIEW_WIDTH)
     path = os.path.join(out_dir, "uebersicht_vorher_nachher.jpg")
-    _imwrite(path, overview, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
+    _imwrite(path, overview, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
     return path
 
 
@@ -951,7 +1159,24 @@ def build_group_summary(items_json, out_dir):
     sun_b, sun_a = group_sunny(before), group_sunny(after)
     light_mismatch_warning = sun_b is not None and sun_a is not None and sun_b != sun_a
 
-    overview_path = _build_overview(before, after, out_dir)
+    # Übersichtsbild mit derselben CSC-Basis wie die App-Ergebnisseite
+    # (SummaryFragment): Modus C mit Reihen -> Kultur, Modus B -> unkraut-
+    # gefiltert (Rückfall gefiltert), sonst Pflanzenmaske (SW).
+    weed_filter = any("coverage_weedfiltered_percent" in i for i in items)
+    if rows_detected and "crop" in avg_b and "crop" in avg_a:
+        basis, key, key_label = "crop", "coverage_crop_percent", "Kulturbedeckung"
+    elif weed_filter and "weedfiltered" in avg_b and "weedfiltered" in avg_a:
+        basis, key, key_label = "weedfiltered", "coverage_weedfiltered_percent", "Bedeckung unkrautgefiltert"
+    elif weed_filter:
+        basis, key, key_label = "filtered", "coverage_filtered_percent", "Bedeckung gefiltert"
+    else:
+        basis, key, key_label = "bw", "coverage_bw_percent", "Pflanzenbedeckung"
+    b_val, a_val = avg_b.get(basis), avg_a.get(basis)
+    csc = None
+    if b_val is not None and a_val is not None and b_val > 0 and a_val >= 0:
+        csc = (b_val - a_val) / b_val * 100.0
+    overview_path = _build_overview(before, after, out_dir, key, key_label, csc,
+                                    b_val, a_val)
 
     # Kontrakt Python->Java: Optionale Schlüssel werden durchgängig WEGGELASSEN
     # statt auf None/null gesetzt — Androids JSONObject.optString würde aus
@@ -962,7 +1187,7 @@ def build_group_summary(items_json, out_dir):
         "mode": "group",
         "count_before": len(before),
         "count_after": len(after),
-        "weed_filter": any("coverage_weedfiltered_percent" in i for i in items),
+        "weed_filter": weed_filter,
         "row_mode": row_mode,
         "brightness_warning": brightness_warning,
         "brightness_spread_warning": brightness_spread_warning,

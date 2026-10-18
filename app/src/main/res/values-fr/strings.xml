@@ -36,6 +36,7 @@
     <string name="session_delete_confirm_message">Toutes les images de la session \"%1$s\" seront déplacées vers la corbeille.</string>
     <plurals name="session_deleted">
         <item quantity="one">%1$d image déplacée vers la corbeille</item>
+        <item quantity="many">%1$d images déplacées vers la corbeille</item>
         <item quantity="other">%1$d images déplacées vers la corbeille</item>
     </plurals>
     <string name="btn_discard_analysis">Supprimer cette analyse</string>
@@ -91,6 +92,7 @@
     <string name="trash_no_items">Aucun élément dans la corbeille</string>
     <plurals name="trash_item_count">
         <item quantity="one">%1$d élément dans la corbeille</item>
+        <item quantity="many">%1$d éléments dans la corbeille</item>
         <item quantity="other">%1$d éléments dans la corbeille</item>
     </plurals>
     <string name="trash_restore">Restaurer</string>
@@ -101,6 +103,7 @@
     <string name="trash_empty_confirm_title">Vider la corbeille ?</string>
     <plurals name="trash_empty_confirm_message">
         <item quantity="one">%1$d élément sera supprimé définitivement. Cette action est irréversible.</item>
+        <item quantity="many">Les %1$d éléments seront supprimés définitivement. Cette action est irréversible.</item>
         <item quantity="other">Les %1$d éléments seront supprimés définitivement. Cette action est irréversible.</item>
     </plurals>
     <string name="trash_emptied">Corbeille vidée</string>
@@ -195,6 +198,7 @@
     <string name="warning_light_mismatch">Remarque : le type de lumière diffère entre avant et après (soleil vs. ciel couvert) – cela peut décaler le CSC. Prenez si possible les photos avant et après sous la même lumière.</string>
     <plurals name="warning_frame_missing">
         <item quantity="one">Cadre de comptage non détecté sur %1$d image – l\'image entière y a été analysée.</item>
+        <item quantity="many">Cadre de comptage non détecté sur %1$d images – l\'image entière y a été analysée.</item>
         <item quantity="other">Cadre de comptage non détecté sur %1$d images – l\'image entière y a été analysée.</item>
     </plurals>
     <string name="label_frame_found">Cadre de comptage : détecté</string>
@@ -204,4 +208,16 @@
     <string name="trash_delete_failed">Impossible de supprimer le fichier</string>
     <string name="fullscreen_close">Fermer</string>
     <string name="fullscreen_image_desc">Vue plein écran de l\'image d\'analyse</string>
+
+    <!-- v1.7.1: Auswahl bearbeiten + Ablage -->
+    <string name="btn_clear_selection">Tout retirer</string>
+    <string name="cd_remove_image">Retirer l\'image de la sélection</string>
+    <plurals name="images_selected">
+        <item quantity="one">%1$d image sélectionnée</item>
+        <item quantity="many">%1$d images sélectionnées</item>
+        <item quantity="other">%1$d images sélectionnées</item>
+    </plurals>
+    <string name="output_gallery_path">Enregistré dans la galerie : %1$s</string>
+    <string name="storage_info">Où sont mes images ? Les photos et résultats sont aussi enregistrés dans la galerie, un dossier par session :\nPictures/SmartWeed/&lt;date_heure&gt;/\n• vorher – photos avant\n• nachher – photos après\n• Analyse_&lt;heure&gt; – vue d\'ensemble et images d\'évaluation</string>
+    <string name="toast_import_unsupported_format">Format non pris en charge (p. ex. HEIC). Veuillez enregistrer l\'image en JPG ou PNG.</string>
 </resources>

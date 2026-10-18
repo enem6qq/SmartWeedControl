@@ -763,3 +763,77 @@ def test_reihen_in_rahmen_ausschnitt_erkannt():
         ok, band, info = analysis._detect_rows(leafy_rows(seed))
         assert ok, (seed, info)
         assert abs(info["period"] - 160) <= 8, (seed, info)
+
+
+# ---------------------------------------------------------------------------
+# v1.7.1: Ergebnisbilder (Beschriftung in Leisten, kein Abschneiden)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("text", ["Pflanzenmaske 12.34 %", "Unkrautgefiltert",
+                                  "x" * 200, "Größe ≥ 50 px – Ä"])
+@pytest.mark.parametrize("max_w", [20, 90, 400])
+def test_text_passt_immer_in_breite(text, max_w):
+    t, scale = analysis._fit_text(text, max_w, 1.2, 2)
+    assert t.isascii()
+    if t:
+        assert cv2.getTextSize(t, analysis.UI_FONT, scale, 2)[0][0] <= max_w
+
+
+def test_ascii_umschreibung():
+    assert analysis._ascii("Zählrahmen Größe ≥ 50") == "Zaehlrahmen Groesse >= 50"
+
+
+def _write_items_with_originals(tmp_path, sizes_before, sizes_after):
+    items = []
+    for tag, sizes in (("before", sizes_before), ("after", sizes_after)):
+        for i, (w, h) in enumerate(sizes):
+            p = str(tmp_path / f"{tag}_{i}.jpg")
+            img = np.zeros((h, w, 3), np.uint8)
+            img[:] = (60, 95, 130)
+            cv2.imwrite(p, img)
+            it = _item(tag, i, 8.0 if tag == "before" else 7.0, 7.0, 100)
+            it["file"] = f"{tag}_{i}.jpg"
+            it["outputs"] = {"original": p}
+            items.append(it)
+    return items
+
+
+def test_overview_hochformat_und_mindestbreite(tmp_path):
+    """Regression (Nutzer-Screenshot): Beschriftung auf schmalen Hochformat-
+    Streifen war abgeschnitten. Jetzt hat das Übersichtsbild eine Mindest-
+    breite, die Beschriftung steht in eigenen Leisten."""
+    items = _write_items_with_originals(tmp_path, [(300, 900)], [(300, 900)])
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    ov = cv2.imread(s["combo"]["overview"])
+    assert ov is not None
+    assert ov.shape[1] >= analysis.OVERVIEW_MIN_WIDTH
+
+
+def test_overview_viele_bilder_umbrochen(tmp_path):
+    """Viele Querformat-Bilder werden in mehrere Zeilen umbrochen statt das
+    ganze Bild auf Briefmarkengröße zu verkleinern."""
+    items = _write_items_with_originals(tmp_path, [(1600, 1200)] * 8, [(1600, 1200)] * 8)
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    ov = cv2.imread(s["combo"]["overview"])
+    assert ov.shape[1] <= analysis.MAX_OVERVIEW_WIDTH
+    # mind. 2 Kachelzeilen je Gruppe -> deutlich höher als 2 Kachelreihen
+    assert ov.shape[0] > 4 * analysis.OVERVIEW_TILE_HEIGHT
+
+
+def test_panel_hochformat_einheitliche_hoehe(tmp_path):
+    bgr = np.zeros((900, 300, 3), np.uint8)
+    mask = np.zeros((900, 300), np.uint8)
+    panel = analysis._make_labeled_panel(bgr, mask, mask, 1.0, 1.0, mask, 1.0,
+                                         min_size=50, target_h=600)
+    # 4 Spalten + Rahmen; Höhe = Bild + Titelleiste + Rand, nicht abgeschnitten
+    assert panel.shape[0] > 600
+    assert panel.shape[1] >= 4 * 200
+
+
+def test_reihen_schmaler_ausschnitt_nicht_pauschal_abgelehnt():
+    """Spannweite statt Spaltenzahl: Ein 300 px breiter Ausschnitt mit
+    lückigen Reihen darf nicht schon an 'profile_too_narrow' scheitern."""
+    mask = np.zeros((300, 300), np.uint8)
+    for x in range(30, 300, 60):
+        mask[:, x:x + 8] = 255
+    ok, _, info = analysis._detect_rows(mask)
+    assert info.get("reason") != "profile_too_narrow"

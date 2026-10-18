@@ -233,7 +233,9 @@ public class CameraFragment extends Fragment {
         final boolean isBefore = SessionStore.BEFORE_DIR_NAME.equals(subfolder);
         // Millisekunden im Namen: zwei Fotos in derselben Sekunde überschreiben sich
         // nicht (Locale.US für locale-unabhängige Dateisystem-Namen)
-        String filename = "photo_" + new SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(new Date()) + ".jpg";
+        // Präfix vorher_/nachher_ statt photo_: Auch außerhalb des Ordners (z. B.
+        // per Messenger geteilt) bleibt erkennbar, welcher Zeitpunkt es ist.
+        String filename = subfolder + "_" + new SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(new Date()) + ".jpg";
 
         File targetDir = isBefore ? beforeDir : afterDir;
         if (!targetDir.exists()) targetDir.mkdirs();
@@ -245,7 +247,7 @@ public class CameraFragment extends Fragment {
         // nicht auf requireContext() eines evtl. schon abgelösten Fragments zugreifen.
         final Context appContext = requireContext().getApplicationContext();
         final String toastText = getString(R.string.toast_photo_saved, label,
-                "SmartWeed/" + sessionDirName + "/" + subfolder);
+                MediaExport.galleryPath(sessionDirName + "/" + subfolder));
 
         imageCapture.takePicture(
                 outputOptions,
@@ -292,9 +294,28 @@ public class CameraFragment extends Fragment {
         // große) Kopie dann im Hintergrund — sonst droht Jank/ANR.
         final ContentResolver resolver = requireContext().getContentResolver();
         final Context appContext = requireContext().getApplicationContext();
-        final String name = getFileName(uri);
+        String picked = getFileName(uri);
+        // HEIC/HEIF (Standard bei vielen iPhones und manchen Android-Kameras)
+        // kann die Analyse (OpenCV) nicht lesen — und die Session-Ansicht zählt
+        // nur lesbare Formate. Ohne Hinweis wäre das Bild "spurlos" importiert.
+        String type = null;
+        try { type = resolver.getType(uri); } catch (RuntimeException ignored) { }
+        if (!SessionStore.isImageFile(picked) && type != null) {
+            // Manche Anbieter liefern Namen ohne Endung ("IMG_1234") — dann
+            // die Endung aus dem MIME-Typ ergänzen statt abzulehnen
+            if (type.equals("image/jpeg")) picked += ".jpg";
+            else if (type.equals("image/png")) picked += ".png";
+            else if (type.equals("image/webp")) picked += ".webp";
+            else if (type.equals("image/bmp")) picked += ".bmp";
+        }
+        if (!SessionStore.isImageFile(picked)) {
+            Toast.makeText(appContext, R.string.toast_import_unsupported_format, Toast.LENGTH_LONG).show();
+            return;
+        }
+        final String name = picked;
+        final String gallerySub = sessionDirName + "/" + targetDir.getName();
         final String importedFmt = getString(R.string.toast_image_imported,
-                "SmartWeed/" + sessionDirName + "/" + targetDir.getName(), name);
+                MediaExport.galleryPath(gallerySub), name);
 
         IO_EXECUTOR.execute(() -> {
             try {
@@ -320,6 +341,9 @@ public class CameraFragment extends Fragment {
 
                 ContextCompat.getMainExecutor(appContext).execute(() ->
                         Toast.makeText(appContext, importedFmt, Toast.LENGTH_SHORT).show());
+                // Auch importierte Bilder in den Session-Ordner der Galerie legen,
+                // damit dort ALLE Bilder eines Feldeinsatzes beisammen liegen.
+                MediaExport.exportToGallery(appContext, destFile, gallerySub);
 
             } catch (Exception e) {
                 Log.e("Import", "Fehler beim Kopieren", e);
@@ -340,6 +364,9 @@ public class CameraFragment extends Fragment {
                         if (display != null && !display.isEmpty()) result = display;
                     }
                 }
+            } catch (RuntimeException e) {
+                // Grant entzogen / Provider weg: Ersatzname statt Absturz
+                Log.w("Import", "Dateiname nicht lesbar: " + uri, e);
             }
         }
         // DISPLAY_NAME stammt von einem fremden Content-Provider: Pfadanteile

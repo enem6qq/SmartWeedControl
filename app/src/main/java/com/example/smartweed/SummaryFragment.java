@@ -2,7 +2,6 @@
 package com.example.smartweed;
 
 import android.graphics.Matrix;
-import android.graphics.PointF;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.TextUtils;
@@ -89,7 +88,11 @@ public class SummaryFragment extends Fragment {
 
         analysisVM.outDir.observe(getViewLifecycleOwner(), path -> {
             if (!TextUtils.isEmpty(path)) {
-                binding.tvOutDir.setText(path);
+                // Statt des internen App-Pfads (Android/data/..., für Nutzer
+                // praktisch unauffindbar) den Galerie-Ordner zeigen, in den
+                // Übersicht und Auswertungsbilder exportiert werden.
+                binding.tvOutDir.setText(getString(R.string.output_gallery_path,
+                        MediaExport.galleryPath(MediaExport.analysisSubPath(new File(path)))));
             }
             updateDiscardButton();
         });
@@ -466,7 +469,10 @@ public class SummaryFragment extends Fragment {
         if (raw == null) return null;
         String s = raw.trim();
         if (s.startsWith("file://")) {
-            return s.substring(7); // echten Dateipfad herauslösen
+            // Uri.getPath() dekodiert %20 & Co. — substring(7) ließ
+            // prozent-kodierte Zeichen stehen, die Datei wurde nicht gefunden
+            String path = android.net.Uri.parse(s).getPath();
+            return path != null ? path : s.substring(7);
         }
         return s;
         // content:// unverändert lassen
@@ -591,42 +597,51 @@ public class SummaryFragment extends Fragment {
         }
 
         private void enableZoom(@NonNull ImageView imageView) {
-            imageView.setScaleType(ImageView.ScaleType.MATRIX);
-
-            Matrix matrix = new Matrix();
-            Matrix savedMatrix = new Matrix();
-            PointF start = new PointF();
-
+            // Das Bild startet mit fitCenter (ganz sichtbar, zentriert). Erst
+            // bei der ersten Berührung wird auf MATRIX umgeschaltet — und zwar
+            // mit genau der fitCenter-Matrix als Basis. Vorher wurde sofort
+            // MATRIX mit Einheitsmatrix gesetzt: Das Bild lag dann in
+            // Originalgröße oben links statt eingepasst in der Mitte.
+            final Matrix base = new Matrix();
+            final Matrix matrix = new Matrix();
             final float[] mVals = new float[9];
             final float[] last = new float[2];
+            final float[] baseScale = {1f};
+            final boolean[] dragging = {false};
+            final float MAX_ZOOM = 6.0f;
 
-            final int NONE = 0, DRAG = 1, ZOOM = 2;
-            final class Mode { int v = NONE; }
-            final Mode mode = new Mode();
+            final Runnable ensureMatrixMode = () -> {
+                if (imageView.getScaleType() == ImageView.ScaleType.MATRIX) return;
+                base.set(imageView.getImageMatrix());
+                base.getValues(mVals);
+                baseScale[0] = mVals[Matrix.MSCALE_X] > 0 ? mVals[Matrix.MSCALE_X] : 1f;
+                matrix.set(base);
+                imageView.setScaleType(ImageView.ScaleType.MATRIX);
+                imageView.setImageMatrix(matrix);
+            };
 
-            final float MIN_ZOOM = 1.0f, MAX_ZOOM = 6.0f;
+            final java.util.function.Consumer<float[]> scaleBy = args -> {
+                // args = {factor, focusX, focusY}
+                matrix.getValues(mVals);
+                float current = mVals[Matrix.MSCALE_X];
+                float target = current * args[0];
+                if (target <= baseScale[0] * 1.001f) {
+                    matrix.set(base);          // ganz herausgezoomt: wieder zentriert
+                } else {
+                    float factor = Math.min(target, baseScale[0] * MAX_ZOOM) / current;
+                    matrix.postScale(factor, factor, args[1], args[2]);
+                }
+                imageView.setImageMatrix(matrix);
+            };
 
             ScaleGestureDetector scaleDetector = new ScaleGestureDetector(
                     requireContext(),
                     new ScaleGestureDetector.SimpleOnScaleGestureListener() {
                         @Override
                         public boolean onScale(ScaleGestureDetector detector) {
-                            matrix.getValues(mVals);
-                            float current = mVals[Matrix.MSCALE_X];
-                            float factor = detector.getScaleFactor();
-                            float target = current * factor;
-
-                            if (target < MIN_ZOOM) factor = MIN_ZOOM / current;
-                            if (target > MAX_ZOOM) factor = MAX_ZOOM / current;
-
-                            matrix.postScale(factor, factor, detector.getFocusX(), detector.getFocusY());
-                            imageView.setImageMatrix(matrix);
-                            return true;
-                        }
-
-                        @Override
-                        public boolean onScaleBegin(ScaleGestureDetector detector) {
-                            mode.v = ZOOM;
+                            ensureMatrixMode.run();
+                            scaleBy.accept(new float[]{detector.getScaleFactor(),
+                                    detector.getFocusX(), detector.getFocusY()});
                             return true;
                         }
                     });
@@ -636,18 +651,22 @@ public class SummaryFragment extends Fragment {
                     new GestureDetector.SimpleOnGestureListener() {
                         @Override
                         public boolean onDoubleTap(MotionEvent e) {
+                            ensureMatrixMode.run();
                             matrix.getValues(mVals);
-                            float current = mVals[Matrix.MSCALE_X];
-                            float target = (current > 1.5f) ? 1.0f : 2.0f;
-                            float factor = target / current;
-                            matrix.postScale(factor, factor, e.getX(), e.getY());
-                            imageView.setImageMatrix(matrix);
+                            boolean zoomed = mVals[Matrix.MSCALE_X] > baseScale[0] * 1.5f;
+                            if (zoomed) {
+                                matrix.set(base);
+                                imageView.setImageMatrix(matrix);
+                            } else {
+                                scaleBy.accept(new float[]{2.5f, e.getX(), e.getY()});
+                            }
                             return true;
                         }
 
                         @Override
                         public void onLongPress(MotionEvent e) {
-                            matrix.reset();
+                            if (imageView.getScaleType() != ImageView.ScaleType.MATRIX) return;
+                            matrix.set(base);
                             imageView.setImageMatrix(matrix);
                         }
                     });
@@ -658,31 +677,28 @@ public class SummaryFragment extends Fragment {
 
                 switch (event.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
-                        savedMatrix.set(matrix);
-                        start.set(event.getX(), event.getY());
                         last[0] = event.getX();
                         last[1] = event.getY();
-                        mode.v = DRAG;
+                        dragging[0] = true;
                         break;
-
+                    case MotionEvent.ACTION_POINTER_DOWN:
+                        dragging[0] = false;   // Zwei Finger: Zoom statt Verschieben
+                        break;
                     case MotionEvent.ACTION_MOVE:
-                        if (mode.v == DRAG) {
+                        if (dragging[0] && !scaleDetector.isInProgress()
+                                && imageView.getScaleType() == ImageView.ScaleType.MATRIX) {
                             matrix.getValues(mVals);
-                            float current = mVals[Matrix.MSCALE_X];
-                            if (current > 1.01f) {
-                                float dx = event.getX() - last[0];
-                                float dy = event.getY() - last[1];
-                                matrix.postTranslate(dx, dy);
+                            if (mVals[Matrix.MSCALE_X] > baseScale[0] * 1.01f) {
+                                matrix.postTranslate(event.getX() - last[0], event.getY() - last[1]);
                                 imageView.setImageMatrix(matrix);
-                                last[0] = event.getX();
-                                last[1] = event.getY();
                             }
                         }
+                        last[0] = event.getX();
+                        last[1] = event.getY();
                         break;
-
                     case MotionEvent.ACTION_UP:
                     case MotionEvent.ACTION_CANCEL:
-                        mode.v = NONE;
+                        dragging[0] = false;
                         break;
                 }
                 return true;
