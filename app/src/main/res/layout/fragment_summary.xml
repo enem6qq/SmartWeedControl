@@ -483,6 +483,21 @@
         </LinearLayout>
 
         <!-- Analyse verwerfen (verschiebt Ergebnisbilder in den Papierkorb) -->
+        <!-- Fertig: zurück zur Startseite (die Analyse bleibt gespeichert) -->
+        <Button
+            android:id="@+id/btnFinishAnalysis"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="20dp"
+            android:text="@string/btn_finish_analysis"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:textColor="@color/text_on_primary"
+            android:background="@drawable/bg_primary_button"
+            android:foreground="@drawable/ripple_light"
+            android:stateListAnimator="@null"
+            android:visibility="gone"/>
+
         <Button
             android:id="@+id/btnDiscardAnalysis"
             android:layout_width="match_parent"

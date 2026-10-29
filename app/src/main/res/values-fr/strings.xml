@@ -63,7 +63,7 @@
     <string name="analysis_mode_title">Analyse</string>
     <string name="analysis_mode_a">A : Sans filtre adventices</string>
     <string name="analysis_mode_b">B : Avec filtre adventices</string>
-    <string name="analysis_mode_a_desc">Analyse standard : le taux de couverture est calculé à partir de l\'image binaire filtrée.</string>
+    <string name="analysis_mode_a_desc">Analyse standard : le taux de couverture est calculé à partir du masque végétal (tous les pixels verts, culture et adventices).</string>
     <string name="analysis_mode_b_desc">Filtre adventices : les petits objets compacts (adventices) sont retirés avant le calcul du taux de couverture.</string>
 
     <!-- Summary Fragment -->
@@ -218,6 +218,27 @@
         <item quantity="other">%1$d images sélectionnées</item>
     </plurals>
     <string name="output_gallery_path">Enregistré dans la galerie : %1$s</string>
-    <string name="storage_info">Où sont mes images ? Les photos et résultats sont aussi enregistrés dans la galerie, un dossier par session :\nPictures/SmartWeed/&lt;date_heure&gt;/\n• vorher – photos avant\n• nachher – photos après\n• Analyse_&lt;heure&gt; – vue d\'ensemble et images d\'évaluation</string>
+    <string name="storage_info">Où sont mes images ? Les photos et résultats sont aussi enregistrés dans la galerie, un dossier par session :\nPictures/SmartWeed/&lt;date_heure&gt;/\n• vorher – photos avant\n• nachher – photos après\n• Analyse_&lt;heure&gt;_&lt;mode&gt; – vue d\'ensemble et images d\'évaluation, avec les sous-dossiers Vorher et Nachher contenant les images analysées</string>
     <string name="toast_import_unsupported_format">Format non pris en charge (p. ex. HEIC). Veuillez enregistrer l\'image en JPG ou PNG.</string>
+
+    <!-- v1.7.2: Analyse beenden, Aufnahme umbenennen, Mehrfach-Import -->
+    <string name="btn_finish_analysis">Terminé – retour à l\'accueil</string>
+    <string name="session_rename_title">Renommer la session</string>
+    <string name="session_rename_hint">Nouveau nom de dossier</string>
+    <string name="session_rename_action">Renommer</string>
+    <string name="session_rename_invalid">Veuillez saisir un nom valide.</string>
+    <string name="session_rename_exists">Une session nommée « %1$s » existe déjà.</string>
+    <string name="session_rename_failed">Échec du renommage.</string>
+    <string name="session_renamed">Renommée en %1$s</string>
+    <string name="session_renamed_gallery_partial">Renommée en %1$s – certaines images de la galerie restent dans l\'ancien dossier.</string>
+    <plurals name="import_target_title_multi">
+        <item quantity="one">Importer %1$d image comme image avant ou après ?</item>
+        <item quantity="many">Importer %1$d images comme images avant ou après ?</item>
+        <item quantity="other">Importer %1$d images comme images avant ou après ?</item>
+    </plurals>
+    <plurals name="toast_images_imported">
+        <item quantity="one">%1$d image importée dans %2$s</item>
+        <item quantity="many">%1$d images importées dans %2$s</item>
+        <item quantity="other">%1$d images importées dans %2$s</item>
+    </plurals>
 </resources>

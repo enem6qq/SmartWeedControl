@@ -81,6 +81,7 @@ public class SessionsFragment extends Fragment {
         TextView tvName = itemView.findViewById(R.id.tvSessionName);
         TextView tvInfo = itemView.findViewById(R.id.tvSessionInfo);
         ImageButton btnDelete = itemView.findViewById(R.id.btnSessionDelete);
+        ImageButton btnRename = itemView.findViewById(R.id.btnSessionRename);
 
         tvName.setText(session.dir.getName());
 
@@ -116,6 +117,8 @@ public class SessionsFragment extends Fragment {
             nav.navigate(R.id.action_sessionsFragment_to_AnalysisFragment, args);
         });
 
+        btnRename.setOnClickListener(v -> showRenameDialog(session.dir, itemView));
+
         // In den Papierkorb verschieben (mit Bestätigung). Das Kopieren läuft im
         // Hintergrund — bei Sessions mit vielen Fotos würde es sonst den
         // UI-Thread einfrieren (ANR).
@@ -148,6 +151,69 @@ public class SessionsFragment extends Fragment {
                 .show());
 
         sessionsContainer.addView(itemView);
+    }
+
+    /** Session-Ordner umbenennen (App-Speicher + Galerie-Ordner). */
+    private void showRenameDialog(java.io.File dir, View itemView) {
+        final android.widget.EditText input = new android.widget.EditText(requireContext());
+        input.setSingleLine(true);
+        input.setText(dir.getName());
+        input.setSelection(input.getText().length());
+        input.setHint(R.string.session_rename_hint);
+        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        android.widget.FrameLayout box = new android.widget.FrameLayout(requireContext());
+        box.setPadding(pad, pad / 2, pad, 0);
+        box.addView(input);
+
+        activeDialog = new AlertDialog.Builder(requireContext())
+                .setTitle(R.string.session_rename_title)
+                .setView(box)
+                .setPositiveButton(R.string.session_rename_action, (d, w) -> {
+                    String newName = SessionStore.sanitizeSessionName(input.getText().toString());
+                    String oldName = dir.getName();
+                    if (newName == null) {
+                        Toast.makeText(requireContext(), R.string.session_rename_invalid, Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    if (newName.equals(oldName)) return;
+                    final android.content.Context appCtx = requireContext().getApplicationContext();
+                    // Groß-/Kleinschreibung allein ändern: auf FAT/FUSE-Speichern
+                    // ist das derselbe Ordner -> als "vergeben" werten wäre falsch
+                    boolean onlyCase = newName.equalsIgnoreCase(oldName);
+                    if (!onlyCase && SessionStore.sessionNameTaken(appCtx, newName)) {
+                        Toast.makeText(requireContext(),
+                                getString(R.string.session_rename_exists, newName), Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    itemView.setEnabled(false);
+                    itemView.setAlpha(0.5f);
+                    new Thread(() -> {
+                        java.io.File target = new java.io.File(dir.getParentFile(), newName);
+                        boolean ok;
+                        if (onlyCase) {
+                            // Umweg über einen Zwischennamen, sonst scheitert renameTo
+                            java.io.File tmp = new java.io.File(dir.getParentFile(),
+                                    oldName + "_tmp" + System.currentTimeMillis());
+                            ok = dir.renameTo(tmp) && tmp.renameTo(target);
+                        } else {
+                            ok = dir.renameTo(target);
+                        }
+                        int galleryFailed = ok ? MediaExport.renameGalleryFolder(appCtx, oldName, newName) : 0;
+                        android.app.Activity activity = getActivity();
+                        if (activity == null) return;
+                        activity.runOnUiThread(() -> {
+                            if (!isAdded()) return;
+                            String msg;
+                            if (!ok) msg = getString(R.string.session_rename_failed);
+                            else if (galleryFailed > 0) msg = getString(R.string.session_renamed_gallery_partial, newName);
+                            else msg = getString(R.string.session_renamed, newName);
+                            Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show();
+                            refreshSessions();
+                        });
+                    }).start();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     @Override
