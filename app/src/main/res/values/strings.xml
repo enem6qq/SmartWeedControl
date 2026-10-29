@@ -62,7 +62,7 @@
     <string name="analysis_mode_title">Analysis</string>
     <string name="analysis_mode_a">A: Without weed filter</string>
     <string name="analysis_mode_b">B: With weed filter</string>
-    <string name="analysis_mode_a_desc">Standard analysis: Coverage is calculated from the filtered binary image.</string>
+    <string name="analysis_mode_a_desc">Standard analysis: Coverage is calculated from the plant mask (all green pixels, crop and weeds).</string>
     <string name="analysis_mode_b_desc">Weed filter: Small, compact objects (weeds) are removed before coverage calculation.</string>
 
     <!-- Summary Fragment -->
@@ -213,6 +213,25 @@
         <item quantity="other">%1$d images selected</item>
     </plurals>
     <string name="output_gallery_path">Saved in gallery: %1$s</string>
-    <string name="storage_info">Where are my images? Photos and results are also saved to the gallery, one folder per session:\nPictures/SmartWeed/&lt;date_time&gt;/\n• vorher – before photos\n• nachher – after photos\n• Analyse_&lt;time&gt; – overview and evaluation images</string>
+    <string name="storage_info">Where are my images? Photos and results are also saved to the gallery, one folder per session:\nPictures/SmartWeed/&lt;date_time&gt;/\n• vorher – before photos\n• nachher – after photos\n• Analyse_&lt;time&gt;_&lt;mode&gt; – overview and evaluation images, with subfolders Vorher and Nachher containing the analysed input images</string>
     <string name="toast_import_unsupported_format">Format not supported (e.g. HEIC). Please save the image as JPG or PNG.</string>
+
+    <!-- v1.7.2: Analyse beenden, Aufnahme umbenennen, Mehrfach-Import -->
+    <string name="btn_finish_analysis">Done – back to home</string>
+    <string name="session_rename_title">Rename session</string>
+    <string name="session_rename_hint">New folder name</string>
+    <string name="session_rename_action">Rename</string>
+    <string name="session_rename_invalid">Please enter a valid name.</string>
+    <string name="session_rename_exists">A session named “%1$s” already exists.</string>
+    <string name="session_rename_failed">Renaming failed.</string>
+    <string name="session_renamed">Renamed to %1$s</string>
+    <string name="session_renamed_gallery_partial">Renamed to %1$s – some gallery images stay in the old folder.</string>
+    <plurals name="import_target_title_multi">
+        <item quantity="one">Import %1$d images as before or after images?</item>
+        <item quantity="other">Import %1$d images as before or after images?</item>
+    </plurals>
+    <plurals name="toast_images_imported">
+        <item quantity="one">%1$d image imported to %2$s</item>
+        <item quantity="other">%1$d images imported to %2$s</item>
+    </plurals>
 </resources>

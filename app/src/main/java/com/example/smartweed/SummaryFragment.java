@@ -49,6 +49,8 @@ public class SummaryFragment extends Fragment {
         boolean hasOutDir = !TextUtils.isEmpty(analysisVM.outDir.getValue());
         binding.btnDiscardAnalysis.setVisibility(
                 hasOutDir && !running ? View.VISIBLE : View.GONE);
+        binding.btnFinishAnalysis.setVisibility(
+                hasOutDir && !running ? View.VISIBLE : View.GONE);
     }
 
     @Override
@@ -95,6 +97,17 @@ public class SummaryFragment extends Fragment {
                         MediaExport.galleryPath(MediaExport.analysisSubPath(new File(path)))));
             }
             updateDiscardButton();
+        });
+
+        // Fertig: Analyse ist gespeichert -> zurück zur Startseite. popBackStack
+        // bis zur Startseite räumt Analyse- und Ergebnisseite vom Stapel, sodass
+        // "Zurück" danach nicht wieder hier landet.
+        binding.btnFinishAnalysis.setOnClickListener(v -> {
+            androidx.navigation.NavController nav =
+                    androidx.navigation.fragment.NavHostFragment.findNavController(this);
+            if (!nav.popBackStack(R.id.HomeFragment, false)) {
+                nav.navigate(R.id.HomeFragment);
+            }
         });
 
         // Analyse verwerfen: Ergebnisbilder in den Papierkorb, zurück zur Analyse-Seite

@@ -130,6 +130,73 @@ public final class MediaExport {
         }
     }
 
+    /**
+     * Session-Ordner in der Galerie umbenennen: Pictures/SmartWeed/&lt;alt&gt;/...
+     * wird zu Pictures/SmartWeed/&lt;neu&gt;/... (inkl. Unterordner).
+     * Best effort: Einträge, die nicht dieser App-Installation gehören (z. B.
+     * nach Neuinstallation), darf Android 10+ nicht verschieben — sie bleiben
+     * im alten Ordner liegen.
+     *
+     * @return Anzahl der Bilder, die nicht verschoben werden konnten
+     */
+    public static int renameGalleryFolder(Context context, String oldName, String newName) {
+        String oldPrefix = Environment.DIRECTORY_PICTURES + "/" + GALLERY_ROOT + "/" + oldName + "/";
+        String newPrefix = Environment.DIRECTORY_PICTURES + "/" + GALLERY_ROOT + "/" + newName + "/";
+        int failed = 0;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            android.content.ContentResolver cr = context.getContentResolver();
+            Uri collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+            String[] proj = {MediaStore.Images.Media._ID, MediaStore.Images.Media.RELATIVE_PATH};
+            // LIKE grob vorfiltern ("_" ist dort ein Platzhalter), exakt prüfen
+            // dann per startsWith
+            try (android.database.Cursor c = cr.query(collection, proj,
+                    MediaStore.Images.Media.RELATIVE_PATH + " LIKE ?",
+                    new String[]{oldPrefix + "%"}, null)) {
+                if (c == null) return 0;
+                int idCol = c.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
+                int pathCol = c.getColumnIndexOrThrow(MediaStore.Images.Media.RELATIVE_PATH);
+                while (c.moveToNext()) {
+                    String rel = c.getString(pathCol);
+                    if (rel == null || !rel.startsWith(oldPrefix)) continue;
+                    Uri item = android.content.ContentUris.withAppendedId(collection, c.getLong(idCol));
+                    ContentValues v = new ContentValues();
+                    v.put(MediaStore.Images.Media.RELATIVE_PATH, newPrefix + rel.substring(oldPrefix.length()));
+                    try {
+                        if (cr.update(item, v, null, null) <= 0) failed++;
+                    } catch (RuntimeException e) {
+                        // RecoverableSecurityException: Eintrag gehört nicht uns
+                        failed++;
+                        Log.w(TAG, "Galerie-Eintrag nicht verschiebbar: " + item, e);
+                    }
+                }
+            } catch (RuntimeException e) {
+                Log.e(TAG, "Galerie-Umbenennung fehlgeschlagen", e);
+            }
+        } else {
+            File pics = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+            File oldDir = new File(pics, GALLERY_ROOT + "/" + oldName);
+            File newDir = new File(pics, GALLERY_ROOT + "/" + newName);
+            if (!oldDir.exists()) return 0;
+            java.util.List<String> oldPaths = new java.util.ArrayList<>();
+            collectFiles(oldDir, oldPaths);
+            if (newDir.exists() || !oldDir.renameTo(newDir)) return oldPaths.size();
+            java.util.List<String> paths = new java.util.ArrayList<>(oldPaths);
+            collectFiles(newDir, paths);
+            // Alte Pfade neu scannen entfernt die toten Einträge, neue werden aufgenommen
+            MediaScannerConnection.scanFile(context, paths.toArray(new String[0]), null, null);
+        }
+        return failed;
+    }
+
+    private static void collectFiles(File dir, java.util.List<String> out) {
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File f : files) {
+            if (f.isDirectory()) collectFiles(f, out);
+            else out.add(f.getAbsolutePath());
+        }
+    }
+
     /** MIME-Typ aus der Endung — importierte Bilder können auch PNG/WebP sein;
      *  pauschal "image/jpeg" ließe die Galerie sie falsch dekodieren. */
     static String mimeFor(String name) {

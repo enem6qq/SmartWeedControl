@@ -88,8 +88,18 @@ public class CameraFragment extends Fragment {
     private final ActivityResultLauncher<Intent> pickImageLauncher =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
                 if (result.getResultCode() == android.app.Activity.RESULT_OK && result.getData() != null) {
-                    Uri uri = result.getData().getData();
-                    if (uri != null) askImportTarget(uri);
+                    // Mehrfachauswahl kommt als ClipData, Einzelauswahl als getData()
+                    Intent data = result.getData();
+                    java.util.List<Uri> uris = new java.util.ArrayList<>();
+                    android.content.ClipData clip = data.getClipData();
+                    if (clip != null) {
+                        for (int i = 0; i < clip.getItemCount(); i++) {
+                            Uri u = clip.getItemAt(i).getUri();
+                            if (u != null && !uris.contains(u)) uris.add(u);
+                        }
+                    }
+                    if (uris.isEmpty() && data.getData() != null) uris.add(data.getData());
+                    if (!uris.isEmpty()) askImportTarget(uris);
                 }
             });
 
@@ -151,6 +161,7 @@ public class CameraFragment extends Fragment {
             Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
             intent.setType("image/*");
             intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
             pickImageLauncher.launch(Intent.createChooser(intent, getString(R.string.chooser_pick_image)));
         });
 
@@ -276,80 +287,107 @@ public class CameraFragment extends Fragment {
                 });
     }
 
-    /** Ins Session-Schema einsortieren: Vorher- oder Nachher-Bild? */
-    private void askImportTarget(Uri uri) {
+    /** Ins Session-Schema einsortieren: Vorher- oder Nachher-Bild? Bei
+     *  Mehrfachauswahl gilt die Wahl für alle gewählten Bilder. */
+    private void askImportTarget(java.util.List<Uri> uris) {
+        String title = uris.size() > 1
+                ? getResources().getQuantityString(R.plurals.import_target_title_multi, uris.size(), uris.size())
+                : getString(R.string.import_target_title);
         activeDialog = new android.app.AlertDialog.Builder(requireContext())
-                .setTitle(R.string.import_target_title)
-                .setPositiveButton(R.string.label_before, (d, w) -> copyImportedImage(uri, beforeDir))
-                .setNegativeButton(R.string.label_after, (d, w) -> copyImportedImage(uri, afterDir))
+                .setTitle(title)
+                .setPositiveButton(R.string.label_before, (d, w) -> copyImportedImages(uris, beforeDir))
+                .setNegativeButton(R.string.label_after, (d, w) -> copyImportedImages(uris, afterDir))
                 .setNeutralButton(android.R.string.cancel, null)
                 .show();
     }
 
-    private void copyImportedImage(Uri uri, File targetDir) {
+    private void copyImportedImages(java.util.List<Uri> uris, File targetDir) {
         // Dialog-Klicks können das Fragment theoretisch überleben — dann gäbe
         // requireContext() eine IllegalStateException statt eines sauberen Abbruchs
         if (!isAdded()) return;
-        // Name + Context auf dem UI-Thread ermitteln, die (potenziell mehrere MB
-        // große) Kopie dann im Hintergrund — sonst droht Jank/ANR.
+        // Namen + Context auf dem UI-Thread ermitteln, die (potenziell mehrere MB
+        // großen) Kopien dann im Hintergrund — sonst droht Jank/ANR.
         final ContentResolver resolver = requireContext().getContentResolver();
         final Context appContext = requireContext().getApplicationContext();
-        String picked = getFileName(uri);
-        // HEIC/HEIF (Standard bei vielen iPhones und manchen Android-Kameras)
-        // kann die Analyse (OpenCV) nicht lesen — und die Session-Ansicht zählt
-        // nur lesbare Formate. Ohne Hinweis wäre das Bild "spurlos" importiert.
-        String type = null;
-        try { type = resolver.getType(uri); } catch (RuntimeException ignored) { }
-        if (!SessionStore.isImageFile(picked) && type != null) {
-            // Manche Anbieter liefern Namen ohne Endung ("IMG_1234") — dann
-            // die Endung aus dem MIME-Typ ergänzen statt abzulehnen
-            if (type.equals("image/jpeg")) picked += ".jpg";
-            else if (type.equals("image/png")) picked += ".png";
-            else if (type.equals("image/webp")) picked += ".webp";
-            else if (type.equals("image/bmp")) picked += ".bmp";
+        final java.util.List<Uri> okUris = new java.util.ArrayList<>();
+        final java.util.List<String> okNames = new java.util.ArrayList<>();
+        int unsupported = 0;
+        for (Uri uri : uris) {
+            String picked = getFileName(uri);
+            // HEIC/HEIF (Standard bei vielen iPhones und manchen Android-Kameras)
+            // kann die Analyse (OpenCV) nicht lesen — und die Session-Ansicht zählt
+            // nur lesbare Formate. Ohne Hinweis wäre das Bild "spurlos" importiert.
+            String type = null;
+            try { type = resolver.getType(uri); } catch (RuntimeException ignored) { }
+            if (!SessionStore.isImageFile(picked) && type != null) {
+                // Manche Anbieter liefern Namen ohne Endung ("IMG_1234") — dann
+                // die Endung aus dem MIME-Typ ergänzen statt abzulehnen
+                if (type.equals("image/jpeg")) picked += ".jpg";
+                else if (type.equals("image/png")) picked += ".png";
+                else if (type.equals("image/webp")) picked += ".webp";
+                else if (type.equals("image/bmp")) picked += ".bmp";
+            }
+            if (!SessionStore.isImageFile(picked)) { unsupported++; continue; }
+            okUris.add(uri);
+            okNames.add(picked);
         }
-        if (!SessionStore.isImageFile(picked)) {
+        if (unsupported > 0) {
             Toast.makeText(appContext, R.string.toast_import_unsupported_format, Toast.LENGTH_LONG).show();
-            return;
         }
-        final String name = picked;
+        if (okUris.isEmpty()) return;
+
         final String gallerySub = sessionDirName + "/" + targetDir.getName();
-        final String importedFmt = getString(R.string.toast_image_imported,
-                MediaExport.galleryPath(gallerySub), name);
+        final String galleryPath = MediaExport.galleryPath(gallerySub);
+        final String singleFmt = okUris.size() == 1
+                ? getString(R.string.toast_image_imported, galleryPath, okNames.get(0)) : null;
+        final android.content.res.Resources res = getResources();
 
         IO_EXECUTOR.execute(() -> {
-            try {
-                if (!targetDir.exists()) targetDir.mkdirs();
-                File destFile = new File(targetDir, name);
-                // Kollision vermeiden: existiert der Name schon, eindeutig machen
-                if (destFile.exists()) {
-                    int dot = name.lastIndexOf('.');
-                    String base = (dot > 0) ? name.substring(0, dot) : name;
-                    String ext = (dot > 0) ? name.substring(dot) : "";
-                    destFile = new File(targetDir, base + "_" + System.currentTimeMillis() + ext);
-                }
-
-                try (InputStream inputStream = resolver.openInputStream(uri);
-                     OutputStream outputStream = new FileOutputStream(destFile)) {
-                    if (inputStream == null) throw new java.io.IOException("openInputStream lieferte null");
-                    byte[] buffer = new byte[8192];
-                    int length;
-                    while ((length = inputStream.read(buffer)) > 0) {
-                        outputStream.write(buffer, 0, length);
+            int copied = 0;
+            int failed = 0;
+            if (!targetDir.exists()) targetDir.mkdirs();
+            for (int i = 0; i < okUris.size(); i++) {
+                String name = okNames.get(i);
+                try {
+                    File destFile = new File(targetDir, name);
+                    // Kollision vermeiden: existiert der Name schon, durchnummerieren
+                    if (destFile.exists()) {
+                        int dot = name.lastIndexOf('.');
+                        String base = (dot > 0) ? name.substring(0, dot) : name;
+                        String ext = (dot > 0) ? name.substring(dot) : "";
+                        int n = 2;
+                        do { destFile = new File(targetDir, base + "_" + n++ + ext); } while (destFile.exists());
                     }
+                    try (InputStream inputStream = resolver.openInputStream(okUris.get(i));
+                         OutputStream outputStream = new FileOutputStream(destFile)) {
+                        if (inputStream == null) throw new java.io.IOException("openInputStream lieferte null");
+                        byte[] buffer = new byte[8192];
+                        int length;
+                        while ((length = inputStream.read(buffer)) > 0) {
+                            outputStream.write(buffer, 0, length);
+                        }
+                    }
+                    copied++;
+                    // Auch importierte Bilder in den Session-Ordner der Galerie legen,
+                    // damit dort ALLE Bilder eines Feldeinsatzes beisammen liegen.
+                    MediaExport.exportToGallery(appContext, destFile, gallerySub);
+                } catch (Exception e) {
+                    failed++;
+                    Log.e("Import", "Fehler beim Kopieren: " + name, e);
                 }
-
-                ContextCompat.getMainExecutor(appContext).execute(() ->
-                        Toast.makeText(appContext, importedFmt, Toast.LENGTH_SHORT).show());
-                // Auch importierte Bilder in den Session-Ordner der Galerie legen,
-                // damit dort ALLE Bilder eines Feldeinsatzes beisammen liegen.
-                MediaExport.exportToGallery(appContext, destFile, gallerySub);
-
-            } catch (Exception e) {
-                Log.e("Import", "Fehler beim Kopieren", e);
-                ContextCompat.getMainExecutor(appContext).execute(() ->
-                        Toast.makeText(appContext, R.string.toast_import_error, Toast.LENGTH_SHORT).show());
             }
+            final int fCopied = copied;
+            final int fFailed = failed;
+            ContextCompat.getMainExecutor(appContext).execute(() -> {
+                if (fCopied > 0) {
+                    String msg = (fCopied == 1 && singleFmt != null) ? singleFmt
+                            : res.getQuantityString(R.plurals.toast_images_imported, fCopied, fCopied, galleryPath);
+                    Toast.makeText(appContext, msg, Toast.LENGTH_SHORT).show();
+                }
+                if (fFailed > 0) {
+                    Toast.makeText(appContext, R.string.toast_import_error, Toast.LENGTH_SHORT).show();
+                }
+            });
         });
     }
 

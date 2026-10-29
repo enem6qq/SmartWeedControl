@@ -62,7 +62,7 @@
     <string name="analysis_mode_title">Analyse</string>
     <string name="analysis_mode_a">A: Ohne Unkrautfilter</string>
     <string name="analysis_mode_b">B: Mit Unkrautfilter</string>
-    <string name="analysis_mode_a_desc">Standardanalyse: Deckungsgrad wird aus dem gefilterten Binärbild berechnet.</string>
+    <string name="analysis_mode_a_desc">Standardanalyse: Deckungsgrad wird aus der Pflanzenmaske berechnet (alle grünen Pixel, Kultur und Unkraut).</string>
     <string name="analysis_mode_b_desc">Unkrautfilter: Kleine, kompakte Objekte (Unkraut) werden vor der Deckungsgrad-Berechnung entfernt.</string>
 
     <!-- Summary Fragment -->
@@ -213,6 +213,25 @@
         <item quantity="other">%1$d Bilder ausgewählt</item>
     </plurals>
     <string name="output_gallery_path">Gespeichert in der Galerie: %1$s</string>
-    <string name="storage_info">Wo liegen meine Bilder? Fotos und Ergebnisse werden zusätzlich in der Galerie abgelegt, ein Ordner pro Session:\nPictures/SmartWeed/&lt;Datum_Uhrzeit&gt;/\n• vorher – Vorher-Fotos\n• nachher – Nachher-Fotos\n• Analyse_&lt;Uhrzeit&gt; – Übersicht und Auswertungsbilder</string>
+    <string name="storage_info">Wo liegen meine Bilder? Fotos und Ergebnisse werden zusätzlich in der Galerie abgelegt, ein Ordner pro Session:\nPictures/SmartWeed/&lt;Datum_Uhrzeit&gt;/\n• vorher – Vorher-Fotos\n• nachher – Nachher-Fotos\n• Analyse_&lt;Uhrzeit&gt;_&lt;Modus&gt; – Übersicht und Auswertungsbilder, dazu die Unterordner Vorher und Nachher mit den analysierten Bildern</string>
     <string name="toast_import_unsupported_format">Format nicht unterstützt (z. B. HEIC). Bitte das Bild als JPG oder PNG speichern.</string>
+
+    <!-- v1.7.2: Analyse beenden, Aufnahme umbenennen, Mehrfach-Import -->
+    <string name="btn_finish_analysis">Fertig – zur Startseite</string>
+    <string name="session_rename_title">Aufnahme umbenennen</string>
+    <string name="session_rename_hint">Neuer Ordnername</string>
+    <string name="session_rename_action">Umbenennen</string>
+    <string name="session_rename_invalid">Bitte einen gültigen Namen eingeben.</string>
+    <string name="session_rename_exists">Eine Aufnahme mit dem Namen „%1$s“ gibt es schon.</string>
+    <string name="session_rename_failed">Umbenennen fehlgeschlagen.</string>
+    <string name="session_renamed">Umbenannt in %1$s</string>
+    <string name="session_renamed_gallery_partial">Umbenannt in %1$s – einige Galerie-Bilder bleiben im alten Ordner.</string>
+    <plurals name="import_target_title_multi">
+        <item quantity="one">%1$d Bild als Vorher- oder Nachher-Bild importieren?</item>
+        <item quantity="other">%1$d Bilder als Vorher- oder Nachher-Bilder importieren?</item>
+    </plurals>
+    <plurals name="toast_images_imported">
+        <item quantity="one">%1$d Bild importiert in %2$s</item>
+        <item quantity="other">%1$d Bilder importiert in %2$s</item>
+    </plurals>
 </resources>

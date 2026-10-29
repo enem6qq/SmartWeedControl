@@ -248,16 +248,18 @@ public class AnalysisFragment extends Fragment {
                 String sessionName = new SimpleDateFormat(SessionStore.SESSION_NAME_PATTERN, Locale.US).format(new Date());
                 sessionDir = new File(SessionStore.getBaseDir(requireContext()), sessionName);
             }
+            // Jeder Lauf bekommt einen EIGENEN Ordner mit Uhrzeit UND Modus im
+            // Namen (z. B. Analyse_08-50-12_B): Wer dieselben Bilder mit einer
+            // anderen Variante auswertet, sieht sofort, welcher Ordner zu
+            // welcher Variante gehört.
+            String mode = rowMode ? "C" : (weedFilter ? "B" : "A");
             String analyseTimestamp = new SimpleDateFormat("HH-mm-ss", Locale.US).format(new Date());
-            File outDir = new File(sessionDir, SessionStore.ANALYSIS_PREFIX + analyseTimestamp);
-            // Kollisionsschutz: Der Ordnername trägt kein Datum — eine erneute
-            // Analyse derselben Session zur exakt gleichen Uhrzeit (Sekunde)
-            // würde sonst in denselben Ordner schreiben und die alten
-            // Ergebnisse überschreiben (feste Dateinamen wie uebersicht_*.jpg).
+            String baseName = SessionStore.ANALYSIS_PREFIX + analyseTimestamp + "_" + mode;
+            File outDir = new File(sessionDir, baseName);
+            // Kollisionsschutz: zweiter Lauf in derselben Sekunde -> _2, _3 ...
             int suffix = 2;
             while (outDir.exists()) {
-                outDir = new File(sessionDir,
-                        SessionStore.ANALYSIS_PREFIX + analyseTimestamp + "_" + suffix++);
+                outDir = new File(sessionDir, baseName + "_" + suffix++);
             }
             if (!outDir.mkdirs()) {
                 Toast.makeText(requireContext(),
@@ -359,19 +361,26 @@ public class AnalysisFragment extends Fragment {
         // UI-Thread) — der Hintergrund-Thread darf davon nichts mitbekommen.
         final List<Uri> beforeSnapshot = new ArrayList<>(beforeUris);
         final List<Uri> afterSnapshot  = new ArrayList<>(afterUris);
-        // Lauf-eindeutiges Präfix für die Cache-Dateien, damit sich zwei
-        // Analysen nie gegenseitig die Zwischen-Kopien überschreiben können.
-        final String runPrefix = "run" + System.currentTimeMillis() + "_";
+        // Dateinamen auf dem UI-Thread ermitteln (ContentResolver-Abfrage)
+        final List<String> beforeNames = new ArrayList<>();
+        final List<String> afterNames  = new ArrayList<>();
+        for (Uri u : beforeSnapshot) beforeNames.add(safeImageName(getDisplayName(u)));
+        for (Uri u : afterSnapshot)  afterNames.add(safeImageName(getDisplayName(u)));
+        // Die ausgewerteten Bilder werden IM Analyse-Ordner abgelegt
+        // (Vorher/ und Nachher/) — egal ob aus Kamera, Import oder Galerie.
+        // So ist jede Analyse vollständig nachvollziehbar.
+        final File inBefore = new File(outDir, SessionStore.ANALYSIS_BEFORE_DIR);
+        final File inAfter  = new File(outDir, SessionStore.ANALYSIS_AFTER_DIR);
 
         bgExecutor.execute(() -> {
             try {
                 ArrayList<String> beforePaths = new ArrayList<>();
                 ArrayList<String> afterPaths  = new ArrayList<>();
                 for (int i = 0; i < beforeSnapshot.size(); i++) {
-                    beforePaths.add(copyUriToCache(appContext, beforeSnapshot.get(i), runPrefix + "before_" + i + ".jpg").getAbsolutePath());
+                    beforePaths.add(copyUriToDir(appContext, beforeSnapshot.get(i), inBefore, beforeNames.get(i)).getAbsolutePath());
                 }
                 for (int i = 0; i < afterSnapshot.size(); i++) {
-                    afterPaths.add(copyUriToCache(appContext, afterSnapshot.get(i), runPrefix + "after_" + i + ".jpg").getAbsolutePath());
+                    afterPaths.add(copyUriToDir(appContext, afterSnapshot.get(i), inAfter, afterNames.get(i)).getAbsolutePath());
                 }
 
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(appContext));
@@ -433,13 +442,6 @@ public class AnalysisFragment extends Fragment {
                 analysisVM.error.postValue(String.format(errAnalysis, firstLine(e.getMessage())));
                 analysisVM.running.postValue(false);
                 cleanupFailedOutDir(outDir);
-            } finally {
-                // Zwischen-Kopien dieses Laufs aus dem Cache entfernen
-                File[] cacheFiles = appContext.getCacheDir()
-                        .listFiles((d, n) -> n.startsWith(runPrefix));
-                if (cacheFiles != null) {
-                    for (File f : cacheFiles) f.delete();
-                }
             }
         });
     }
@@ -454,6 +456,13 @@ public class AnalysisFragment extends Fragment {
      */
     private static void exportResultsToGallery(Context ctx, File outDir, JSONObject result) {
         String sub = MediaExport.analysisSubPath(outDir);
+        // Die ausgewerteten Originalbilder: <Analyse>/Vorher und <Analyse>/Nachher
+        for (String group : new String[]{SessionStore.ANALYSIS_BEFORE_DIR, SessionStore.ANALYSIS_AFTER_DIR}) {
+            File[] imgs = new File(outDir, group).listFiles(f -> f.isFile() && SessionStore.isImageFile(f.getName()));
+            if (imgs == null) continue;
+            java.util.Arrays.sort(imgs, (a, b) -> a.getName().compareTo(b.getName()));
+            for (File f : imgs) MediaExport.exportToGallery(ctx, f, sub + "/" + group);
+        }
         File session = outDir.getParentFile();
         String sessionName = session != null ? session.getName() : outDir.getName();
 
@@ -478,11 +487,13 @@ public class AnalysisFragment extends Fragment {
         }
     }
 
-    /** Nach fehlgeschlagener Analyse keinen leeren Analyse-Ordner zurücklassen
-     *  (er würde in der Session-Übersicht als Analyse gezählt). */
+    /** Nach fehlgeschlagener Analyse keinen Analyse-Ordner ohne Ergebnis
+     *  zurücklassen (er würde in der Session-Übersicht als Analyse gezählt).
+     *  Maßgeblich sind die Ergebnisbilder in details/ — die kopierten
+     *  Eingangsbilder in Vorher/ und Nachher/ allein zählen nicht. */
     private static void cleanupFailedOutDir(File outDir) {
         if (outDir == null || !outDir.isDirectory()) return;
-        if (containsImage(outDir)) return; // Teilergebnisse behalten
+        if (containsImage(new File(outDir, "details"))) return; // Teilergebnisse behalten
         deleteRecursively(outDir);
     }
 
@@ -515,9 +526,26 @@ public class AnalysisFragment extends Fragment {
         return (i >= 0) ? s.substring(0, i) : s;
     }
 
-    /** Kopiert eine content:// URI in eine echte Datei im App-Cache, sodass OpenCV/Chaquopy sie lesen kann */
-    private static File copyUriToCache(@NonNull Context context, @NonNull Uri uri, @NonNull String nameHint) throws IOException {
-        File outFile = new File(context.getCacheDir(), nameHint);
+    /** Dateiname für die Ablage: keine Pfadanteile, lesbare Bild-Endung */
+    private static String safeImageName(String raw) {
+        String n = (raw == null) ? "" : new File(raw).getName().replace("..", "_").trim();
+        if (n.isEmpty() || ".".equals(n)) n = "bild";
+        if (!SessionStore.isImageFile(n)) n = n + ".jpg";
+        return n;
+    }
+
+    /** Kopiert eine (content:// oder file://) URI als echte Datei in dir —
+     *  OpenCV/Chaquopy brauchen einen Dateipfad. Gleiche Namen werden
+     *  durchnummeriert (bild.jpg, bild_2.jpg ...). */
+    private static File copyUriToDir(@NonNull Context context, @NonNull Uri uri, @NonNull File dir,
+                                     @NonNull String name) throws IOException {
+        if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Ordner nicht anlegbar: " + dir);
+        File outFile = new File(dir, name);
+        int dot = name.lastIndexOf('.');
+        String base = (dot > 0) ? name.substring(0, dot) : name;
+        String ext = (dot > 0) ? name.substring(dot) : "";
+        int k = 2;
+        while (outFile.exists()) outFile = new File(dir, base + "_" + k++ + ext);
         try (InputStream in = context.getContentResolver().openInputStream(uri);
              OutputStream out = new FileOutputStream(outFile)) {
             if (in == null) {

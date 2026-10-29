@@ -59,11 +59,19 @@ Pictures/SmartWeed/
     │   └── vorher_20261018_103012_123.jpg
     ├── nachher/
     │   └── nachher_20261018_111502_456.jpg
-    └── Analyse_11-20-05/             ← eine Analyse
+    └── Analyse_11-20-05_A/           ← eine Analyse (Uhrzeit_Modus A/B/C)
+        ├── Vorher/                              (analysierte Vorher-Bilder)
+        ├── Nachher/                             (analysierte Nachher-Bilder)
         ├── 00_Uebersicht_2026-10-18_10-30.jpg   (Vergleichsbild mit CSC)
         ├── Vorher_01_Auswertung.jpg             (Original | Masken)
         └── Nachher_01_Auswertung.jpg
 ```
+
+Jeder Analyse-Lauf bekommt einen eigenen Ordner — auch wenn dieselben Bilder
+mit einer anderen Variante (A/B/C) erneut ausgewertet werden (seit v1.7.2).
+Sessions lassen sich unter „Meine Aufnahmen" über das Stift-Symbol
+umbenennen; der Galerie-Ordner wird mit umbenannt. Beim Import können
+mehrere Bilder auf einmal gewählt werden.
 
 Die Arbeitsdaten der App liegen zusätzlich im **app-eigenen Speicher**
 (`Android/data/<app>/files/SmartWeed/<Session>/…`, inkl. `details/` mit

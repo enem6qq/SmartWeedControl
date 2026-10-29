@@ -24,7 +24,9 @@ import java.util.Locale;
  *   └── 2026-07-07_18-58/          ← eine Session (ein Feldeinsatz)
  *       ├── vorher/                ← Kamera-Aufnahmen
  *       ├── nachher/
- *       └── Analyse_18-59-30/      ← Analyse-Ergebnis zur Session
+ *       └── Analyse_18-59-30_A/    ← Analyse-Ergebnis (Uhrzeit + Modus A/B/C)
+ *           ├── Vorher/            ← die ausgewerteten Vorher-Bilder
+ *           ├── Nachher/           ← die ausgewerteten Nachher-Bilder
  *           └── details/           ← Masken/Einzelbilder
  */
 public final class SessionStore {
@@ -37,6 +39,10 @@ public final class SessionStore {
 
     public static final String BEFORE_DIR_NAME = "vorher";
     public static final String AFTER_DIR_NAME = "nachher";
+
+    /** Unterordner IM Analyse-Ordner mit den ausgewerteten Bildern */
+    public static final String ANALYSIS_BEFORE_DIR = "Vorher";
+    public static final String ANALYSIS_AFTER_DIR = "Nachher";
 
     private static final String TRASH_DIR_NAME = ".trash";
 
@@ -52,6 +58,40 @@ public final class SessionStore {
             android.util.Log.e("SessionStore", "Could not create base dir: " + base.getAbsolutePath());
         }
         return base;
+    }
+
+    /**
+     * Vom Nutzer eingegebenen Session-Namen in einen sicheren Ordnernamen
+     * umwandeln: Buchstaben (inkl. Umlaute), Ziffern, "-", "_", "." und
+     * Leerzeichen bleiben, alles andere wird "_". Liefert null, wenn kein
+     * brauchbarer Name übrig bleibt.
+     */
+    public static String sanitizeSessionName(String raw) {
+        if (raw == null) return null;
+        StringBuilder sb = new StringBuilder();
+        for (char ch : raw.trim().toCharArray()) {
+            if (Character.isLetterOrDigit(ch) || ch == '-' || ch == '_' || ch == '.' || ch == ' ') {
+                sb.append(ch);
+            } else {
+                sb.append('_');
+            }
+        }
+        String name = sb.toString().trim();
+        // Kein versteckter Ordner (".trash"), keine Punkt-Pfade
+        while (name.startsWith(".")) name = name.substring(1);
+        if (name.length() > 60) name = name.substring(0, 60).trim();
+        if (name.isEmpty() || name.replace(".", "").isEmpty()) return null;
+        return name;
+    }
+
+    /** Gibt es (ohne Groß-/Kleinschreibung) schon einen Ordner mit diesem Namen? */
+    public static boolean sessionNameTaken(Context context, String name) {
+        File[] dirs = getBaseDir(context).listFiles();
+        if (dirs == null) return false;
+        for (File d : dirs) {
+            if (d.getName().equalsIgnoreCase(name)) return true;
+        }
+        return false;
     }
 
     /** Daten einer Session für die Übersichts-Seite */
@@ -86,7 +126,9 @@ public final class SessionStore {
             int analysisCount = 0;
             if (analyses != null) {
                 for (File a : analyses) {
-                    if (findFirstImage(a) != null) analysisCount++;
+                    // Ergebnis = Bild direkt im Ordner oder in details/ — die
+                    // kopierten Eingangsbilder (Vorher/, Nachher/) allein zählen nicht
+                    if (countImages(a) > 0 || findFirstImage(new File(a, "details")) != null) analysisCount++;
                 }
             }
             s.analysisCount = analysisCount;
