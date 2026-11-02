@@ -51,17 +51,25 @@ public final class MediaExport {
 
     /**
      * @param subPath Unterordner unterhalb von Pictures/SmartWeed ("" für keinen)
+     * @return true, wenn das Bild fertig (sichtbar) in der Galerie liegt
      */
-    public static void exportToGallery(Context context, File src, String subPath) {
-        exportToGallery(context, src, subPath, null);
+    public static boolean exportToGallery(Context context, File src, String subPath) {
+        return exportToGallery(context, src, subPath, null);
     }
 
     /**
      * @param subPath     Unterordner unterhalb von Pictures/SmartWeed ("" für keinen)
      * @param displayName Dateiname in der Galerie (null = Name der Quelldatei)
+     * @return true, wenn das Bild fertig (sichtbar) in der Galerie liegt.
+     *         Achtung: Schon der MediaStore-Insert legt den Ordner an — ein
+     *         Abbruch danach hinterlässt einen (scheinbar) leeren Ordner, weil
+     *         der Eintrag noch IS_PENDING=1 ist bzw. wieder gelöscht wurde.
      */
-    public static void exportToGallery(Context context, File src, String subPath, String displayName) {
-        if (src == null || !src.exists()) return;
+    public static boolean exportToGallery(Context context, File src, String subPath, String displayName) {
+        if (src == null || !src.isFile() || src.length() == 0) {
+            Log.w(TAG, "Galerie-Export übersprungen, Quelle fehlt/leer: " + src);
+            return false;
+        }
         String relative = GALLERY_ROOT + (subPath == null || subPath.isEmpty() ? "" : "/" + subPath);
         String name = (displayName == null || displayName.isEmpty()) ? src.getName() : displayName;
         String mime = mimeFor(name);
@@ -79,9 +87,10 @@ public final class MediaExport {
                         .insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
                 if (uri == null) {
                     Log.w(TAG, "MediaStore-Insert fehlgeschlagen: " + name);
-                    return;
+                    return false;
                 }
                 boolean written = false;
+                boolean published = false;
                 try (InputStream in = new FileInputStream(src);
                      OutputStream out = context.getContentResolver().openOutputStream(uri)) {
                     if (out != null) {
@@ -92,15 +101,25 @@ public final class MediaExport {
                     }
                 } finally {
                     if (written) {
-                        ContentValues done = new ContentValues();
-                        done.put(MediaStore.Images.Media.IS_PENDING, 0);
-                        context.getContentResolver().update(uri, done, null, null);
-                    } else {
+                        try {
+                            ContentValues done = new ContentValues();
+                            done.put(MediaStore.Images.Media.IS_PENDING, 0);
+                            published = context.getContentResolver().update(uri, done, null, null) > 0;
+                        } catch (RuntimeException e) {
+                            Log.w(TAG, "IS_PENDING=0 fehlgeschlagen: " + name, e);
+                        }
+                    }
+                    if (!published) {
                         // Fehlschlag: Geister-Eintrag entfernen statt ihn
                         // dauerhaft (unsichtbar/leer) im MediaStore zu lassen
-                        context.getContentResolver().delete(uri, null, null);
+                        try {
+                            context.getContentResolver().delete(uri, null, null);
+                        } catch (RuntimeException e) {
+                            Log.w(TAG, "Pending-Eintrag nicht löschbar: " + uri, e);
+                        }
                     }
                 }
+                return published;
             } else {
                 File dstDir = new File(
                         Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
@@ -122,11 +141,14 @@ public final class MediaExport {
                 MediaScannerConnection.scanFile(context,
                         new String[]{dst.getAbsolutePath()},
                         new String[]{mime}, null);
+                return true;
             }
         } catch (Exception e) {
             // Galerie-Export ist "best effort" — die Analyse-Daten selbst liegen
-            // sicher im App-Speicher.
+            // sicher im App-Speicher. Der Aufrufer zählt Fehlschläge und zeigt
+            // sie an (statt still leere Galerie-Ordner zu hinterlassen).
             Log.e(TAG, "Galerie-Export fehlgeschlagen: " + src.getName(), e);
+            return false;
         }
     }
 

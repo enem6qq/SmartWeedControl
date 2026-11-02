@@ -121,16 +121,21 @@ def test_exg_halluziniert_nicht_auf_boden():
     assert (seg(soil, "exg") > 0).mean() < 0.01
 
 
-def test_otsu_vollbewuchs_nicht_halbiert():
-    """Regression v1.3-Bug: Otsu legte den Schwellwert bei unimodalem
-    ExG-Histogramm mitten in die Vegetation (52% statt ~100%)."""
+def test_exg_vollbewuchs_ohne_rueckfall_bekannte_grenze():
+    """GEÄNDERT in v1.8 (bewusst): Der Vollbewuchs-Rückfall (ab 85 % ExG > EXG_MIN
+    zählt alles als Pflanze, Regression v1.3) wurde entfernt — im Feldversuch
+    zählte er in 34-37 % der Sonnenbilder gelbstichigen BODEN vollflächig als
+    Pflanze. Dieser Test DOKUMENTIERT die damit zurückgekehrte Grenze: Otsu
+    teilt ein unimodales Vollbewuchs-Histogramm (~50 % statt ~100 %).
+    Schlägt er fehl, wurde ExG geändert: dann Docstring + Methodik prüfen."""
     rng = np.random.default_rng(3)
     h, w = 600, 800
     g = 120 + 60 * rng.random((h, w))
     r = 90 + 30 * rng.random((h, w))
     b = 70 + 30 * rng.random((h, w))
     img = np.stack([b, g, r], axis=2).astype(np.uint8)
-    assert (analysis._exg_otsu_mask(img) > 0).mean() > 0.95
+    assert not hasattr(analysis, "EXG_UNIMODAL_FRACTION")
+    assert (analysis._exg_otsu_mask(img) > 0).mean() < 0.85
 
 
 # ---------------------------------------------------------------------------
@@ -619,9 +624,17 @@ def test_rahmen_erkannt_und_nur_innen_ausgewertet(tmp_path):
     img, soll = make_frame_scene()
     src = str(tmp_path / "rahmen.jpg")
     cv2.imwrite(src, img, [cv2.IMWRITE_JPEG_QUALITY, 95])
-    mit = json.loads(analysis.analyze_image(src, str(tmp_path / "a"), "before", 0, frame_crop=True))
-    ohne = json.loads(analysis.analyze_image(src, str(tmp_path / "b"), "before", 0))
+    # GEÄNDERT in v1.8: method="exg" explizit (bis v1.7 Standard). Der Test
+    # prüft den Rahmen-Zuschnitt; die 4-px-Synthetikstreifen in Reinfarbe
+    # bluten im JPEG (4:2:0-Farbunterabtastung) in die Nachbarzeilen — darauf
+    # reagieren alle Farbindizes außer ExG-Otsu (soilref/exgr/hsv: ~15.5 %
+    # statt 10 %, verlustfrei exakt 10.4 %).
+    mit = json.loads(analysis.analyze_image(src, str(tmp_path / "a"), "before", 0,
+                                            frame_crop=True, method="exg"))
+    ohne = json.loads(analysis.analyze_image(src, str(tmp_path / "b"), "before", 0,
+                                             method="exg"))
     assert mit["frame_found"] is True
+    assert mit["frame_kind"] == "red"
     assert abs(mit["coverage_bw_percent"] - soll) < 3.0
     # Vollbild enthält den dichten Außenbewuchs — deutlich mehr Grün
     assert ohne["coverage_bw_percent"] > soll + 10
@@ -837,3 +850,580 @@ def test_reihen_schmaler_ausschnitt_nicht_pauschal_abgelehnt():
         mask[:, x:x + 8] = 255
     ok, _, info = analysis._detect_rows(mask)
     assert info.get("reason") != "profile_too_narrow"
+
+
+# ---------------------------------------------------------------------------
+# v1.8: bodenreferenziertes Lab-a* (soilref), Kontrollfläche, Plausibilitäts-
+# Warnung, grauer U-Zählrahmen. Alles synthetisch — Feldfotos gehören NIE
+# ins Repository.
+# ---------------------------------------------------------------------------
+import frame_u  # noqa: E402
+
+
+def assert_no_none(obj, path="root"):
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            assert v is not None, f"JSON-null bei {path}.{k}"
+            assert_no_none(v, f"{path}.{k}")
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            assert_no_none(v, f"{path}[{i}]")
+
+
+def make_sunny_cast_scene(w=900, h=1200, leaf_frac=0.12, seed=5,
+                          cast=(0.55, 1.08, 1.0), shadow=True):
+    """Tief stehende, warme Sonne wie im Feldversuch: heller Boden mit Schollen,
+    helle UND dunkle Blätter, harte Schlagschatten und ein kräftiger gelbgrüner
+    Farbstich (Blau gedämpft, Grün angehoben). Unter diesem Stich ist auch der
+    BODEN ExG-positiv (Median ~0.17 > EXG_MIN) — genau der Fall, in dem der
+    alte Vollbewuchs-Rückfall das ganze Bild als Pflanze zählte.
+    Rückgabe: (bild, pflanzenmaske)."""
+    rng = np.random.default_rng(seed)
+    img = np.full((h, w, 3), (95, 120, 150), np.float32)
+    for _ in range(400):
+        f = float(rng.uniform(0.8, 1.15))
+        cv2.circle(img, (int(rng.integers(0, w)), int(rng.integers(0, h))),
+                   int(rng.integers(5, 20)), (95 * f, 120 * f, 150 * f), -1)
+    img += rng.normal(0, 6, (h, w, 3))
+    plant = np.zeros((h, w), np.uint8)
+    while (plant > 0).sum() < leaf_frac * h * w:
+        m = np.zeros_like(plant)
+        cv2.ellipse(m, (int(rng.integers(0, w)), int(rng.integers(0, h))),
+                    (int(rng.integers(10, 35)), int(rng.integers(5, 14))),
+                    float(rng.uniform(0, 180)), 0, 360, 255, -1)
+        f = float(rng.uniform(0.55, 1.3))
+        img[m > 0] = (40 * f, 140 * f, 55 * f)
+        plant |= m
+    if shadow:
+        for x in range(0, w, 220):
+            img[:, x:x + 60] *= 0.5
+    img *= np.array(cast, np.float32)
+    return np.clip(img, 0, 255).astype(np.uint8), plant
+
+
+def _exg_values(img):
+    f = img.astype(np.float32)
+    s = f.sum(axis=2)
+    s[s == 0] = 1.0
+    return (2 * f[..., 1] - f[..., 2] - f[..., 0]) / s
+
+
+def test_soilref_gelbstich_boden_nicht_blaetter_ja():
+    img, plant = make_sunny_cast_scene()
+    truth = plant > 0
+    # Voraussetzung des Szenarios: Boden ist unter dem Stich ExG-positiv
+    assert (_exg_values(img) > analysis.EXG_MIN).mean() > 0.95
+    mask = seg(img, "soilref") > 0
+    assert mask[~truth].mean() < 0.02, "gelbstichiger Boden als Pflanze gezählt"
+    assert mask[truth].mean() > 0.9, "Blätter nicht erkannt"
+    assert abs(mask.mean() * 100 - truth.mean() * 100) < 2.0
+
+
+def test_soilref_reiner_boden_und_einfarbig():
+    soil, _ = make_sunny_cast_scene(leaf_frac=0)
+    assert analysis._coverage_percent(seg(soil, "soilref")) < 0.5
+    flat = np.full((200, 200, 3), (40, 150, 45), np.uint8)   # einfarbig: keine Referenz-Differenz
+    assert analysis._coverage_percent(seg(flat, "soilref")) == 0.0
+
+
+@pytest.mark.parametrize("img", [
+    np.zeros((100, 100, 3), np.uint8),
+    np.full((1, 1, 3), 128, np.uint8),
+    np.full((1, 500, 3), 128, np.uint8),
+])
+def test_soilref_extrembilder_crashen_nicht(img):
+    assert seg(img, "soilref").shape == img.shape[:2]
+
+
+def test_soilref_dichter_bestand_unterschaetzt_bekannte_grenze():
+    """DOKUMENTIERT die bekannte Grenze (siehe _soilref_mask): Ist die 'weniger
+    grüne Hälfte' nicht mehr überwiegend Boden, wird die Boden-Referenz zu
+    grün und die Bedeckung UNTERSCHÄTZT. Im Feld (Blatt-/Bodenfarben
+    überlappen, Mischpixel) beginnt das ab ~50 % echter Bedeckung; in dieser
+    Synthetik mit sauber getrennten Farben erst ab ~75 % (bei 70 % noch exakt).
+    Schlägt dieser Test fehl, wurde die Methode geändert: Docstring prüfen."""
+    img, plant = make_sunny_cast_scene(w=400, h=500, leaf_frac=0.7, shadow=False)
+    assert abs(analysis._coverage_percent(seg(img, "soilref")) - (plant > 0).mean() * 100) < 2.0
+    img, plant = make_sunny_cast_scene(w=400, h=500, leaf_frac=0.8, shadow=False)
+    truth = (plant > 0).mean() * 100
+    cov = analysis._coverage_percent(seg(img, "soilref"))
+    assert cov < truth - 15, (cov, truth)
+    # ... und das wird gemeldet (die 80-%-Warnung kann es mit soilref nie)
+    assert analysis._coverage_warning(cov) is None
+    assert analysis._soilref_dense(img, cov)
+
+
+@pytest.mark.parametrize("leaf_frac", [0.5, 0.8, 0.9, 0.97])
+def test_soilref_dichter_bestand_warnung(leaf_frac):
+    """Dichter Bestand: soilref unterschätzt (bis zum Einbruch auf ~0 % bei
+    fast geschlossenem, einheitlichem Bestand) — dense_warning muss greifen,
+    auch wenn die gemessene Bedeckung harmlos aussieht."""
+    img, _ = make_sunny_cast_scene(w=400, h=500, leaf_frac=leaf_frac, shadow=False)
+    cov = analysis._coverage_percent(seg(img, "soilref"))
+    assert analysis._soilref_dense(img, cov), cov
+    flat = np.full((200, 200, 3), (40, 150, 45), np.uint8)     # Vollbewuchs: soilref 0 %
+    assert analysis._coverage_percent(seg(flat, "soilref")) == 0.0
+    assert analysis._soilref_dense(flat, 0.0)
+
+
+@pytest.mark.parametrize("leaf_frac", [0.0, 0.12, 0.3])
+def test_soilref_dichter_bestand_kein_fehlalarm(leaf_frac):
+    img, _ = make_sunny_cast_scene(leaf_frac=leaf_frac)
+    cov = analysis._coverage_percent(seg(img, "soilref"))
+    assert not analysis._soilref_dense(img, cov), cov
+
+
+def test_exg_zaehlt_gelbstichigen_boden_nicht_mehr_vollflaechig():
+    """Regression Feldversuch v1.8: Der alte Vollbewuchs-Rückfall zählte bei
+    gelbgrünem Sonnenstich (Boden ExG > EXG_MIN) das GANZE Bild als Pflanze."""
+    img, plant = make_sunny_cast_scene()
+    assert (_exg_values(img) > analysis.EXG_MIN).mean() >= 0.85  # hätte früher gegriffen
+    cov = analysis._coverage_percent(seg(img, "exg"))
+    assert cov < 30.0, f"ExG zählt Boden als Pflanze: {cov} %"
+
+
+def test_coverage_warning_schwellen():
+    assert analysis._coverage_warning(0.0) == "low"
+    assert analysis._coverage_warning(2.99) == "low"
+    assert analysis._coverage_warning(3.0) is None
+    assert analysis._coverage_warning(80.0) is None
+    assert analysis._coverage_warning(80.01) == "high"
+
+
+def test_analyze_image_standard_soilref_und_warnungen(tmp_path):
+    img, plant = make_sunny_cast_scene()
+    src = str(tmp_path / "sonne.png")            # verlustfrei: exakte Sollwerte
+    cv2.imwrite(src, img)
+    std = json.loads(analysis.analyze_image(src, str(tmp_path / "a"), "before", 0))
+    expl = json.loads(analysis.analyze_image(src, str(tmp_path / "b"), "before", 0,
+                                             method="soilref"))
+    assert std["coverage_bw_percent"] == expl["coverage_bw_percent"]   # Standard = soilref
+    assert abs(std["coverage_bw_percent"] - (plant > 0).mean() * 100) < 2.0
+    assert "coverage_warning" not in std        # plausibel -> Schlüssel fehlt (kein null)
+    assert "frame_kind" not in std and "frame_found" not in std
+
+    soil, _ = make_sunny_cast_scene(leaf_frac=0)
+    p_soil = str(tmp_path / "boden.png")
+    cv2.imwrite(p_soil, soil)
+    low = json.loads(analysis.analyze_image(p_soil, str(tmp_path / "c"), "after", 0))
+    assert low["coverage_warning"] == "low"
+
+    green = np.full((300, 300, 3), (40, 150, 45), np.uint8)
+    p_green = str(tmp_path / "gruen.png")
+    cv2.imwrite(p_green, green)
+    high = json.loads(analysis.analyze_image(p_green, str(tmp_path / "d"), "after", 1,
+                                             method="hsv"))
+    assert high["coverage_warning"] == "high"
+    assert "dense_warning" not in high            # nur für soilref
+    # Standard soilref: Vollbewuchs bricht auf 0 % ein -> "low" UND dense_warning
+    dense = json.loads(analysis.analyze_image(p_green, str(tmp_path / "e"), "after", 2))
+    assert dense["coverage_bw_percent"] == 0.0
+    assert dense["coverage_warning"] == "low"
+    assert dense["dense_warning"] is True
+    assert "dense_warning" not in std and "dense_warning" not in low
+
+
+def test_analyze_image_tags(tmp_path):
+    img, _, _ = make_field()
+    src = str(tmp_path / "feld.png")
+    cv2.imwrite(src, img)
+    for i, tag in enumerate(("before", "after", "control_before", "control_after")):
+        item = json.loads(analysis.analyze_image(src, str(tmp_path / "o"), tag, i))
+        assert item["tag"] == tag
+    with pytest.raises(ValueError):
+        analysis.analyze_image(src, str(tmp_path / "o"), "kontrolle", 0)
+
+
+def _citem(tag, index, bw, warn=None):
+    it = _item(tag, index, bw, bw, 100)
+    if warn:
+        it["coverage_warning"] = warn
+    return it
+
+
+def test_kontrollbezogener_csc(tmp_path):
+    items = [_citem("before", 0, 19.0), _citem("before", 1, 21.0),
+             _citem("after", 0, 18.0),
+             _citem("control_before", 0, 20.0), _citem("control_before", 1, 20.0),
+             _citem("control_after", 0, 18.8)]
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    # Kontrollbilder NICHT in den behandelten Gruppen
+    assert s["count_before"] == 2 and s["count_after"] == 1
+    assert s["avg_before"]["bw"] == 20.0 and s["avg_after"]["bw"] == 18.0
+    assert s["count_control_before"] == 2 and s["count_control_after"] == 1
+    assert s["avg_control_before"]["bw"] == 20.0
+    assert s["avg_control_after"]["bw"] == 18.8
+    assert s["csc"] == 10.0                                   # (20-18)/20
+    assert s["control_change_percent"] == -6.0                # 18.8/20 - 1
+    # (1 - (18/20) / (18.8/20)) * 100 = 4.2553...
+    assert s["csc_control_corrected"] == pytest.approx(4.26, abs=0.005)
+    assert s["delta"]["bw"] == -2.0
+    assert s["coverage_warning_count"] == 0
+    assert_no_none(s)
+
+
+def test_kontrolle_licht_effekt_feldversuch(tmp_path):
+    """Feldversuch: Die unbehandelte Fläche zeigte allein durch den Lichtwechsel
+    einen Schein-CSC von ~10 %. Ändert sich die behandelte Fläche GENAUSO, ist
+    der kontrollbezogene CSC 0."""
+    items = [_citem("before", 0, 30.0), _citem("after", 0, 27.0),
+             _citem("control_before", 0, 25.0), _citem("control_after", 0, 22.5)]
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    assert s["csc"] == 10.0
+    assert s["control_change_percent"] == -10.0
+    assert s["csc_control_corrected"] == pytest.approx(0.0, abs=1e-9)
+
+
+@pytest.mark.parametrize("ctrl,expect_change", [
+    ([], None),                                                    # keine Kontrolle
+    ([("control_before", 20.0)], None),                            # nur vorher
+    ([("control_after", 18.0)], None),                             # nur nachher
+    ([("control_before", 0.0), ("control_after", 5.0)], None),     # Kontrolle vorher 0
+    ([("control_before", 20.0), ("control_after", 0.0)], -100.0),  # Kontrolle nachher 0
+])
+def test_kontrolle_nicht_berechenbar_schluessel_fehlen(tmp_path, ctrl, expect_change):
+    items = [_citem("before", 0, 20.0), _citem("after", 0, 18.0)]
+    items += [_citem(tag, i, v) for i, (tag, v) in enumerate(ctrl)]
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    assert "csc_control_corrected" not in s
+    if expect_change is None:
+        assert "control_change_percent" not in s
+    else:
+        assert s["control_change_percent"] == expect_change
+    assert s["csc"] == 10.0
+    assert isinstance(s["count_control_before"], int)
+    assert isinstance(s["count_control_after"], int)
+    assert_no_none(s)
+
+
+def test_kontrolle_vorher_basis_null_kein_csc(tmp_path):
+    items = [_citem("before", 0, 0.0), _citem("after", 0, 1.0),
+             _citem("control_before", 0, 20.0), _citem("control_after", 0, 18.0)]
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    assert "csc" not in s and "csc_control_corrected" not in s
+    assert s["control_change_percent"] == -10.0
+    # Grund ist der fehlende rohe CSC, NICHT die Kontrollfläche
+    assert s["control_unavailable_reason"] == "no_csc"
+
+
+@pytest.mark.parametrize("ctrl,reason", [
+    ([("control_before", 20.0)], None),                            # nur eine Gruppe
+    ([("control_before", 0.0), ("control_after", 5.0)], "no_cover"),
+    ([("control_before", 20.0), ("control_after", 0.0)], "no_cover"),
+    ([("control_before", 20.0), ("control_after", 18.0)], None),   # Korrektur da
+])
+def test_kontrolle_grund_ohne_korrektur(tmp_path, ctrl, reason):
+    items = [_citem("before", 0, 20.0), _citem("after", 0, 18.0)]
+    items += [_citem(tag, i, v) for i, (tag, v) in enumerate(ctrl)]
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    if reason is None:
+        assert "control_unavailable_reason" not in s
+    else:
+        assert s["control_unavailable_reason"] == reason
+        assert "csc_control_corrected" not in s
+
+
+def test_kontrolle_modus_c_ohne_reihen_auf_kontrolle(tmp_path):
+    """Modus C: Reihen nur auf der behandelten Fläche erkannt (CSC-Basis
+    'crop'), auf den Kontrollbildern nicht -> deren relative Änderung wird auf
+    'filtered' gemessen statt die Korrektur stillschweigend wegzulassen."""
+    items = [_item("before", 0, 40.0, 30.0, 100, rows=True, crop=25.0, weed=5.0),
+             _item("after", 0, 38.0, 27.0, 100, rows=True, crop=22.0, weed=5.0),
+             _item("control_before", 0, 30.0, 30.0, 100, rows=False),
+             _item("control_after", 0, 29.0, 27.0, 100, rows=False)]
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    assert s["csc"] == 12.0                                   # (25-22)/25, Basis crop
+    assert s["control_basis"] == "filtered"
+    assert s["control_change_percent"] == pytest.approx(-10.0)   # 27/30 - 1
+    # (1 - (22/25) / (27/30)) * 100 = 2.22
+    assert s["csc_control_corrected"] == pytest.approx(2.22, abs=0.005)
+    assert "control_unavailable_reason" not in s
+    assert_no_none(s)
+    # Mit Reihen auf der Kontrolle bleibt die Basis 'crop'
+    items[2] = _item("control_before", 0, 30.0, 30.0, 100, rows=True, crop=20.0, weed=5.0)
+    items[3] = _item("control_after", 0, 29.0, 27.0, 100, rows=True, crop=19.0, weed=5.0)
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    assert s["control_basis"] == "crop"
+    assert s["control_change_percent"] == pytest.approx(-5.0)
+
+
+def test_kontrolle_gleiche_basis_wie_csc(tmp_path):
+    """Modus B: CSC-Basis 'weedfiltered' — die Kontrolle muss dieselbe Basis
+    nutzen (nicht SW)."""
+    def it(tag, bw, wf):
+        x = _item(tag, 0, bw, bw, 100)
+        x["coverage_weedfiltered_percent"] = wf
+        return x
+    items = [it("before", 30.0, 20.0), it("after", 30.0, 16.0),
+             it("control_before", 30.0, 10.0), it("control_after", 30.0, 9.0)]
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    assert s["csc"] == 20.0
+    assert s["control_change_percent"] == -10.0
+    # (1 - 0.8/0.9) * 100 = 11.11
+    assert s["csc_control_corrected"] == pytest.approx(11.11, abs=0.005)
+
+
+def test_coverage_warning_count_alle_gruppen(tmp_path):
+    items = [_citem("before", 0, 1.0, "low"), _citem("before", 1, 20.0),
+             _citem("after", 0, 85.0, "high"),
+             _citem("control_before", 0, 2.0, "low"), _citem("control_after", 0, 20.0)]
+    items[1]["dense_warning"] = True
+    items[4]["dense_warning"] = True
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    assert s["coverage_warning_count"] == 3
+    assert s["dense_warning_count"] == 2
+    s0 = json.loads(analysis.build_group_summary("[]", str(tmp_path)))
+    assert s0["coverage_warning_count"] == 0
+    assert s0["dense_warning_count"] == 0
+    assert s0["count_control_before"] == 0 and s0["count_control_after"] == 0
+    assert s0["avg_control_before"] == {} and s0["avg_control_after"] == {}
+    assert "csc" not in s0
+    assert_no_none(s0)
+
+
+def test_overview_kontrolle_nur_textzeile(tmp_path):
+    """Kontrollbilder erscheinen im Übersichtsbild NICHT als Kacheln, nur als
+    eine Textzeile (gleiche Breite, genau eine Leiste höher)."""
+    import os
+    base = _write_items_with_originals(tmp_path, [(800, 600)] * 2, [(800, 600)] * 2)
+    ctrl = []
+    for tag, v in (("control_before", 10.0), ("control_after", 9.0)):
+        p = str(tmp_path / f"{tag}.jpg")
+        cv2.imwrite(p, np.full((600, 800, 3), (60, 95, 130), np.uint8))
+        it = _citem(tag, 0, v)
+        it["file"] = f"{tag}.jpg"
+        it["outputs"] = {"original": p}
+        ctrl.append(it)
+    os.makedirs(str(tmp_path / "o0"))
+    os.makedirs(str(tmp_path / "o1"))
+    s0 = json.loads(analysis.build_group_summary(json.dumps(base), str(tmp_path / "o0")))
+    s1 = json.loads(analysis.build_group_summary(json.dumps(base + ctrl), str(tmp_path / "o1")))
+    ov0 = cv2.imread(s0["combo"]["overview"])
+    ov1 = cv2.imread(s1["combo"]["overview"])
+    assert ov1.shape[1] == ov0.shape[1]
+    assert ov1.shape[0] == ov0.shape[0] + 40
+    assert "csc_control_corrected" in s1
+
+
+def test_gruppen_json_v18_ohne_nulls(tmp_path):
+    items = [_citem("before", 0, 8.0), _citem("after", 0, 1.0, "low"),
+             _citem("control_before", 0, 8.0), _citem("control_after", 0, 7.0)]
+    items[0]["frame_found"] = True
+    items[0]["frame_kind"] = "u_frame"
+    items[1]["frame_found"] = False
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    assert_no_none(s)
+    assert s["frame_missing_count"] == 1
+    for k in ("csc", "csc_control_corrected", "control_change_percent"):
+        assert isinstance(s[k], float), k
+
+
+# --- grauer U-Zählrahmen (frame_u) ------------------------------------------
+def make_u_frame_scene(w=900, h=1600, side=480, bar=10, seed=11, stick=True):
+    """Hochformat-Feldfoto mit grauem Metall-U-Rahmen (3 Stäbe, unten offen)
+    und blauem Stiel an der oberen linken Ecke auf texturiertem Boden; Blätter
+    liegen auch über den Stäben. Die Soll-Ecken liegen auf den Stab-Mittel-
+    linien. Rückgabe: (bild, soll_ecken TL,TR,BR,BL, pflanzenmaske)."""
+    rng = np.random.default_rng(seed)
+    img = np.full((h, w, 3), (60, 95, 130), np.float32)
+    for _ in range(500):                       # Schollen
+        f = float(rng.uniform(0.75, 1.2))
+        cv2.circle(img, (int(rng.integers(0, w)), int(rng.integers(0, h))),
+                   int(rng.integers(6, 25)), (60 * f, 95 * f, 130 * f), -1)
+    img += rng.normal(0, 7, (h, w, 3))
+    plant = np.zeros((h, w), np.uint8)
+    for _ in range(140):
+        cv2.ellipse(plant, (int(rng.integers(0, w)), int(rng.integers(0, h))),
+                    (int(rng.integers(8, 30)), int(rng.integers(4, 12))),
+                    float(rng.uniform(0, 180)), 0, 360, 255, -1)
+    x0, y0 = (w - side) // 2, (h - side) // 2
+    hb = bar // 2
+    frame = np.zeros((h, w), np.uint8)
+    cv2.rectangle(frame, (x0 - hb, y0 - hb), (x0 + side + hb, y0 + hb), 255, -1)
+    cv2.rectangle(frame, (x0 - hb, y0 - hb), (x0 + hb, y0 + side), 255, -1)
+    cv2.rectangle(frame, (x0 + side - hb, y0 - hb), (x0 + side + hb, y0 + side), 255, -1)
+    grey = np.clip(rng.normal(150, 10, (h, w)), 0, 255)
+    sel = frame > 0
+    for ch in range(3):
+        img[..., ch][sel] = grey[sel]
+    if stick:
+        cv2.line(img, (x0, y0), (x0 - 150, y0 - 160), (200, 100, 30), 14)
+    green = np.zeros_like(img)
+    green[:] = (45, 150, 50)
+    img = np.where(plant[..., None] > 0, green + rng.normal(0, 6, img.shape), img)
+    corners = np.array([[x0, y0], [x0 + side, y0], [x0 + side, y0 + side], [x0, y0 + side]],
+                       np.float32)
+    return np.clip(img, 0, 255).astype(np.uint8), corners, plant
+
+
+@pytest.fixture(scope="module")
+def u_scene():
+    return make_u_frame_scene()
+
+
+def test_u_rahmen_synthetisch_erkannt(u_scene):
+    img, corners, _ = u_scene
+    r = frame_u.detect_frame(img)
+    assert r["ok"], r["reason"]
+    assert r["corners"].shape == (4, 2)
+    side = float(np.linalg.norm(corners[1] - corners[0]))
+    assert np.abs(r["corners"] - corners).max() < 0.035 * side, r["corners"]
+
+
+def test_u_rahmen_querformat_erkannt():
+    """Größenbezug ist die KURZE Bildseite: auch Querformat-Fotos (um 90°
+    gedreht, offene Seite seitlich) werden gefunden."""
+    img, corners, _ = make_u_frame_scene(seed=3)
+    rot = np.ascontiguousarray(np.rot90(img))     # gegen den Uhrzeigersinn
+    r = frame_u.detect_frame(rot)
+    assert r["ok"], r["reason"]
+    w = img.shape[1]
+    exp = np.stack([corners[:, 1], (w - 1) - corners[:, 0]], axis=1)
+    got = r["corners"]
+    side = float(np.linalg.norm(corners[1] - corners[0]))
+    # Ecken-Reihenfolge ist TL,TR,BR,BL im gedrehten Bild -> als Menge vergleichen
+    d = np.abs(got[:, None, :] - exp[None, :, :]).max(axis=2).min(axis=1)
+    assert d.max() < 0.035 * side, got
+
+
+@pytest.mark.parametrize("make", [
+    lambda: make_field()[0],
+    lambda: make_chaos_image(3),
+    lambda: make_sunny_cast_scene()[0],
+    lambda: make_frame_scene()[0],                 # roter Rahmen ist kein U-Rahmen
+])
+def test_u_rahmen_kein_fehlalarm(make):
+    r = frame_u.detect_frame(make())
+    assert not r["ok"], r["reason"]
+
+
+def test_u_rahmen_fruehabbruch_ohne_rahmen():
+    """Fotos ohne Rahmen: ohne blauen Stiel und ohne kräftigen Stab bricht der
+    Detektor früh ab (teure Liniensuche entfällt)."""
+    soil, _ = make_sunny_cast_scene(leaf_frac=0.05, shadow=False)
+    r = frame_u.detect_frame(soil)
+    assert not r["ok"]
+    assert r.get("early_exit") is True, r["reason"]
+    assert r["corners"] is None
+    tiny = frame_u.detect_frame(np.zeros((10, 10, 3), np.uint8))
+    assert not tiny["ok"]
+    assert frame_u.crop_to_frame(soil)[0] is None
+
+
+def test_analyze_image_u_rahmen(tmp_path, u_scene):
+    import os
+    img, corners, plant = u_scene
+    src = str(tmp_path / "u_rahmen.png")
+    cv2.imwrite(src, img)
+    item = json.loads(analysis.analyze_image(src, str(tmp_path / "o"), "before", 0,
+                                             frame_crop=True))
+    assert item["frame_found"] is True
+    assert item["frame_kind"] == "u_frame"
+    assert os.path.isfile(item["outputs"]["frame_check"])
+    # Soll: Pflanzenanteil im Inneren ohne Sicherheitsrand (Stäbe ausgeschlossen)
+    x0, y0 = int(corners[0][0]), int(corners[0][1])
+    side = int(corners[1][0] - corners[0][0])
+    m = int(side * analysis.U_FRAME_MARGIN)
+    soll = (plant[y0 + m:y0 + side - m, x0 + m:x0 + side - m] > 0).mean() * 100
+    assert abs(item["coverage_bw_percent"] - soll) < 2.0, (item["coverage_bw_percent"], soll)
+    orig = cv2.imread(item["outputs"]["original"])
+    assert abs(orig.shape[0] - (side - 2 * m)) <= 0.04 * side   # Ausschnitt ~ Rahmeninneres
+    assert_no_none(item)
+
+
+def test_analyze_image_ohne_rahmen_kein_frame_kind(tmp_path):
+    img, _, _ = make_field()
+    src = str(tmp_path / "feld.png")
+    cv2.imwrite(src, img)
+    item = json.loads(analysis.analyze_image(src, str(tmp_path / "o"), "after", 0,
+                                             frame_crop=True))
+    assert item["frame_found"] is False
+    assert "frame_kind" not in item
+
+
+# --- U-Rahmen: Bild-Rand, Fehlalarme nach dem Frühabbruch, Arbeitsbudget ----
+def make_grey_bars_scene(bars, blob=None, w=900, h=1600, bar=10, seed=21):
+    """Boden mit Blättern wie make_u_frame_scene, aber frei platzierte graue
+    Stäbe (Liste von ((x1, y1), (x2, y2))) und optional ein blauer Fleck
+    (x, y, radius) — Nicht-Rahmen, die den Frühabbruch PASSIEREN."""
+    rng = np.random.default_rng(seed)
+    img = np.full((h, w, 3), (60, 95, 130), np.float32)
+    for _ in range(500):
+        f = float(rng.uniform(0.75, 1.2))
+        cv2.circle(img, (int(rng.integers(0, w)), int(rng.integers(0, h))),
+                   int(rng.integers(6, 25)), (60 * f, 95 * f, 130 * f), -1)
+    img += rng.normal(0, 7, (h, w, 3))
+    m = np.zeros((h, w), np.uint8)
+    for p1, p2 in bars:
+        cv2.line(m, tuple(p1), tuple(p2), 255, bar)
+    grey = np.clip(rng.normal(150, 10, (h, w)), 0, 255)
+    for ch in range(3):
+        img[..., ch][m > 0] = grey[m > 0]
+    if blob is not None:
+        cv2.circle(img, (blob[0], blob[1]), blob[2], (200, 100, 30), -1)
+    plant = np.zeros((h, w), np.uint8)
+    for _ in range(140):
+        cv2.ellipse(plant, (int(rng.integers(0, w)), int(rng.integers(0, h))),
+                    (int(rng.integers(8, 30)), int(rng.integers(4, 12))),
+                    float(rng.uniform(0, 180)), 0, 360, 255, -1)
+    img = np.where(plant[..., None] > 0, (45, 150, 50) + rng.normal(0, 6, img.shape), img)
+    return np.clip(img, 0, 255).astype(np.uint8)
+
+
+def test_u_rahmen_teilweise_ausserhalb_abgelehnt(u_scene):
+    """Offene Seite aus dem Foto geschnitten: detect_frame findet den Rahmen
+    (inside=False), aber crop_to_frame darf ihn NICHT nehmen — die schwarze
+    Füllung von warpPerspective würde als Boden mitgezählt (~23 % des
+    Ausschnitts)."""
+    img, corners, _ = u_scene
+    cut = np.ascontiguousarray(img[:int(corners[0][1]) + 360])
+    roi, r = frame_u.crop_to_frame(cut, analysis.U_FRAME_MARGIN)
+    assert roi is None
+    assert not r["ok"]
+    assert "outside" in r["reason"], r["reason"]
+    assert r["outside_fraction"] > 0.1
+
+
+def test_u_rahmen_ausschnitt_ohne_schwarze_fuellung(u_scene):
+    img, _, _ = u_scene
+    roi, r = frame_u.crop_to_frame(img, analysis.U_FRAME_MARGIN)
+    assert roi is not None, r["reason"]
+    assert np.all(roi == 0, axis=2).mean() == 0.0
+
+
+@pytest.mark.parametrize("bars,blob", [
+    ([((250, 500), (250, 1000)), ((700, 500), (700, 1000))], None),    # zwei parallele Stäbe
+    ([((250, 500), (750, 500)), ((250, 500), (250, 1000))], None),     # L aus zwei Stäben
+    ([((200, 800), (700, 800))], (450, 400, 25)),                      # ein Stab + blauer Fleck
+])
+def test_u_rahmen_kein_fehlalarm_nach_fruehabbruch(bars, blob):
+    """Nicht-Rahmen, die den Frühabbruch passieren: die volle Hypothesen-
+    Bewertung muss sie ablehnen (sonst wäre sie ungetestet)."""
+    r = frame_u.detect_frame(make_grey_bars_scene(bars, blob))
+    assert not r.get("early_exit"), r["reason"]
+    assert not r["ok"], r["reason"]
+
+
+def test_u_rahmen_arbeitsbudget(monkeypatch, u_scene):
+    """Die Hypothesen-Suche ist gedeckelt (MAX_BUILDS / TIME_BUDGET_S): ein
+    rahmenloses Foto mit stab-artigen Strukturen darf auf dem Handy nicht
+    Dutzende Sekunden kosten."""
+    calls = []
+    orig = frame_u._build_u
+
+    def counting(*a, **k):
+        calls.append(1)
+        return orig(*a, **k)
+    monkeypatch.setattr(frame_u, "_build_u", counting)
+    assert frame_u.MAX_BUILDS <= 200 and frame_u.TIME_BUDGET_S is not None
+    # Aufbau-Deckel greift exakt und liefert trotzdem ein gültiges Ergebnis
+    monkeypatch.setattr(frame_u, "MAX_BUILDS", 3)
+    r = frame_u.detect_frame(u_scene[0])
+    assert len(calls) == 3 and r["truncated"] is True
+    assert isinstance(r["ok"], bool) and r["reason"]
+    # Zeitbudget: bei abgelaufener Zeit sofort abbrechen, ohne Absturz
+    monkeypatch.setattr(frame_u, "TIME_BUDGET_S", 0.0)
+    calls.clear()
+    r = frame_u.detect_frame(u_scene[0])
+    assert len(calls) == 0 and r["truncated"] is True
+    assert not r["ok"] and "budget" in r["reason"], r["reason"]

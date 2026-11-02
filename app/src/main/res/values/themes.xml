@@ -25,6 +25,12 @@
 
         <!-- Component Styles -->
         <item name="materialButtonStyle">@style/Widget.SmartWeed.Button</item>
+
+        <!-- v1.8: Kein System-"Force Dark". Die Tag-Variante erbt von einem
+             HELLEN Material-Theme, obwohl alle Farben dunkel gestaltet sind;
+             ein erzwungener Dunkelmodus (Entwickleroption bzw. Hersteller-
+             Dunkelmodus "für alle Apps") würde die Farben sonst umrechnen. -->
+        <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
         <item name="textInputStyle">@style/Widget.SmartWeed.TextInputLayout</item>
 
         <!-- Text Appearance -->
@@ -36,6 +42,12 @@
     <style name="Widget.SmartWeed.Button" parent="Widget.MaterialComponents.Button">
         <item name="android:background">@drawable/bg_primary_button</item>
         <item name="android:backgroundTint">@null</item>
+        <!-- v1.8: app:backgroundTint ist das Attribut, das MaterialButton
+             wirklich auswertet. Ohne @null färbt er den eigenen Hintergrund
+             (z. B. bg_secondary_button) flächig in colorPrimary (#00E676) —
+             grüne Schrift (traktor_green) war darauf unsichtbar: "grüner
+             Anmelde-Button ohne Text" in den Einstellungen. -->
+        <item name="backgroundTint">@null</item>
         <item name="android:textColor">@color/white</item>
         <item name="android:textSize">16sp</item>
         <item name="android:textStyle">bold</item>

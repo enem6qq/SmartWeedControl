@@ -104,12 +104,13 @@
         <Button
             android:id="@+id/LoginButton"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
+            android:layout_height="wrap_content"
+            android:minHeight="56dp"
             android:layout_marginTop="28dp"
             android:text="@string/btn_login"
             android:textSize="16sp"
             android:textStyle="bold"
-            android:textColor="@color/text_on_primary"
+            android:textColor="@color/text_on_primary_button"
             android:background="@drawable/bg_primary_button"
             android:foreground="@drawable/ripple_light"
             app:backgroundTint="@null"/>

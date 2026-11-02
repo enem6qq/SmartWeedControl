@@ -191,4 +191,74 @@ public class CscCalculatorTest {
         assertEquals(CscCalculator.Recommendation.NOT_AVAILABLE,
                 CscCalculator.recommendForCoverage(20.0, -1.0, 8.0, 12.0));
     }
+
+    // ---------- computeControlCorrected() (v1.8, Kontrollfläche) ----------
+
+    @Test
+    public void controlCorrected_unchangedControl_equalsRawCsc() {
+        // Kontrolle unverändert (Verhältnis 1) → identisch mit compute()
+        assertEquals(CscCalculator.compute(20.0, 18.0),
+                CscCalculator.computeControlCorrected(20.0, 18.0, 30.0, 30.0), EPS);
+        assertEquals(10.0, CscCalculator.computeControlCorrected(20.0, 18.0, 30.0, 30.0), EPS);
+    }
+
+    @Test
+    public void controlCorrected_removesLightEffect() {
+        // Feldversuch-Muster: Kontrolle verliert allein durch Lichtwechsel 10 %
+        // (40 → 36), behandelte Fläche 20 → 16.2 (roh 19 %).
+        // (1 − 0.81 / 0.9) × 100 = 10 %
+        assertEquals(19.0, CscCalculator.compute(20.0, 16.2), EPS);
+        assertEquals(10.0, CscCalculator.computeControlCorrected(20.0, 16.2, 40.0, 36.0), EPS);
+    }
+
+    @Test
+    public void controlCorrected_controlGrows_increasesCsc() {
+        // Kontrolle +10 % (z. B. Blätter aufgerichtet), behandelt unverändert:
+        // relativ zur Kontrolle wurde trotzdem Bestand bedeckt
+        assertEquals((1.0 - 1.0 / 1.1) * 100.0,
+                CscCalculator.computeControlCorrected(20.0, 20.0, 10.0, 11.0), EPS);
+    }
+
+    @Test
+    public void controlCorrected_canBeNegative() {
+        // Behandelt weniger Rückgang als die Kontrolle → negativer Wert
+        // (Empfehlung CHECK_IMAGES), keine stille Kappung
+        Double v = CscCalculator.computeControlCorrected(20.0, 19.0, 20.0, 16.0);
+        assertEquals((1.0 - 0.95 / 0.8) * 100.0, v, EPS);
+        assertEquals(CscCalculator.Recommendation.CHECK_IMAGES, CscCalculator.recommend(v));
+    }
+
+    @Test
+    public void controlCorrected_afterZero_isHundred() {
+        assertEquals(100.0, CscCalculator.computeControlCorrected(20.0, 0.0, 30.0, 27.0), EPS);
+    }
+
+    @Test
+    public void controlCorrected_nullInputs_returnNull() {
+        assertNull(CscCalculator.computeControlCorrected(null, 18.0, 30.0, 30.0));
+        assertNull(CscCalculator.computeControlCorrected(20.0, null, 30.0, 30.0));
+        assertNull(CscCalculator.computeControlCorrected(20.0, 18.0, null, 30.0));
+        assertNull(CscCalculator.computeControlCorrected(20.0, 18.0, 30.0, null));
+    }
+
+    @Test
+    public void controlCorrected_nanOrInfinite_returnNull() {
+        assertNull(CscCalculator.computeControlCorrected(Double.NaN, 18.0, 30.0, 30.0));
+        assertNull(CscCalculator.computeControlCorrected(20.0, Double.NaN, 30.0, 30.0));
+        assertNull(CscCalculator.computeControlCorrected(20.0, 18.0, Double.NaN, 30.0));
+        assertNull(CscCalculator.computeControlCorrected(20.0, 18.0, 30.0, Double.NaN));
+        assertNull(CscCalculator.computeControlCorrected(Double.POSITIVE_INFINITY, 18.0, 30.0, 30.0));
+        assertNull(CscCalculator.computeControlCorrected(20.0, 18.0, 30.0, Double.POSITIVE_INFINITY));
+    }
+
+    @Test
+    public void controlCorrected_invalidRanges_returnNull() {
+        assertNull(CscCalculator.computeControlCorrected(0.0, 18.0, 30.0, 30.0));   // vorher = 0
+        assertNull(CscCalculator.computeControlCorrected(-1.0, 18.0, 30.0, 30.0));  // vorher < 0
+        assertNull(CscCalculator.computeControlCorrected(20.0, -0.5, 30.0, 30.0));  // nachher < 0
+        assertNull(CscCalculator.computeControlCorrected(20.0, 18.0, 0.0, 30.0));   // Kontrolle vorher = 0
+        assertNull(CscCalculator.computeControlCorrected(20.0, 18.0, -3.0, 30.0));  // Kontrolle vorher < 0
+        assertNull(CscCalculator.computeControlCorrected(20.0, 18.0, 30.0, 0.0));   // Kontrolle nachher = 0
+        assertNull(CscCalculator.computeControlCorrected(20.0, 18.0, 30.0, -1.0));  // Kontrolle nachher < 0
+    }
 }

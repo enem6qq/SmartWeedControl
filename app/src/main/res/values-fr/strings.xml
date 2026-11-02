@@ -163,7 +163,7 @@
     <string name="analysis_mode_c">C : Détection des rangs</string>
     <string name="analysis_mode_c_desc">Détection des rangs : le vert sur les rangs de semis compte comme culture, le vert entre les rangs comme adventice. Le CSC est calculé uniquement sur la culture, avec en plus une efficacité contre les adventices. Nécessite des photos prises à peu près à la verticale avec des rangs visibles.</string>
     <string name="settings_method">Segmentation</string>
-    <string name="settings_method_exg">ExG + Otsu – seuil automatique, robuste aux variations de lumière (recommandé)</string>
+    <string name="settings_method_exg">ExG + Otsu (ancien, peu fiable avec un soleil bas)</string>
     <string name="settings_method_hsv">Seuil de couleur HSV – plage de vert fixe (classique)</string>
     <string name="warning_light">Remarque : la luminosité diffère fortement entre les images avant et après – le résultat peut être biaisé.</string>
     <string name="warning_rows">Les rangs de semis n\'ont pas pu être détectés de manière fiable – l\'analyse a été effectuée sans séparation des rangs.</string>
@@ -194,7 +194,7 @@
     <!-- v1.7: cadre de comptage, ExGR, type de lumière -->
     <string name="settings_method_exgr">ExGR (Excess Green − Excess Red) – seuil fixe, sans dérive liée à la lumière (Meyer &amp; Neto 2008)</string>
     <string name="settings_frame_crop">Analyser uniquement le cadre de comptage</string>
-    <string name="settings_frame_crop_hint">Si un cadre de comptage rouge est visible, seul son intérieur est analysé. Sans cadre détectable, l\'image entière est utilisée et une remarque s\'affiche. Astuce : écartez les feuilles du cadre.</string>
+    <string name="settings_frame_crop_hint">Si un cadre de comptage est visible (cadre en U gris de 50 × 50 cm avec un bâton bleu, ou cadre rouge), seul son intérieur est analysé. Sans cadre détectable, l\'image entière est utilisée et une remarque s\'affiche. Astuce : écartez les feuilles du cadre.</string>
     <string name="warning_light_mismatch">Remarque : le type de lumière diffère entre avant et après (soleil vs. ciel couvert) – cela peut décaler le CSC. Prenez si possible les photos avant et après sous la même lumière.</string>
     <plurals name="warning_frame_missing">
         <item quantity="one">Cadre de comptage non détecté sur %1$d image – l\'image entière y a été analysée.</item>
@@ -218,7 +218,7 @@
         <item quantity="other">%1$d images sélectionnées</item>
     </plurals>
     <string name="output_gallery_path">Enregistré dans la galerie : %1$s</string>
-    <string name="storage_info">Où sont mes images ? Les photos et résultats sont aussi enregistrés dans la galerie, un dossier par session :\nPictures/SmartWeed/&lt;date_heure&gt;/\n• vorher – photos avant\n• nachher – photos après\n• Analyse_&lt;heure&gt;_&lt;mode&gt; – vue d\'ensemble et images d\'évaluation, avec les sous-dossiers Vorher et Nachher contenant les images analysées</string>
+    <string name="storage_info">Où sont mes images ? Les photos et résultats sont aussi enregistrés dans la galerie, un dossier par session :\nPictures/SmartWeed/&lt;date_heure&gt;/\n• vorher – photos avant\n• nachher – photos après\n• Analyse_&lt;heure&gt;_&lt;mode&gt; – vue d\'ensemble et images d\'évaluation, avec les sous-dossiers Vorher et Nachher (et Kontrolle_Vorher / Kontrolle_Nachher si une zone témoin a été utilisée) contenant les images analysées</string>
     <string name="toast_import_unsupported_format">Format non pris en charge (p. ex. HEIC). Veuillez enregistrer l\'image en JPG ou PNG.</string>
 
     <!-- v1.7.2: Analyse beenden, Aufnahme umbenennen, Mehrfach-Import -->
@@ -240,5 +240,44 @@
         <item quantity="one">%1$d image importée dans %2$s</item>
         <item quantity="many">%1$d images importées dans %2$s</item>
         <item quantity="other">%1$d images importées dans %2$s</item>
+    </plurals>
+
+    <!-- v1.8: Segmentation référencée sol, zone témoin, cadre en U, plausibilité -->
+    <string name="settings_method_soilref">Référencée sol (recommandé) : mesure la couleur du sol dans l\'image et soustrait la dominante de couleur de la lumière – validée par soleil bas et ciel couvert (essai au champ 10/2026). Les peuplements denses (couverture de plus de ~50 %) sont sous-estimés – vérifier à l\'œil</string>
+    <string name="control_section_title">Zone témoin (facultatif)</string>
+    <string name="control_section_hint">Zone non traitée (non hersée), photographiée juste avant ET après le hersage sous la même lumière. L\'application s\'en sert pour retirer du CSC les effets de lumière et d\'heure de la journée. Sans images témoin, l\'analyse fonctionne comme avant.</string>
+    <string name="label_control_before">Témoin avant</string>
+    <string name="label_control_after">Témoin après</string>
+    <string name="btn_pick_control_before">Choisir témoin avant</string>
+    <string name="btn_pick_control_after">Choisir témoin après</string>
+    <string name="toast_control_incomplete">Zone témoin : veuillez choisir des images avant ET après – ou laisser les deux vides.</string>
+    <string name="csc_hero_title_control">CSC (rapporté au témoin)</string>
+    <string name="csc_raw_secondary">Sans référence au témoin (brut) : %1$s</string>
+    <string name="control_change_info">Zone témoin : la couverture a varié de %1$s (relatif) alors qu\'elle n\'a pas été hersée – surtout l\'effet de la lumière / de l\'heure (aussi rosée, vent, cadrage). Cette variation a été retirée du CSC.</string>
+    <string name="control_correction_unavailable">Zone témoin analysée, mais aucune correction possible (aucune végétation détectée sur le témoin) – le CSC ci-dessus est sans référence au témoin.</string>
+    <string name="control_correction_unavailable_no_csc">Zone témoin analysée, mais aucune correction possible : le CSC brut n\'est pas calculable (aucune couverture sur les images avant traitées).</string>
+    <string name="control_correction_unavailable_no_basis">Zone témoin analysée, mais aucune correction possible : les images témoin n\'ont pas de valeur pour la base du CSC – le CSC ci-dessus est sans référence au témoin.</string>
+    <string name="control_basis_fallback">Aucun rang détecté sur la zone témoin – sa variation a été mesurée sur la couverture végétale totale.</string>
+    <string name="label_coverage_dense">⚠ Peuplement dense – couverture probablement sous-estimée (limite de la méthode au-delà de ~50 %), vérifier à l\'œil</string>
+    <plurals name="warning_coverage_dense">
+        <item quantity="one">%1$d image avec un peuplement dense – la méthode référencée sol y sous-estime probablement la couverture (limite au-delà de ~50 %%), vérifier à l\'œil</item>
+        <item quantity="many">%1$d images avec un peuplement dense – la méthode référencée sol y sous-estime probablement la couverture (limite au-delà de ~50 %%), vérifier à l\'œil</item>
+        <item quantity="other">%1$d images avec un peuplement dense – la méthode référencée sol y sous-estime probablement la couverture (limite au-delà de ~50 %%), vérifier à l\'œil</item>
+    </plurals>
+    <string name="status_analysis_done_group_control">Analyse terminée (%1$d avant / %2$d après, témoin %3$d / %4$d).%5$s</string>
+    <plurals name="warning_coverage_implausible">
+        <item quantity="one">%1$d image avec une couverture peu plausible (moins de %2$s %% ou plus de %3$s %%) – veuillez vérifier les images</item>
+        <item quantity="many">%1$d images avec une couverture peu plausible (moins de %2$s %% ou plus de %3$s %%) – veuillez vérifier les images</item>
+        <item quantity="other">%1$d images avec une couverture peu plausible (moins de %2$s %% ou plus de %3$s %%) – veuillez vérifier les images</item>
+    </plurals>
+    <string name="label_coverage_low">⚠ Couverture inférieure à %1$s %% – vérifier l\'image</string>
+    <string name="label_coverage_high">⚠ Couverture supérieure à %1$s %% – vérifier l\'image</string>
+    <string name="label_frame_found_u">Cadre de comptage : cadre en U gris détecté</string>
+    <string name="label_frame_found_red">Cadre de comptage : cadre rouge détecté</string>
+    <string name="frame_info_summary">Cadre de comptage détecté : %1$d× cadre en U gris, %2$d× cadre rouge – seul l\'intérieur du cadre y a été analysé.</string>
+    <plurals name="warning_gallery_export_failed">
+        <item quantity="one">%1$d image n\'a pas pu être enregistrée dans la galerie – elle reste dans le stockage de l\'application.</item>
+        <item quantity="many">%1$d images n\'ont pas pu être enregistrées dans la galerie – elles restent dans le stockage de l\'application.</item>
+        <item quantity="other">%1$d images n\'ont pas pu être enregistrées dans la galerie – elles restent dans le stockage de l\'application.</item>
     </plurals>
 </resources>

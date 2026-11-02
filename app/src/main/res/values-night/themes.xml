@@ -25,6 +25,12 @@
         <!-- Component Styles -->
         <item name="materialButtonStyle">@style/Widget.SmartWeed.Button</item>
 
+        <!-- v1.8: Kein System-"Force Dark". Die Tag-Variante erbt von einem
+             HELLEN Material-Theme, obwohl alle Farben dunkel gestaltet sind;
+             ein erzwungener Dunkelmodus (Entwickleroption bzw. Hersteller-
+             Dunkelmodus "für alle Apps") würde die Farben sonst umrechnen. -->
+        <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
+
         <!-- Text Appearance -->
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>

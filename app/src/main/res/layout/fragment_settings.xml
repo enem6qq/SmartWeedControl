@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/bg_screen_gradient"
@@ -51,7 +52,8 @@
                 android:textColor="@color/traktor_green"
                 android:background="@drawable/bg_secondary_button"
                 android:foreground="@drawable/ripple_light"
-                android:stateListAnimator="@null"/>
+                android:stateListAnimator="@null"
+                app:backgroundTint="@null"/>
 
             <Button
                 android:id="@+id/btnAdminLogout"
@@ -64,6 +66,7 @@
                 android:background="@drawable/bg_secondary_button"
                 android:foreground="@drawable/ripple_light"
                 android:stateListAnimator="@null"
+                app:backgroundTint="@null"
                 android:visibility="gone"/>
         </LinearLayout>
 
@@ -90,6 +93,17 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
+
+                <!-- v1.8: neue Standardmethode, deshalb an erster Stelle -->
+                <RadioButton
+                    android:id="@+id/rbMethodSoilref"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_method_soilref"
+                    android:textSize="14sp"
+                    android:textColor="@color/text_primary"
+                    android:paddingStart="8dp"
+                    android:layout_marginBottom="8dp"/>
 
                 <RadioButton
                     android:id="@+id/rbMethodExg"
@@ -294,10 +308,11 @@
             android:layout_marginTop="20dp"
             android:text="@string/settings_save"
             android:textStyle="bold"
-            android:textColor="@color/text_on_primary"
+            android:textColor="@color/text_on_primary_button"
             android:background="@drawable/bg_primary_button"
             android:foreground="@drawable/ripple_light"
-            android:stateListAnimator="@null"/>
+            android:stateListAnimator="@null"
+            app:backgroundTint="@null"/>
 
         <Button
             android:id="@+id/buttonResetSettings"
@@ -309,7 +324,8 @@
             android:textColor="@color/traktor_green"
             android:background="@drawable/bg_secondary_button"
             android:foreground="@drawable/ripple_light"
-            android:stateListAnimator="@null"/>
+            android:stateListAnimator="@null"
+            app:backgroundTint="@null"/>
 
     </LinearLayout>
 </ScrollView>
