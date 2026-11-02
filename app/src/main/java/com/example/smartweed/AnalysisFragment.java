@@ -53,9 +53,36 @@ public class AnalysisFragment extends Fragment {
 
     private FragmentAnalysisBinding binding;
 
+    // Bildgruppen (Index in TAGS/GROUP_DIRS/GALLERY_PREFIX)
+    private static final int GROUP_BEFORE = 0;
+    private static final int GROUP_AFTER = 1;
+    /** v1.8: optionale, unbehandelte Kontrollfläche (gleiches Licht) */
+    private static final int GROUP_CONTROL_BEFORE = 2;
+    private static final int GROUP_CONTROL_AFTER = 3;
+    private static final int GROUP_COUNT = 4;
+
+    /** Tags für analyze_image/build_group_summary (müssen zu analysis.py passen) */
+    private static final String[] TAGS = {"before", "after", "control_before", "control_after"};
+    /** Unterordner im Analyse-Ordner (App-Speicher und Galerie) */
+    private static final String[] GROUP_DIRS = {
+            SessionStore.ANALYSIS_BEFORE_DIR, SessionStore.ANALYSIS_AFTER_DIR,
+            SessionStore.ANALYSIS_CONTROL_BEFORE_DIR, SessionStore.ANALYSIS_CONTROL_AFTER_DIR};
+    /** Präfix der Auswertungsbilder in der Galerie (Vorher_01_Auswertung.jpg …) */
+    private static final String[] GALLERY_PREFIX = {
+            "Vorher", "Nachher", "Kontrolle_Vorher", "Kontrolle_Nachher"};
+    private static final String[] STATE_KEYS = {
+            "beforeUris", "afterUris", "controlBeforeUris", "controlAfterUris"};
+    private static final String STATE_CONTROL_EXPANDED = "controlExpanded";
+
     // Mehrfach-Auswahl
     private final List<Uri> beforeUris = new ArrayList<>();
     private final List<Uri> afterUris  = new ArrayList<>();
+    private final List<Uri> controlBeforeUris = new ArrayList<>();
+    private final List<Uri> controlAfterUris  = new ArrayList<>();
+
+    /** Kontrollflächen-Bereich aufgeklappt? (Feld überlebt die View-Neuerstellung
+     *  beim Zurückkehren von der Ergebnisseite) */
+    private boolean controlExpanded = false;
 
     private ExecutorService bgExecutor;
     private String imageDirPath; // optional via Args
@@ -83,45 +110,62 @@ public class AnalysisFragment extends Fragment {
         }
     }
 
-    // === Multi-Picker ===
+    // === Multi-Picker (ein Launcher je Gruppe, gleicher Code-Pfad) ===
     private final ActivityResultLauncher<String[]> pickBeforeImages =
             registerForActivityResult(new OpenMultipleImagesInSmartWeedDir(),
-                    uris -> applyPickedUris(uris, true));
+                    uris -> applyPickedUris(uris, GROUP_BEFORE));
 
     private final ActivityResultLauncher<String[]> pickAfterImages =
             registerForActivityResult(new OpenMultipleImagesInSmartWeedDir(),
-                    uris -> applyPickedUris(uris, false));
+                    uris -> applyPickedUris(uris, GROUP_AFTER));
 
-    private void applyPickedUris(List<Uri> uris, boolean isBefore) {
+    private final ActivityResultLauncher<String[]> pickControlBeforeImages =
+            registerForActivityResult(new OpenMultipleImagesInSmartWeedDir(),
+                    uris -> applyPickedUris(uris, GROUP_CONTROL_BEFORE));
+
+    private final ActivityResultLauncher<String[]> pickControlAfterImages =
+            registerForActivityResult(new OpenMultipleImagesInSmartWeedDir(),
+                    uris -> applyPickedUris(uris, GROUP_CONTROL_AFTER));
+
+    private List<Uri> urisFor(int group) {
+        switch (group) {
+            case GROUP_AFTER:          return afterUris;
+            case GROUP_CONTROL_BEFORE: return controlBeforeUris;
+            case GROUP_CONTROL_AFTER:  return controlAfterUris;
+            default:                   return beforeUris;
+        }
+    }
+
+    private void applyPickedUris(List<Uri> uris, int group) {
         // Abbruch liefert eine LEERE Liste (nicht null) — die bestehende
         // Auswahl muss dann erhalten bleiben.
         if (uris == null || uris.isEmpty()) return;
         // Neue Bilder werden ANGEHÄNGT (Duplikate übersprungen): Einzelne
         // Bilder lassen sich über das ✕ auf der Kachel wieder entfernen, die
         // ganze Gruppe über "Alle entfernen".
-        List<Uri> target = isBefore ? beforeUris : afterUris;
+        List<Uri> target = urisFor(group);
         for (Uri u : uris) {
             if (target.contains(u)) continue;
             takePersistable(u);
             target.add(u);
         }
-        renderSelectedImages(isBefore);
+        renderSelectedImages(group);
     }
 
-    private void removeFromSelection(Uri uri, boolean isBefore) {
-        List<Uri> target = isBefore ? beforeUris : afterUris;
+    private void removeFromSelection(Uri uri, int group) {
+        List<Uri> target = urisFor(group);
         if (!target.remove(uri)) return;
         releaseUnusedPersistables(java.util.Collections.singletonList(uri));
-        renderSelectedImages(isBefore);
+        renderSelectedImages(group);
     }
 
-    private void clearSelection(boolean isBefore) {
-        List<Uri> target = isBefore ? beforeUris : afterUris;
+    private void clearSelection(int group) {
+        List<Uri> target = urisFor(group);
         if (target.isEmpty()) return;
         List<Uri> old = new ArrayList<>(target);
         target.clear();
         releaseUnusedPersistables(old);
-        renderSelectedImages(isBefore);
+        renderSelectedImages(group);
     }
 
     /** Gibt persistierte URI-Grants frei, die in keiner Auswahl mehr vorkommen —
@@ -133,7 +177,8 @@ public class AnalysisFragment extends Fragment {
     private void releaseUnusedPersistables(List<Uri> removed) {
         if (analysisVM != null && Boolean.TRUE.equals(analysisVM.running.getValue())) return;
         for (Uri u : removed) {
-            if (beforeUris.contains(u) || afterUris.contains(u)) continue;
+            if (beforeUris.contains(u) || afterUris.contains(u)
+                    || controlBeforeUris.contains(u) || controlAfterUris.contains(u)) continue;
             if (!"content".equals(u.getScheme())) continue;
             try {
                 requireContext().getContentResolver().releasePersistableUriPermission(
@@ -165,12 +210,13 @@ public class AnalysisFragment extends Fragment {
 
         // State wiederherstellen
         if (savedInstanceState != null) {
-            ArrayList<String> bList = savedInstanceState.getStringArrayList("beforeUris");
-            ArrayList<String> aList = savedInstanceState.getStringArrayList("afterUris");
-            beforeUris.clear();
-            afterUris.clear();
-            if (bList != null) for (String s : bList) beforeUris.add(Uri.parse(s));
-            if (aList != null) for (String s : aList) afterUris.add(Uri.parse(s));
+            for (int g = 0; g < GROUP_COUNT; g++) {
+                List<Uri> target = urisFor(g);
+                target.clear();
+                ArrayList<String> list = savedInstanceState.getStringArrayList(STATE_KEYS[g]);
+                if (list != null) for (String s : list) target.add(Uri.parse(s));
+            }
+            controlExpanded = savedInstanceState.getBoolean(STATE_CONTROL_EXPANDED, false);
         } else if (getArguments() != null && getArguments().getString("imageDir") != null
                 && beforeUris.isEmpty() && afterUris.isEmpty()) {
             // Session geöffnet: Bilder aus vorher/ und nachher/ direkt vorladen.
@@ -182,8 +228,15 @@ public class AnalysisFragment extends Fragment {
         }
 
         // Render initial
-        renderSelectedImages(true);
-        renderSelectedImages(false);
+        for (int g = 0; g < GROUP_COUNT; g++) renderSelectedImages(g);
+
+        // Kontrollfläche: eingeklappt, außer es sind schon Kontrollbilder gewählt
+        if (!controlBeforeUris.isEmpty() || !controlAfterUris.isEmpty()) controlExpanded = true;
+        applyControlExpanded();
+        binding.controlHeader.setOnClickListener(v -> {
+            controlExpanded = !controlExpanded;
+            applyControlExpanded();
+        });
 
         // Analyse-Modus: Beschreibung bei Wechsel aktualisieren
         binding.rgAnalysisMode.setOnCheckedChangeListener((group, checkedId) -> {
@@ -201,13 +254,28 @@ public class AnalysisFragment extends Fragment {
                 pickBeforeImages.launch(new String[]{"image/*"}));
         binding.buttonPickAfter.setOnClickListener(v ->
                 pickAfterImages.launch(new String[]{"image/*"}));
-        binding.btnClearBefore.setOnClickListener(v -> clearSelection(true));
-        binding.btnClearAfter.setOnClickListener(v -> clearSelection(false));
+        binding.buttonPickControlBefore.setOnClickListener(v ->
+                pickControlBeforeImages.launch(new String[]{"image/*"}));
+        binding.buttonPickControlAfter.setOnClickListener(v ->
+                pickControlAfterImages.launch(new String[]{"image/*"}));
+        binding.btnClearBefore.setOnClickListener(v -> clearSelection(GROUP_BEFORE));
+        binding.btnClearAfter.setOnClickListener(v -> clearSelection(GROUP_AFTER));
+        binding.btnClearControlBefore.setOnClickListener(v -> clearSelection(GROUP_CONTROL_BEFORE));
+        binding.btnClearControlAfter.setOnClickListener(v -> clearSelection(GROUP_CONTROL_AFTER));
 
         // Analyse starten (Vorher- und Nachher-Gruppe dürfen unterschiedlich groß sein)
         binding.buttonRunAnalysis.setOnClickListener(v -> {
             if (beforeUris.isEmpty() || afterUris.isEmpty()) {
                 Toast.makeText(requireContext(), R.string.toast_pick_before_after, Toast.LENGTH_LONG).show();
+                return;
+            }
+            // Kontrollfläche nur vollständig (vorher UND nachher) oder gar nicht:
+            // eine halbe Kontrolle ließe sich nicht verrechnen und würde nur
+            // stillschweigend ignoriert
+            if (controlBeforeUris.isEmpty() != controlAfterUris.isEmpty()) {
+                controlExpanded = true;
+                applyControlExpanded();
+                Toast.makeText(requireContext(), R.string.toast_control_incomplete, Toast.LENGTH_LONG).show();
                 return;
             }
 
@@ -279,12 +347,20 @@ public class AnalysisFragment extends Fragment {
     @Override
     public void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
-        ArrayList<String> b = new ArrayList<>();
-        for (Uri u : beforeUris) b.add(u.toString());
-        ArrayList<String> a = new ArrayList<>();
-        for (Uri u : afterUris) a.add(u.toString());
-        outState.putStringArrayList("beforeUris", b);
-        outState.putStringArrayList("afterUris", a);
+        for (int g = 0; g < GROUP_COUNT; g++) {
+            ArrayList<String> list = new ArrayList<>();
+            for (Uri u : urisFor(g)) list.add(u.toString());
+            outState.putStringArrayList(STATE_KEYS[g], list);
+        }
+        outState.putBoolean(STATE_CONTROL_EXPANDED, controlExpanded);
+    }
+
+    /** Kontrollflächen-Bereich auf-/zuklappen (nur Darstellung) */
+    private void applyControlExpanded() {
+        if (binding == null) return;
+        binding.controlContent.setVisibility(controlExpanded ? View.VISIBLE : View.GONE);
+        binding.tvControlToggle.setText(controlExpanded
+                ? R.string.control_toggle_expanded : R.string.control_toggle_collapsed);
     }
 
     /** Lädt beim Öffnen einer Session die Bilder aus vorher/ und nachher/ als Paare vor */
@@ -359,28 +435,36 @@ public class AnalysisFragment extends Fragment {
         // Unveränderliche KOPIEN der Auswahllisten: Der Nutzer kann während der
         // Analyse zurück navigieren und neue Bilder wählen (clear() auf dem
         // UI-Thread) — der Hintergrund-Thread darf davon nichts mitbekommen.
-        final List<Uri> beforeSnapshot = new ArrayList<>(beforeUris);
-        final List<Uri> afterSnapshot  = new ArrayList<>(afterUris);
-        // Dateinamen auf dem UI-Thread ermitteln (ContentResolver-Abfrage)
-        final List<String> beforeNames = new ArrayList<>();
-        final List<String> afterNames  = new ArrayList<>();
-        for (Uri u : beforeSnapshot) beforeNames.add(safeImageName(getDisplayName(u)));
-        for (Uri u : afterSnapshot)  afterNames.add(safeImageName(getDisplayName(u)));
+        // Dateinamen auf dem UI-Thread ermitteln (ContentResolver-Abfrage).
         // Die ausgewerteten Bilder werden IM Analyse-Ordner abgelegt
-        // (Vorher/ und Nachher/) — egal ob aus Kamera, Import oder Galerie.
-        // So ist jede Analyse vollständig nachvollziehbar.
-        final File inBefore = new File(outDir, SessionStore.ANALYSIS_BEFORE_DIR);
-        final File inAfter  = new File(outDir, SessionStore.ANALYSIS_AFTER_DIR);
+        // (Vorher/, Nachher/ und ggf. Kontrolle_Vorher/, Kontrolle_Nachher/) —
+        // egal ob aus Kamera, Import oder Galerie. So ist jede Analyse
+        // vollständig nachvollziehbar.
+        final List<List<Uri>> snapshots = new ArrayList<>();
+        final List<List<String>> names = new ArrayList<>();
+        final File[] inDirs = new File[GROUP_COUNT];
+        for (int g = 0; g < GROUP_COUNT; g++) {
+            List<Uri> snap = new ArrayList<>(urisFor(g));
+            List<String> n = new ArrayList<>();
+            for (Uri u : snap) n.add(safeImageName(getDisplayName(u)));
+            snapshots.add(snap);
+            names.add(n);
+            inDirs[g] = new File(outDir, GROUP_DIRS[g]);
+        }
 
         bgExecutor.execute(() -> {
             try {
-                ArrayList<String> beforePaths = new ArrayList<>();
-                ArrayList<String> afterPaths  = new ArrayList<>();
-                for (int i = 0; i < beforeSnapshot.size(); i++) {
-                    beforePaths.add(copyUriToDir(appContext, beforeSnapshot.get(i), inBefore, beforeNames.get(i)).getAbsolutePath());
-                }
-                for (int i = 0; i < afterSnapshot.size(); i++) {
-                    afterPaths.add(copyUriToDir(appContext, afterSnapshot.get(i), inAfter, afterNames.get(i)).getAbsolutePath());
+                // 1) Eingangsbilder in den Analyse-Ordner kopieren (lokal, schnell)
+                List<List<File>> inputs = new ArrayList<>();
+                int total = 0;
+                for (int g = 0; g < GROUP_COUNT; g++) {
+                    List<File> files = new ArrayList<>();
+                    List<Uri> snap = snapshots.get(g);
+                    for (int i = 0; i < snap.size(); i++) {
+                        files.add(copyUriToDir(appContext, snap.get(i), inDirs[g], names.get(g).get(i)));
+                    }
+                    inputs.add(files);
+                    total += files.size();
                 }
 
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(appContext));
@@ -388,45 +472,78 @@ public class AnalysisFragment extends Fragment {
                 PyObject module = py.getModule("analysis");
                 try { module.callAttr("chaquopy_probe"); } catch (Exception ignored) {}
 
-                // Jedes Bild einzeln analysieren (Fortschritt "Bild i von n"),
-                // anschließend fasst build_group_summary alles zusammen.
-                int total = beforePaths.size() + afterPaths.size();
+                // 2) Jedes Bild einzeln analysieren (Fortschritt "Bild i von n")
+                //    und SOFORT in die Galerie legen (Original + Auswertungsbild).
+                //    Bis v1.7.2 lief der Galerie-Export erst NACH der Ergebnis-
+                //    meldung: Die App ging dann meist in den Hintergrund (Nutzer
+                //    schaut in die Galerie / tippt "Fertig") und Android fror
+                //    den Hintergrund-Thread ein bzw. beendete den Prozess. Der
+                //    erste MediaStore-Insert hatte die Ordner Vorher/Nachher
+                //    aber schon angelegt, die Bilder darin blieben unsichtbar
+                //    (IS_PENDING) — "Ordner da, Bilder nicht".
+                String gallerySub = MediaExport.analysisSubPath(outDir);
                 int done = 0;
+                int exportFailed = 0;
                 JSONArray items = new JSONArray();
-                for (int i = 0; i < beforePaths.size(); i++) {
-                    analysisVM.progress.postValue(new int[]{++done, total});
-                    PyObject r = module.callAttr("analyze_image",
-                            beforePaths.get(i), outDir.getAbsolutePath(), "before", i,
-                            weedFilter, rowMode, minSize, hueLow, hueHigh, method, frameCrop);
-                    items.put(new JSONObject(r.toString()));
-                }
-                for (int i = 0; i < afterPaths.size(); i++) {
-                    analysisVM.progress.postValue(new int[]{++done, total});
-                    PyObject r = module.callAttr("analyze_image",
-                            afterPaths.get(i), outDir.getAbsolutePath(), "after", i,
-                            weedFilter, rowMode, minSize, hueLow, hueHigh, method, frameCrop);
-                    items.put(new JSONObject(r.toString()));
+                for (int g = 0; g < GROUP_COUNT; g++) {
+                    List<File> files = inputs.get(g);
+                    for (int i = 0; i < files.size(); i++) {
+                        analysisVM.progress.postValue(new int[]{++done, total});
+                        File input = files.get(i);
+                        PyObject r = module.callAttr("analyze_image",
+                                input.getAbsolutePath(), outDir.getAbsolutePath(), TAGS[g], i,
+                                weedFilter, rowMode, minSize, hueLow, hueHigh, method, frameCrop);
+                        JSONObject item = new JSONObject(r.toString());
+                        items.put(item);
+
+                        if (!MediaExport.exportToGallery(appContext, input,
+                                gallerySub + "/" + GROUP_DIRS[g])) {
+                            exportFailed++;
+                        }
+                        JSONObject outputs = item.optJSONObject("outputs");
+                        String panel = (outputs != null) ? outputs.optString("panel", "") : "";
+                        if (!panel.isEmpty() && !MediaExport.exportToGallery(appContext,
+                                new File(panel), gallerySub, galleryPanelName(g, i))) {
+                            exportFailed++;
+                        }
+                    }
                 }
                 analysisVM.progress.postValue(null);
 
                 PyObject summary = module.callAttr("build_group_summary",
                         items.toString(), outDir.getAbsolutePath());
-                final String json = summary.toString();
+                JSONObject result = new JSONObject(summary.toString());
+
+                // 3) Übersichtsbild — die führende "00_" sortiert es im
+                //    Galerie-Ordner an den Anfang
+                JSONObject combo = result.optJSONObject("combo");
+                String overview = (combo != null) ? combo.optString("overview", "") : "";
+                if (!overview.isEmpty()) {
+                    File session = outDir.getParentFile();
+                    String sessionName = session != null ? session.getName() : outDir.getName();
+                    if (!MediaExport.exportToGallery(appContext, new File(overview), gallerySub,
+                            "00_Uebersicht_" + sessionName + ".jpg")) {
+                        exportFailed++;
+                    }
+                }
+                // Fehlgeschlagene Galerie-Exporte sichtbar machen (Ergebnisseite)
+                // statt still leere Ordner zu hinterlassen
+                if (exportFailed > 0) result.put("gallery_export_failed", exportFailed);
+
+                final String json = result.toString();
                 // Volles Ergebnis-JSON (inkl. aller Ausgabepfade) nur im
                 // Debug-Build loggen — im Release reicht die Erfolgsmeldung
                 if (BuildConfig.DEBUG) {
                     Log.i(TAG, "analysis result: " + json);
                 } else {
-                    Log.i(TAG, "analysis finished, " + items.length() + " items");
+                    Log.i(TAG, "analysis finished, " + items.length() + " items, gallery failures: " + exportFailed);
                 }
 
+                // Erst jetzt "fertig" melden: Ab hier darf der Nutzer die App
+                // verlassen oder die Analyse verwerfen — alle Dateien liegen.
                 analysisVM.resultJson.postValue(json);
-                analysisVM.running.postValue(false);
                 analysisVM.error.postValue(null);
-
-                // Galerie-Export NACH dem Melden des Ergebnisses: Die
-                // Ergebnisseite wartet so nicht auf die MediaStore-Kopien.
-                exportResultsToGallery(appContext, outDir, new JSONObject(json));
+                analysisVM.running.postValue(false);
 
             } catch (PyException pyEx) {
                 analysisVM.error.postValue(String.format(errPython, firstLine(pyEx.getMessage())));
@@ -447,44 +564,15 @@ public class AnalysisFragment extends Fragment {
     }
 
     /**
-     * Ergebnisbilder geordnet in die Galerie legen:
+     * Galerie-Name eines Auswertungsbildes:
      *   Pictures/SmartWeed/&lt;Session&gt;/&lt;Analyse_HH-mm-ss&gt;/
      *     00_Uebersicht_&lt;Session&gt;.jpg
-     *     Vorher_01_Auswertung.jpg, Nachher_01_Auswertung.jpg, ...
+     *     Vorher_01_Auswertung.jpg, Nachher_01_Auswertung.jpg,
+     *     Kontrolle_Vorher_01_Auswertung.jpg, ...
      * Masken und Zwischenbilder bleiben versteckt im details/-Ordner der App.
-     * Die führende "00_" sortiert die Übersicht im Ordner an den Anfang.
      */
-    private static void exportResultsToGallery(Context ctx, File outDir, JSONObject result) {
-        String sub = MediaExport.analysisSubPath(outDir);
-        // Die ausgewerteten Originalbilder: <Analyse>/Vorher und <Analyse>/Nachher
-        for (String group : new String[]{SessionStore.ANALYSIS_BEFORE_DIR, SessionStore.ANALYSIS_AFTER_DIR}) {
-            File[] imgs = new File(outDir, group).listFiles(f -> f.isFile() && SessionStore.isImageFile(f.getName()));
-            if (imgs == null) continue;
-            java.util.Arrays.sort(imgs, (a, b) -> a.getName().compareTo(b.getName()));
-            for (File f : imgs) MediaExport.exportToGallery(ctx, f, sub + "/" + group);
-        }
-        File session = outDir.getParentFile();
-        String sessionName = session != null ? session.getName() : outDir.getName();
-
-        JSONObject combo = result.optJSONObject("combo");
-        String overview = (combo != null) ? combo.optString("overview", "") : "";
-        if (!overview.isEmpty()) {
-            MediaExport.exportToGallery(ctx, new File(overview), sub,
-                    "00_Uebersicht_" + sessionName + ".jpg");
-        }
-        JSONArray items = result.optJSONArray("items");
-        if (items == null) return;
-        for (int i = 0; i < items.length(); i++) {
-            JSONObject it = items.optJSONObject(i);
-            if (it == null) continue;
-            JSONObject outputs = it.optJSONObject("outputs");
-            String panel = (outputs != null) ? outputs.optString("panel", "") : "";
-            if (panel.isEmpty()) continue;
-            String group = "after".equals(it.optString("tag")) ? "Nachher" : "Vorher";
-            String name = String.format(Locale.US, "%s_%02d_Auswertung.jpg",
-                    group, it.optInt("index", i) + 1);
-            MediaExport.exportToGallery(ctx, new File(panel), sub, name);
-        }
+    private static String galleryPanelName(int group, int index) {
+        return String.format(Locale.US, "%s_%02d_Auswertung.jpg", GALLERY_PREFIX[group], index + 1);
     }
 
     /** Nach fehlgeschlagener Analyse keinen Analyse-Ordner ohne Ergebnis
@@ -563,15 +651,40 @@ public class AnalysisFragment extends Fragment {
     }
 
     // ==============================
-    // UI-Rendering (ein Pfad für Vorher und Nachher)
+    // UI-Rendering (ein Pfad für alle Bildgruppen)
     // ==============================
-    private void renderSelectedImages(boolean isBefore) {
+    private void renderSelectedImages(int group) {
         if (binding == null) return;
-        List<Uri> uris = isBefore ? beforeUris : afterUris;
-        android.widget.TextView status = isBefore ? binding.tvBeforeName : binding.tvAfterName;
-        View clear = isBefore ? binding.btnClearBefore : binding.btnClearAfter;
-        View scroll = isBefore ? binding.scrollBefore : binding.scrollAfter;
-        ViewGroup container = isBefore ? binding.beforeContainer : binding.afterContainer;
+        List<Uri> uris = urisFor(group);
+        android.widget.TextView status;
+        View clear;
+        View scroll;
+        ViewGroup container;
+        switch (group) {
+            case GROUP_AFTER:
+                status = binding.tvAfterName;
+                clear = binding.btnClearAfter;
+                scroll = binding.scrollAfter;
+                container = binding.afterContainer;
+                break;
+            case GROUP_CONTROL_BEFORE:
+                status = binding.tvControlBeforeName;
+                clear = binding.btnClearControlBefore;
+                scroll = binding.scrollControlBefore;
+                container = binding.controlBeforeContainer;
+                break;
+            case GROUP_CONTROL_AFTER:
+                status = binding.tvControlAfterName;
+                clear = binding.btnClearControlAfter;
+                scroll = binding.scrollControlAfter;
+                container = binding.controlAfterContainer;
+                break;
+            default:
+                status = binding.tvBeforeName;
+                clear = binding.btnClearBefore;
+                scroll = binding.scrollBefore;
+                container = binding.beforeContainer;
+        }
 
         int count = uris.size();
         if (count == 0) {
@@ -592,14 +705,14 @@ public class AnalysisFragment extends Fragment {
         }
         container.removeAllViews();
         for (Uri u : uris) {
-            container.addView(createThumbTile(u, isBefore));
+            container.addView(createThumbTile(u, group));
         }
     }
 
     /** Kachel: Vorschaubild (antippen = Vollbild) mit ✕-Knopf zum Entfernen.
      *  Glide statt setImageURI: dekodiert asynchron und auf Kachelgröße
      *  heruntergesampelt (ein 12-MP-Foto wären sonst ~48 MB auf dem UI-Thread). */
-    private View createThumbTile(Uri uri, boolean isBefore) {
+    private View createThumbTile(Uri uri, int group) {
         int size = dp(104);
         android.widget.FrameLayout tile = new android.widget.FrameLayout(requireContext());
         android.widget.LinearLayout.LayoutParams lp =
@@ -638,7 +751,7 @@ public class AnalysisFragment extends Fragment {
                         android.view.Gravity.TOP | android.view.Gravity.END);
         rlp.setMargins(0, dp(4), dp(4), 0);
         tile.addView(remove, rlp);
-        remove.setOnClickListener(v -> removeFromSelection(uri, isBefore));
+        remove.setOnClickListener(v -> removeFromSelection(uri, group));
         return tile;
     }
 

@@ -160,7 +160,7 @@
     <string name="analysis_mode_c">C: Row detection</string>
     <string name="analysis_mode_c_desc">Row detection: green on the seed rows counts as crop, green between the rows as weed. The CSC is computed from the crop only, plus a weed efficacy value. Requires photos taken roughly straight down with visible rows.</string>
     <string name="settings_method">Segmentation</string>
-    <string name="settings_method_exg">ExG + Otsu – automatic threshold, robust against changing light (recommended)</string>
+    <string name="settings_method_exg">ExG + Otsu (old, unreliable in low sun)</string>
     <string name="settings_method_hsv">HSV color threshold – fixed green range (classic)</string>
     <string name="warning_light">Note: lighting differs strongly between the before and after images – the result may be biased.</string>
     <string name="warning_rows">Seed rows could not be detected reliably – the analysis ran without row separation.</string>
@@ -191,7 +191,7 @@
     <!-- v1.7: Zählrahmen, ExGR, Lichtart -->
     <string name="settings_method_exgr">ExGR (Excess Green − Excess Red) – fixed threshold, no light-dependent drift (Meyer &amp; Neto 2008)</string>
     <string name="settings_frame_crop">Evaluate counting frame only</string>
-    <string name="settings_frame_crop_hint">If a red counting frame is visible, only its interior is analysed. Without a detectable frame the whole image is used and a note is shown. Tip: keep leaves off the frame.</string>
+    <string name="settings_frame_crop_hint">If a counting frame is visible (grey U-frame 50 × 50 cm with a blue stick, or a red frame), only its interior is analysed. Without a detectable frame the whole image is used and a note is shown. Tip: keep leaves off the frame.</string>
     <string name="warning_light_mismatch">Note: the type of light differs between before and after (sun vs. overcast) – this can shift the CSC. Take before and after photos under the same light if possible.</string>
     <plurals name="warning_frame_missing">
         <item quantity="one">Counting frame not detected in %1$d image – the whole image was analysed there.</item>
@@ -213,7 +213,7 @@
         <item quantity="other">%1$d images selected</item>
     </plurals>
     <string name="output_gallery_path">Saved in gallery: %1$s</string>
-    <string name="storage_info">Where are my images? Photos and results are also saved to the gallery, one folder per session:\nPictures/SmartWeed/&lt;date_time&gt;/\n• vorher – before photos\n• nachher – after photos\n• Analyse_&lt;time&gt;_&lt;mode&gt; – overview and evaluation images, with subfolders Vorher and Nachher containing the analysed input images</string>
+    <string name="storage_info">Where are my images? Photos and results are also saved to the gallery, one folder per session:\nPictures/SmartWeed/&lt;date_time&gt;/\n• vorher – before photos\n• nachher – after photos\n• Analyse_&lt;time&gt;_&lt;mode&gt; – overview and evaluation images, with subfolders Vorher and Nachher (and Kontrolle_Vorher / Kontrolle_Nachher if a control area was used) containing the analysed input images</string>
     <string name="toast_import_unsupported_format">Format not supported (e.g. HEIC). Please save the image as JPG or PNG.</string>
 
     <!-- v1.7.2: Analyse beenden, Aufnahme umbenennen, Mehrfach-Import -->
@@ -233,5 +233,43 @@
     <plurals name="toast_images_imported">
         <item quantity="one">%1$d image imported to %2$s</item>
         <item quantity="other">%1$d images imported to %2$s</item>
+    </plurals>
+
+    <!-- v1.8: Boden-referenzierte Segmentierung, Kontrollfläche, U-Rahmen, Plausibilität -->
+    <string name="control_toggle_collapsed" translatable="false">▾</string>
+    <string name="control_toggle_expanded" translatable="false">▴</string>
+    <string name="settings_method_soilref">Soil-referenced (recommended): measures the soil colour in the image and subtracts the colour cast of the light – validated in low sun and overcast light (field trial 10/2026). Dense stands (cover above ~50 %) are underestimated – check them by eye</string>
+    <string name="control_section_title">Control area (optional)</string>
+    <string name="control_section_hint">Untreated area (not harrowed), photographed right before AND after harrowing under the same light. The app uses it to remove light and time-of-day effects from the CSC. Without control images the analysis runs as before.</string>
+    <string name="label_control_before">Control before</string>
+    <string name="label_control_after">Control after</string>
+    <string name="btn_pick_control_before">Select control before</string>
+    <string name="btn_pick_control_after">Select control after</string>
+    <string name="toast_control_incomplete">Control area: please select before AND after images – or leave both empty.</string>
+    <string name="csc_hero_title_control">CSC (control-referenced)</string>
+    <string name="csc_raw_secondary">Without control reference (raw): %1$s</string>
+    <string name="control_change_info">Control area: cover changed by %1$s (relative) although it was not harrowed – mainly the light/time-of-day effect (also dew, wind, framing). This change has been removed from the CSC.</string>
+    <string name="control_correction_unavailable">Control area analysed, but no correction possible (no vegetation detected on the control area) – the CSC above is without control reference.</string>
+    <string name="control_correction_unavailable_no_csc">Control area analysed, but no correction possible: the raw CSC cannot be computed (no cover on the treated before images).</string>
+    <string name="control_correction_unavailable_no_basis">Control area analysed, but no correction possible: the control images have no value for the CSC basis – the CSC above is without control reference.</string>
+    <string name="control_basis_fallback">No rows were detected on the control area – its change was measured on the total plant cover.</string>
+    <string name="label_coverage_dense">⚠ Dense stand – cover is probably underestimated (method limit above ~50 %), please check by eye</string>
+    <plurals name="warning_coverage_dense">
+        <item quantity="one">%1$d image with a dense stand – the soil-referenced method probably underestimates cover there (limit above ~50 %%), please check by eye</item>
+        <item quantity="other">%1$d images with a dense stand – the soil-referenced method probably underestimates cover there (limit above ~50 %%), please check by eye</item>
+    </plurals>
+    <string name="status_analysis_done_group_control">Analysis finished (%1$d before / %2$d after, control %3$d / %4$d).%5$s</string>
+    <plurals name="warning_coverage_implausible">
+        <item quantity="one">%1$d image with implausible cover (below %2$s %% or above %3$s %%) – please check the images</item>
+        <item quantity="other">%1$d images with implausible cover (below %2$s %% or above %3$s %%) – please check the images</item>
+    </plurals>
+    <string name="label_coverage_low">⚠ Cover below %1$s %% – please check the image</string>
+    <string name="label_coverage_high">⚠ Cover above %1$s %% – please check the image</string>
+    <string name="label_frame_found_u">Counting frame: grey U-frame detected</string>
+    <string name="label_frame_found_red">Counting frame: red frame detected</string>
+    <string name="frame_info_summary">Counting frame detected: %1$d× grey U-frame, %2$d× red frame – only the frame interior was analysed there.</string>
+    <plurals name="warning_gallery_export_failed">
+        <item quantity="one">%1$d image could not be saved to the gallery – it is still in the app storage.</item>
+        <item quantity="other">%1$d images could not be saved to the gallery – they are still in the app storage.</item>
     </plurals>
 </resources>

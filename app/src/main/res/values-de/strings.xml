@@ -160,7 +160,7 @@
     <string name="analysis_mode_c">C: Reihen-Erkennung</string>
     <string name="analysis_mode_c_desc">Reihen-Erkennung: Grün auf den Saatreihen zählt als Kulturpflanze, Grün zwischen den Reihen als Unkraut. Der CSC wird nur aus der Kulturpflanze berechnet, zusätzlich gibt es einen Unkraut-Wirkungsgrad. Voraussetzung: Fotos ungefähr senkrecht von oben mit sichtbaren Reihen.</string>
     <string name="settings_method">Segmentierung</string>
-    <string name="settings_method_exg">ExG + Otsu – automatischer Schwellwert, robust bei wechselndem Licht (empfohlen)</string>
+    <string name="settings_method_exg">ExG + Otsu (alt, unzuverlässig bei tiefer Sonne)</string>
     <string name="settings_method_hsv">HSV-Farbschwelle – fester Grünbereich (klassisch)</string>
     <string name="warning_light">Hinweis: Die Lichtverhältnisse der Vorher- und Nachher-Bilder unterscheiden sich deutlich – das Ergebnis kann verzerrt sein.</string>
     <string name="warning_rows">Saatreihen konnten nicht sicher erkannt werden – die Analyse lief ohne Reihen-Trennung.</string>
@@ -191,7 +191,7 @@
     <!-- v1.7: Zählrahmen, ExGR, Lichtart -->
     <string name="settings_method_exgr">ExGR (Excess Green − Excess Red) – feste Schwelle, ohne lichtabhängige Drift (Meyer &amp; Neto 2008)</string>
     <string name="settings_frame_crop">Nur Zählrahmen auswerten</string>
-    <string name="settings_frame_crop_hint">Ist ein roter Zählrahmen im Bild, wird nur sein Inneres ausgewertet. Ohne erkennbaren Rahmen wird das ganze Bild verwendet und ein Hinweis angezeigt. Tipp: Blätter vom Rahmen fernhalten.</string>
+    <string name="settings_frame_crop_hint">Ist ein Zählrahmen im Bild (grauer U-Rahmen 50 × 50 cm mit blauem Stab oder roter Rahmen), wird nur sein Inneres ausgewertet. Ohne erkennbaren Rahmen wird das ganze Bild verwendet und ein Hinweis angezeigt. Tipp: Blätter vom Rahmen fernhalten.</string>
     <string name="warning_light_mismatch">Hinweis: Die Lichtart unterscheidet sich zwischen Vorher und Nachher (Sonne vs. bewölkt) – das kann den CSC verschieben. Vorher- und Nachher-Fotos möglichst bei gleichem Licht aufnehmen.</string>
     <plurals name="warning_frame_missing">
         <item quantity="one">Zählrahmen in %1$d Bild nicht erkannt – dort wurde das ganze Bild ausgewertet.</item>
@@ -213,7 +213,7 @@
         <item quantity="other">%1$d Bilder ausgewählt</item>
     </plurals>
     <string name="output_gallery_path">Gespeichert in der Galerie: %1$s</string>
-    <string name="storage_info">Wo liegen meine Bilder? Fotos und Ergebnisse werden zusätzlich in der Galerie abgelegt, ein Ordner pro Session:\nPictures/SmartWeed/&lt;Datum_Uhrzeit&gt;/\n• vorher – Vorher-Fotos\n• nachher – Nachher-Fotos\n• Analyse_&lt;Uhrzeit&gt;_&lt;Modus&gt; – Übersicht und Auswertungsbilder, dazu die Unterordner Vorher und Nachher mit den analysierten Bildern</string>
+    <string name="storage_info">Wo liegen meine Bilder? Fotos und Ergebnisse werden zusätzlich in der Galerie abgelegt, ein Ordner pro Session:\nPictures/SmartWeed/&lt;Datum_Uhrzeit&gt;/\n• vorher – Vorher-Fotos\n• nachher – Nachher-Fotos\n• Analyse_&lt;Uhrzeit&gt;_&lt;Modus&gt; – Übersicht und Auswertungsbilder, dazu die Unterordner Vorher und Nachher (bei genutzter Kontrollfläche auch Kontrolle_Vorher / Kontrolle_Nachher) mit den analysierten Bildern</string>
     <string name="toast_import_unsupported_format">Format nicht unterstützt (z. B. HEIC). Bitte das Bild als JPG oder PNG speichern.</string>
 
     <!-- v1.7.2: Analyse beenden, Aufnahme umbenennen, Mehrfach-Import -->
@@ -233,5 +233,41 @@
     <plurals name="toast_images_imported">
         <item quantity="one">%1$d Bild importiert in %2$s</item>
         <item quantity="other">%1$d Bilder importiert in %2$s</item>
+    </plurals>
+
+    <!-- v1.8: Boden-referenzierte Segmentierung, Kontrollfläche, U-Rahmen, Plausibilität -->
+    <string name="settings_method_soilref">Boden-referenziert (empfohlen): misst die Bodenfarbe im Bild und zieht den Lichtfarbstich ab – validiert bei tiefer Sonne und Bewölkung (Feldversuch 10/2026). Dichte Bestände (Bedeckung über ~50 %) werden unterschätzt – per Auge prüfen</string>
+    <string name="control_section_title">Kontrollfläche (optional)</string>
+    <string name="control_section_hint">Unbehandelte Fläche (nicht gestriegelt), direkt vor UND nach dem Striegeln unter demselben Licht fotografiert. Damit rechnet die App Licht- und Tageszeit-Effekte aus dem CSC heraus. Ohne Kontrollbilder läuft die Analyse wie bisher.</string>
+    <string name="label_control_before">Kontrolle vorher</string>
+    <string name="label_control_after">Kontrolle nachher</string>
+    <string name="btn_pick_control_before">Kontrolle vorher wählen</string>
+    <string name="btn_pick_control_after">Kontrolle nachher wählen</string>
+    <string name="toast_control_incomplete">Kontrollfläche: bitte Vorher- UND Nachher-Bilder wählen – oder beide leer lassen.</string>
+    <string name="csc_hero_title_control">CSC (kontrollbezogen)</string>
+    <string name="csc_raw_secondary">Ohne Kontrollbezug (roh): %1$s</string>
+    <string name="control_change_info">Kontrollfläche: Bedeckung hat sich um %1$s (relativ) verändert, obwohl dort nicht gestriegelt wurde – das ist v. a. der Licht-/Tageszeit-Effekt (auch Tau, Wind, Bildausschnitt). Diese Änderung wurde aus dem CSC herausgerechnet.</string>
+    <string name="control_correction_unavailable">Kontrollfläche ausgewertet, aber keine Korrektur möglich (auf der Kontrollfläche kein Bewuchs erkannt) – der CSC oben ist ohne Kontrollbezug.</string>
+    <string name="control_correction_unavailable_no_csc">Kontrollfläche ausgewertet, aber keine Korrektur möglich: Der rohe CSC ist nicht berechenbar (keine Bedeckung auf den behandelten Vorher-Bildern).</string>
+    <string name="control_correction_unavailable_no_basis">Kontrollfläche ausgewertet, aber keine Korrektur möglich: Den Kontrollbildern fehlt ein Wert für die CSC-Basis – der CSC oben ist ohne Kontrollbezug.</string>
+    <string name="control_basis_fallback">Auf der Kontrollfläche wurden keine Reihen erkannt – ihre Änderung wurde an der Gesamt-Pflanzenbedeckung gemessen.</string>
+    <string name="label_coverage_dense">⚠ Dichter Bestand – Bedeckung wahrscheinlich unterschätzt (Grenze der Methode ab ~50 %), bitte per Auge prüfen</string>
+    <plurals name="warning_coverage_dense">
+        <item quantity="one">%1$d Bild mit dichtem Bestand – dort unterschätzt die boden-referenzierte Methode die Bedeckung wahrscheinlich (Grenze ab ~50 %%), bitte per Auge prüfen</item>
+        <item quantity="other">%1$d Bilder mit dichtem Bestand – dort unterschätzt die boden-referenzierte Methode die Bedeckung wahrscheinlich (Grenze ab ~50 %%), bitte per Auge prüfen</item>
+    </plurals>
+    <string name="status_analysis_done_group_control">Analyse abgeschlossen (%1$d vorher / %2$d nachher, Kontrolle %3$d / %4$d).%5$s</string>
+    <plurals name="warning_coverage_implausible">
+        <item quantity="one">%1$d Bild mit unplausibler Bedeckung (unter %2$s %% oder über %3$s %%) – bitte Bilder prüfen</item>
+        <item quantity="other">%1$d Bilder mit unplausibler Bedeckung (unter %2$s %% oder über %3$s %%) – bitte Bilder prüfen</item>
+    </plurals>
+    <string name="label_coverage_low">⚠ Bedeckung unter %1$s %% – Bild prüfen</string>
+    <string name="label_coverage_high">⚠ Bedeckung über %1$s %% – Bild prüfen</string>
+    <string name="label_frame_found_u">Zählrahmen: grauer U-Rahmen erkannt</string>
+    <string name="label_frame_found_red">Zählrahmen: roter Rahmen erkannt</string>
+    <string name="frame_info_summary">Zählrahmen erkannt: %1$d× grauer U-Rahmen, %2$d× roter Rahmen – dort wurde nur das Rahmeninnere ausgewertet.</string>
+    <plurals name="warning_gallery_export_failed">
+        <item quantity="one">%1$d Bild konnte nicht in die Galerie gelegt werden – es liegt weiterhin im App-Speicher.</item>
+        <item quantity="other">%1$d Bilder konnten nicht in die Galerie gelegt werden – sie liegen weiterhin im App-Speicher.</item>
     </plurals>
 </resources>

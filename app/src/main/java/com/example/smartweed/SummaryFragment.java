@@ -34,6 +34,11 @@ import java.util.Locale;
 
 public class SummaryFragment extends Fragment {
 
+    /** Plausibilitätsgrenzen der Bedeckung — nur für den Anzeigetext; ob ein
+     *  Bild auffällig ist, entscheidet analysis.py ("coverage_warning"). */
+    private static final String COVERAGE_WARN_LOW = "3";
+    private static final String COVERAGE_WARN_HIGH = "80";
+
     private FragmentSummaryBinding binding;
     private AnalysisViewModel analysisVM;
     private AnalysisSettings analysisSettings;
@@ -253,20 +258,67 @@ public class SummaryFragment extends Fragment {
         if (binding.rowDeltaWeedFiltered != null) binding.rowDeltaWeedFiltered.setVisibility(wfVis);
 
         // CSC-Basis: Modus C -> Kulturpflanzen-Bedeckung (Reihen), Modus B ->
-        // unkrautgefilterte Werte (Fallback Gefiltert), Modus A -> SW-Werte
-        Double cscB;
-        Double cscA;
+        // unkrautgefilterte Werte (Fallback Gefiltert), Modus A -> SW-Werte.
+        // Gleiche Wahl wie build_group_summary in analysis.py, damit App,
+        // Übersichtsbild und Kontroll-Korrektur dieselbe Basis nutzen.
+        String basis;
         if (rowsDetected && bCrop != null && aCrop != null) {
-            cscB = bCrop;
-            cscA = aCrop;
+            basis = "crop";
+        } else if (weedFilter && bWf != null && aWf != null) {
+            basis = "weedfiltered";
         } else if (weedFilter) {
-            cscB = (bWf != null) ? bWf : bFlt;
-            cscA = (aWf != null) ? aWf : aFlt;
+            basis = "filtered";
         } else {
-            cscB = bBw;
-            cscA = aBw;
+            basis = "bw";
         }
-        applyCscHero(cscB, cscA);
+        Double cscB = asDouble(avgB, basis);
+        Double cscA = asDouble(avgA, basis);
+
+        // v1.8: Kontrollfläche (unbehandelt, gleiches Licht). Kontrollbilder
+        // fließen NICHT in die Mittelwerte oben ein; sie korrigieren nur den CSC.
+        int nCtrlB = root.optInt("count_control_before", 0);
+        int nCtrlA = root.optInt("count_control_after", 0);
+        boolean hasControl = nCtrlB > 0 && nCtrlA > 0;
+        JSONObject avgCtrlB = root.optJSONObject("avg_control_before");
+        JSONObject avgCtrlA = root.optJSONObject("avg_control_after");
+        // Kontroll-Basis: wie analysis.py — fehlt der Kontrolle der Wert der
+        // CSC-Basis (Modus C: auf der Kontrolle keine Reihen erkannt), wird ihre
+        // relative Änderung auf "filtered" bzw. "bw" gemessen
+        String controlBasis = root.optString("control_basis", "");
+        if (TextUtils.isEmpty(controlBasis)) {
+            controlBasis = basis;
+            for (String cand : new String[]{basis, "filtered", "bw"}) {
+                if (asDouble(avgCtrlB, cand) != null && asDouble(avgCtrlA, cand) != null) {
+                    controlBasis = cand;
+                    break;
+                }
+            }
+        }
+        Double ctrlB = asDouble(avgCtrlB, controlBasis);
+        Double ctrlA = asDouble(avgCtrlA, controlBasis);
+        Double corrected = asDouble(root, "csc_control_corrected");
+        if (corrected == null && hasControl) {
+            // Rückfall, falls das JSON den Wert nicht liefert — gleiche Formel,
+            // liefert bei unbrauchbarer Kontrolle (z. B. 0 % Bedeckung) null
+            corrected = CscCalculator.computeControlCorrected(cscB, cscA, ctrlB, ctrlA);
+        }
+        Double controlChange = asDouble(root, "control_change_percent");
+        if (controlChange == null && hasControl && ctrlB != null && ctrlA != null && ctrlB > 0) {
+            controlChange = (ctrlA / ctrlB - 1.0) * 100.0;
+        }
+        applyCscHero(cscB, cscA, corrected);
+        String controlReason = root.optString("control_unavailable_reason", "");
+        if (TextUtils.isEmpty(controlReason) && hasControl && corrected == null) {
+            if (CscCalculator.compute(cscB, cscA) == null) {
+                controlReason = "no_csc";
+            } else if (ctrlB == null || ctrlA == null) {
+                controlReason = "no_basis";
+            } else {
+                controlReason = "no_cover";
+            }
+        }
+        applyControlInfo(hasControl, corrected, controlChange, controlReason,
+                !controlBasis.equals(basis));
 
         // Unkraut-Wirkungsgrad (nur Modus C mit erkannten Reihen):
         // relative Abnahme der Unkraut-Bedeckung zwischen den Reihen
@@ -301,8 +353,54 @@ public class SummaryFragment extends Fragment {
             warn.append(getResources().getQuantityString(R.plurals.warning_frame_missing,
                     frameMissing, frameMissing));
         }
+        // v1.8: unplausible Bedeckung (< 3 % oder > 80 %) — im Feldversuch
+        // waren genau solche Werte Messfehler der alten Segmentierung
+        JSONArray itemsArr = root.optJSONArray("items");
+        int coverageWarnings = root.has("coverage_warning_count")
+                ? root.optInt("coverage_warning_count", 0)
+                : countItemsWithKey(itemsArr, "coverage_warning");
+        if (coverageWarnings > 0) {
+            if (warn.length() > 0) warn.append("\n");
+            warn.append(getResources().getQuantityString(R.plurals.warning_coverage_implausible,
+                    coverageWarnings, coverageWarnings, COVERAGE_WARN_LOW, COVERAGE_WARN_HIGH));
+        }
+        // v1.8: dichter Bestand — soilref unterschätzt dann (bekannte Grenze),
+        // die 80-%-Warnung oben kann das mit soilref nicht erkennen
+        int denseWarnings = root.has("dense_warning_count")
+                ? root.optInt("dense_warning_count", 0)
+                : countItemsWithKey(itemsArr, "dense_warning");
+        if (denseWarnings > 0) {
+            if (warn.length() > 0) warn.append("\n");
+            warn.append(getResources().getQuantityString(R.plurals.warning_coverage_dense,
+                    denseWarnings, denseWarnings));
+        }
+        int galleryFailed = root.optInt("gallery_export_failed", 0);
+        if (galleryFailed > 0) {
+            if (warn.length() > 0) warn.append("\n");
+            warn.append(getResources().getQuantityString(R.plurals.warning_gallery_export_failed,
+                    galleryFailed, galleryFailed));
+        }
         binding.tvAnalysisWarning.setText(warn.toString());
         binding.tvAnalysisWarning.setVisibility(warn.length() > 0 ? View.VISIBLE : View.GONE);
+
+        // v1.8: Welcher Zählrahmen wurde erkannt (grauer U-Rahmen / roter Rahmen)
+        int uFrames = 0;
+        int redFrames = 0;
+        if (itemsArr != null) {
+            for (int i = 0; i < itemsArr.length(); i++) {
+                JSONObject it = itemsArr.optJSONObject(i);
+                if (it == null || !it.optBoolean("frame_found", false)) continue;
+                String kind = it.optString("frame_kind", "");
+                if ("u_frame".equals(kind)) uFrames++;
+                else if ("red".equals(kind)) redFrames++;
+            }
+        }
+        if (uFrames + redFrames > 0) {
+            binding.tvFrameInfo.setText(getString(R.string.frame_info_summary, uFrames, redFrames));
+            binding.tvFrameInfo.setVisibility(View.VISIBLE);
+        } else {
+            binding.tvFrameInfo.setVisibility(View.GONE);
+        }
 
         // Übersichtsbild (Vorher-Zeile / Nachher-Zeile)
         JSONObject combo = root.optJSONObject("combo");
@@ -317,13 +415,18 @@ public class SummaryFragment extends Fragment {
             binding.ivOriginalPanel.setVisibility(View.GONE);
         }
 
-        renderItems(root.optJSONArray("items"));
+        renderItems(itemsArr);
 
         // Modus-Label als Platzhalter im Format-String (statt Konkatenation im
         // Code): jede Sprache kontrolliert die komplette Satzstellung selbst
         String modeLabel = getString(rowMode ? R.string.mode_label_c
                 : (weedFilter ? R.string.mode_label_b : R.string.mode_label_a));
-        binding.tvStatus.setText(getString(R.string.status_analysis_done_group, nBefore, nAfter, modeLabel));
+        if (nCtrlB > 0 || nCtrlA > 0) {
+            binding.tvStatus.setText(getString(R.string.status_analysis_done_group_control,
+                    nBefore, nAfter, nCtrlB, nCtrlA, modeLabel));
+        } else {
+            binding.tvStatus.setText(getString(R.string.status_analysis_done_group, nBefore, nAfter, modeLabel));
+        }
     }
 
     /** Einzelergebnisse pro Bild (erst alle Vorher-, dann alle Nachher-Bilder) */
@@ -340,7 +443,7 @@ public class SummaryFragment extends Fragment {
             JSONObject it = items.optJSONObject(i);
             if (it == null) continue;
 
-            boolean isBefore = "before".equals(it.optString("tag"));
+            String tag = it.optString("tag", "");
             int idx = it.optInt("index", i) + 1;
 
             View itemView = getLayoutInflater().inflate(R.layout.item_pair_result, binding.pairsContainer, false);
@@ -349,8 +452,7 @@ public class SummaryFragment extends Fragment {
             ImageView img = itemView.findViewById(R.id.ivPairOriginal);
 
             header.setText(getString(R.string.pair_header,
-                    getString(isBefore ? R.string.label_before : R.string.label_after),
-                    idx, it.optString("file", "")));
+                    getString(labelForTag(tag)), idx, it.optString("file", "")));
 
             StringBuilder sb = new StringBuilder();
             sb.append(getString(R.string.label_bw)).append(" ")
@@ -369,8 +471,27 @@ public class SummaryFragment extends Fragment {
             }
             // Zählrahmen-Status nur, wenn der Zuschnitt angefordert war
             if (it.has("frame_found")) {
-                sb.append("\n").append(getString(it.optBoolean("frame_found", false)
-                        ? R.string.label_frame_found : R.string.label_frame_missing));
+                int frameLabel;
+                if (!it.optBoolean("frame_found", false)) {
+                    frameLabel = R.string.label_frame_missing;
+                } else if ("u_frame".equals(it.optString("frame_kind", ""))) {
+                    frameLabel = R.string.label_frame_found_u;
+                } else if ("red".equals(it.optString("frame_kind", ""))) {
+                    frameLabel = R.string.label_frame_found_red;
+                } else {
+                    frameLabel = R.string.label_frame_found;
+                }
+                sb.append("\n").append(getString(frameLabel));
+            }
+            // v1.8: Plausibilitäts-Hinweis je Bild ("low" < 3 %, "high" > 80 %)
+            String covWarn = it.optString("coverage_warning", "");
+            if ("low".equals(covWarn)) {
+                sb.append("\n").append(getString(R.string.label_coverage_low, COVERAGE_WARN_LOW));
+            } else if ("high".equals(covWarn)) {
+                sb.append("\n").append(getString(R.string.label_coverage_high, COVERAGE_WARN_HIGH));
+            }
+            if (it.optBoolean("dense_warning", false)) {
+                sb.append("\n").append(getString(R.string.label_coverage_dense));
             }
             metrics.setText(sb.toString());
 
@@ -397,10 +518,36 @@ public class SummaryFragment extends Fragment {
         }
     }
 
+    /** Beschriftung einer Bildgruppe (Tag aus analysis.py) */
+    private static int labelForTag(String tag) {
+        switch (tag) {
+            case "after":          return R.string.label_after;
+            case "control_before": return R.string.label_control_before;
+            case "control_after":  return R.string.label_control_after;
+            default:               return R.string.label_before;
+        }
+    }
+
+    private static int countItemsWithKey(JSONArray items, String key) {
+        if (items == null) return 0;
+        int n = 0;
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject it = items.optJSONObject(i);
+            if (it != null && it.has(key)) n++;
+        }
+        return n;
+    }
+
     // ===================================================
     // CSC-Hero-Karte (große Empfehlung)
     // ===================================================
-    private void applyCscHero(Double coverageBefore, Double coverageAfter) {
+
+    /**
+     * @param controlCorrected kontrollbezogener CSC (v1.8) oder null — ist er
+     *        gesetzt, wird ER groß angezeigt und für die Empfehlung genutzt,
+     *        der rohe CSC erscheint als Zweitwert darunter.
+     */
+    private void applyCscHero(Double coverageBefore, Double coverageAfter, Double controlCorrected) {
         double bandLow  = analysisSettings.getCscBandLow();
         double bandHigh = analysisSettings.getCscBandHigh();
 
@@ -410,9 +557,56 @@ public class SummaryFragment extends Fragment {
         Double csc = CscCalculator.compute(coverageBefore, coverageAfter);
         CscCalculator.Recommendation reco =
                 CscCalculator.recommendForCoverage(coverageBefore, coverageAfter, bandLow, bandHigh);
-        binding.tvCsc.setText(csc == null ? getString(R.string.not_available) : toPct(csc));
+        if (controlCorrected != null) {
+            // "Kein Bewuchs" bleibt vorrangig (kommt aus der Vorher-Bedeckung);
+            // sonst entscheidet der kontrollbezogene Wert
+            if (reco != CscCalculator.Recommendation.NO_VEGETATION
+                    && reco != CscCalculator.Recommendation.NOT_AVAILABLE) {
+                reco = CscCalculator.recommend(controlCorrected, bandLow, bandHigh);
+            }
+            binding.tvCscHeroTitle.setText(R.string.csc_hero_title_control);
+            binding.tvCsc.setText(toPct(controlCorrected));
+            binding.tvCscRaw.setText(getString(R.string.csc_raw_secondary,
+                    csc == null ? getString(R.string.not_available) : toPct(csc)));
+            binding.tvCscRaw.setVisibility(View.VISIBLE);
+        } else {
+            binding.tvCscHeroTitle.setText(R.string.csc_hero_title);
+            binding.tvCsc.setText(csc == null ? getString(R.string.not_available) : toPct(csc));
+            binding.tvCscRaw.setVisibility(View.GONE);
+        }
         binding.tvRecommendation.setText(recommendationText(reco));
         binding.tvRecommendation.setTextColor(recommendationColor(reco));
+    }
+
+    /**
+     * Erklärt die Kontrollfläche: wie stark sie sich OHNE Striegeln (relativ)
+     * verändert hat, bzw. WARUM keine Korrektur möglich war.
+     * @param reason "no_csc" | "no_basis" | "no_cover" (analysis.py
+     *        control_unavailable_reason), nur relevant, wenn corrected null ist
+     * @param basisFallback Kontrolle auf anderer Basis als der CSC gemessen
+     */
+    private void applyControlInfo(boolean hasControl, Double corrected, Double controlChange,
+                                  String reason, boolean basisFallback) {
+        if (!hasControl) {
+            binding.tvControlInfo.setVisibility(View.GONE);
+            return;
+        }
+        String text;
+        if (corrected != null && controlChange != null) {
+            text = getString(R.string.control_change_info,
+                    String.format(Locale.getDefault(), "%+.1f %%", controlChange));
+            if (basisFallback) {
+                text = text + "\n" + getString(R.string.control_basis_fallback);
+            }
+        } else if ("no_csc".equals(reason)) {
+            text = getString(R.string.control_correction_unavailable_no_csc);
+        } else if ("no_basis".equals(reason)) {
+            text = getString(R.string.control_correction_unavailable_no_basis);
+        } else {
+            text = getString(R.string.control_correction_unavailable);
+        }
+        binding.tvControlInfo.setText(text);
+        binding.tvControlInfo.setVisibility(View.VISIBLE);
     }
 
     private String recommendationText(CscCalculator.Recommendation reco) {
@@ -535,6 +729,10 @@ public class SummaryFragment extends Fragment {
         if (binding.rowDeltaWeedFiltered  != null) binding.rowDeltaWeedFiltered.setVisibility(View.GONE);
         if (binding.tvWeedEfficacy != null) binding.tvWeedEfficacy.setVisibility(View.GONE);
         if (binding.tvAnalysisWarning != null) binding.tvAnalysisWarning.setVisibility(View.GONE);
+        binding.tvCscHeroTitle.setText(R.string.csc_hero_title);
+        binding.tvCscRaw.setVisibility(View.GONE);
+        binding.tvControlInfo.setVisibility(View.GONE);
+        binding.tvFrameInfo.setVisibility(View.GONE);
     }
 
     private int dp(int v) {

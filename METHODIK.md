@@ -27,46 +27,91 @@ Unkrautwirkung hoch, während die Kulturpflanze den Eingriff innerhalb von
 
 ## 2. Segmentierung Pflanze vs. Boden
 
-### Vorverarbeitung: Zählrahmen (seit v1.7)
+### Vorverarbeitung: Zählrahmen (seit v1.7, grauer U-Rahmen seit v1.8)
 
-Liegt ein **roter Zählrahmen** im Bild, wertet die App nur sein Inneres aus
-(Einstellung „Nur Zählrahmen auswerten“, Standard: an). Das Innere wird als
-größtes Loch in der Rot-Maske gefunden, perspektivisch zu einem Quadrat
-entzerrt (Originalauflösung, damit die Mindestgröße ihre Bedeutung behält)
-und mit 6 % Sicherheitsrand beschnitten. Blätter über dem Rahmen werden durch
-schrittweises Schließen der Lücken überbrückt; eine Ringprüfung (außen
-überwiegend Rot, innen kaum Rot, Rot nicht großflächig) verhindert
-Fehlalarme auf rötlichem Boden oder roten Geräten. Ohne erkannten Rahmen
-wird das ganze Bild ausgewertet und das in der App angezeigt; ein
-Kontrollbild mit eingezeichnetem Ausschnitt liegt im `details/`-Ordner.
+Liegt ein **Zählrahmen** im Bild, wertet die App nur sein Inneres aus
+(Einstellung „Nur Zählrahmen auswerten“, Standard: an). Gesucht wird in
+dieser Reihenfolge:
+
+1. **Grauer Metall-U-Rahmen (seit v1.8, `frame_u.py`):** der im Feld benutzte
+   Rahmen, 50 × 50 cm, drei Stäbe (eine Seite offen), blauer Stiel an einer
+   geschlossenen Ecke. Die Stäbe sind dünne Strukturen, die **weniger
+   gesättigt** sind als Boden und Blätter; eine Liniensuche über alle
+   Richtungen findet Stab-Kandidaten auch dann, wenn Blätter sie
+   unterbrechen. Aus Paaren paralleler bzw. rechtwinkliger Kandidaten werden
+   U-Hypothesen gebildet und bewertet (Stab-Evidenz, rechte Winkel,
+   Quadratform, blauer Stiel an einer Ecke). Die Ecken liegen auf den
+   Stab-Mittellinien; ausgewertet wird das entzerrte Innere mit 4 %
+   Sicherheitsrand (~2 cm). Feldversuch 26.–31.10.2026: 254 von 255 Rahmen
+   gefunden, in einer Stichprobe von 47 Bildern keine falsche Erkennung.
+   - **Frühabbruch:** Ohne blauen Fleck und ohne kräftigen, durchgehenden
+     Stab bricht die Suche nach ~0,2 s ab (57 % der rahmenlosen Feldfotos).
+   - **Arbeitsbudget:** Die Hypothesen-Suche ist gedeckelt (Anzahl
+     U-Aufbauten und Zeit je Bild), weil rahmenlose Fotos mit stab-artigen
+     Strukturen sonst auf dem Handy sehr lange dauern würden.
+   - **Rahmen ragt aus dem Bild** (z. B. offene Seite abgeschnitten): wird
+     **verworfen**, weil die fehlende Fläche sonst schwarz aufgefüllt und als
+     Boden mitgezählt würde; das Bild wird dann ohne Rahmen ausgewertet.
+2. **Roter/rosa Rahmen (v1.7, Rückfall):** Das Innere wird als größtes Loch in
+   der Rot-Maske gefunden, perspektivisch zu einem Quadrat entzerrt
+   (Originalauflösung, damit die Mindestgröße ihre Bedeutung behält) und mit
+   6 % Sicherheitsrand beschnitten. Blätter über dem Rahmen werden durch
+   schrittweises Schließen der Lücken überbrückt; eine Ringprüfung (außen
+   überwiegend Rot, innen kaum Rot, Rot nicht großflächig) verhindert
+   Fehlalarme auf rötlichem Boden oder roten Geräten.
+
+Ohne erkannten Rahmen wird das ganze Bild ausgewertet und das in der App
+angezeigt; ein Kontrollbild mit eingezeichnetem Ausschnitt liegt im
+`details/`-Ordner. Die Ergebnis-Seite zeigt, welcher Rahmen-Typ gefunden
+wurde. Fotos, die bewusst **ohne** Rahmen aufgenommen wurden, werden
+unverändert als ganzes Bild ausgewertet — der Rahmen spielt für sie keine
+Rolle (die Option kostet dann nur Rechenzeit und kann ausgeschaltet werden).
 
 Warum: Auf Vollbildern zählte die Segmentierung Schatten und Kleidung
 (Hose) als Pflanze und lieferte so einen scheinbar plausiblen, aber falschen
 CSC (gemessen: 34 % bzw. 43 % statt eines negativen Werts im Rahmen). Der
-Rahmen ist zudem genau die Fläche, die auch bonitiert wird. Hinweis für die
-Praxis: Graue Drahtrahmen mit rotem oder orangem Klebeband umwickeln.
+Rahmen ist zudem genau die Fläche, die auch bonitiert wird. Bis v1.7 wurde
+nur der rote Rahmen erkannt — der im Feld benutzte graue U-Rahmen nie.
 
 ### Verfahren
 
-Drei Verfahren stehen zur Wahl (Analyse-Einstellungen → Segmentierung):
+Vier Verfahren stehen zur Wahl (Analyse-Einstellungen → Segmentierung):
 
-- **ExG + Otsu (Standard, empfohlen):** Excess-Green-Index
+- **Boden-referenziert, Lab a\* (Standard seit v1.8, empfohlen):** Der
+  Grün-Index ist `−a*` (Lab-Farbraum, unabhängig von der Helligkeit). Statt
+  einer festen oder Otsu-Schwelle wird der Farbstich des Lichts am **Boden
+  desselben Bildes** gemessen: Die weniger grüne Hälfte der Pixel gilt als
+  Boden, ihr Median ist die Boden-Referenz; Pflanze = mehr als 10 a\*-Einheiten
+  grüner als diese Referenz. Ein gelbgrüner Sonnen-Farbstich verschiebt Boden
+  und Pflanzen gleichermaßen und fällt dadurch heraus.
+  **Feldversuch 30./31.10.2026** (1235 Fotos; Referenz: 36 Bilder × 100
+  Punkte, 2 Bonitierende, Kappa 0,87): Genauigkeit 93 %, Falsch-Positive
+  ≤ 4 % in allen Lichtsituationen (tiefe Sonne, Bewölkung), Trefferquote
+  0,76–0,92; Vorher/Nachher am selben Tag ohne Korrekturfaktor vergleichbar.
+  **Grenze (dichter Bestand):** Ab ~50 % echter Bedeckung enthält auch die
+  „weniger grüne Hälfte“ Pflanzen, die Boden-Referenz wird zu grün und die
+  Bedeckung wird **stark unterschätzt**; bei fast geschlossenem, einheitlichem
+  Bestand kann sie bis auf ~0 % einbrechen. Mehr als ~75 % kann das Verfahren
+  grundsätzlich nicht melden (die Referenz liegt etwa beim 25. Perzentil).
+  Deshalb setzt die App bei soilref eine eigene Warnung **„dichter Bestand“**
+  (`dense_warning`), wenn die Boden-Referenz selbst deutlich grün ist (−a\* > 8;
+  auf den Feldfotos lag sie höchstens bei 4) oder die gemessene Bedeckung über
+  45 % liegt (Feldfotos: ~2,5 % der Bilder). Diese Schwellen sind eine
+  Heuristik, nicht gegen die Bonitur validiert — betroffene Bilder per Auge
+  prüfen.
+- **ExG + Otsu (alt, bis v1.7 Standard):** Excess-Green-Index
   `ExG = 2·g − r − b` auf normalisierten RGB-Kanälen, gefolgt von einem
-  automatischen Otsu-Schwellwert, der sich jedem Bild anpasst. Bekannte
-  Grenze (gemessen in v1.7): Diese bildabhängige Schwelle **wandert mit dem
-  Licht** — bewölkt ~0,06–0,09, Sonne ~0,14, Sonne mit dichtem Bestand bis
-  0,21. Bei Sonne werden dünne Blätter unterschätzt, bei Wolkenlicht fransen
-  die Blattränder in den Boden aus. Ein Lichtwechsel zwischen Vorher und
-  Nachher verschiebt den CSC deshalb in eine Richtung (siehe Licht-Warnung).
-  Zwei Schutzmechanismen sichern die unimodalen Grenzfälle ab, in denen Otsu
-  keine sinnvolle Trennung finden kann: Auf vegetationsfreien Bildern
-  verhindert eine ExG-Untergrenze Geister-Detektionen auf Bodenrauschen, und
-  auf (nahezu) vollflächig bewachsenen Bildern — wo Otsu den Schwellwert
-  mitten in die Vegetationsverteilung legen und die Bedeckung halbieren
-  würde — zählt direkt die ExG-Untergrenzen-Maske.
-  Grundlage: Woebbecke et al. (1995), Meyer & Neto (2008) — der Standard-
-  Vegetationsindex der Agrar-Bildanalyse und die im Businessplan genannte
-  Zielmethodik.
+  automatischen Otsu-Schwellwert. **Versagte im Feldversuch 10/2026** bei
+  tiefer, warmer Sonne: Der gelbgrüne Farbstich gibt dem Boden positives ExG;
+  der frühere Vollbewuchs-Rückfall zählte dann in 34–37 % der Sonnenbilder
+  das ganze Bild als Pflanze, sonst trennte Otsu helle von dunklen Blättern
+  (~0–3 % Bedeckung). Trefferquote gegen die Referenz nur 0,30 (vorher) /
+  0,08 (nachher); die im Feld angezeigten CSC-Werte von ~90 % bzw. −100 %
+  waren Messfehler. Schon in v1.7 gemessen: Die Otsu-Schwelle **wandert mit
+  dem Licht** (bewölkt ~0,06–0,09, Sonne ~0,14, Sonne mit dichtem Bestand bis
+  0,21). Seit v1.8 gibt es keinen Vollbewuchs-Rückfall mehr; eine
+  ExG-Untergrenze verhindert Geister-Detektionen auf Bodenrauschen.
+  Grundlage: Woebbecke et al. (1995), Meyer & Neto (2008).
 - **ExGR (seit v1.7, wählbar):** `ExGR = ExG − ExR` mit `ExR = 1,4·r − g`
   und **fester Schwelle 0** (Meyer & Neto 2008) — ohne bildabhängige Schwelle
   und damit ohne deren Licht-Drift; der im Exposé genannte Index. Auf den
@@ -82,6 +127,20 @@ Drei Verfahren stehen zur Wahl (Analyse-Einstellungen → Segmentierung):
 
 Nach der Segmentierung wird die Maske morphologisch bereinigt (Open/Close)
 und Komponenten unterhalb einer Mindestgröße (Standard 50 px) werden entfernt.
+
+### Plausibilitäts-Hinweise je Bild (seit v1.8)
+
+- **Unter 3 % Bedeckung** („low“): meist Boden ohne Bestand oder eine
+  Fehlsegmentierung (im Feld: ExG + Otsu mit 0–3 %).
+- **Über 80 % Bedeckung** („high“): meist als Pflanze gezählter Boden (im
+  Feld: ExG-Vollbewuchs-Rückfall). **Mit soilref kann dieser Hinweis
+  praktisch nie auftreten** — er fängt dort keinen dichten Bestand ab.
+- **Dichter Bestand** (nur soilref, siehe oben): Bedeckung wahrscheinlich
+  unterschätzt. Ein fast geschlossener Bestand kann bei soilref zusätzlich
+  „unter 3 %“ zeigen — dann gilt der Hinweis „dichter Bestand“.
+
+Kein Hinweis heißt nicht „sicher richtig“: Die Hinweise fangen nur grobe
+Ausreißer ab.
 
 ## 3. Analyse-Modi
 
@@ -153,6 +212,28 @@ Drei Plausibilitäts-Warnungen sichern die Beleuchtung ab:
    „Sonne“; gewarnt wird, wenn die Gruppen mehrheitlich verschieden eingestuft
    sind. **Vorläufig** kalibriert (2 Bildserien, 1 Kamera, knappe Lücke).
 
+### Kontrollfläche (optional, seit v1.8)
+
+Eine **unbehandelte** Parzelle wird am selben Tag direkt vor und nach dem
+Striegeln unter demselben Licht fotografiert („Kontrolle vorher/nachher“).
+Ihre Bedeckungsänderung entsteht ohne Striegeln — v. a. durch Licht und
+Tageszeit, aber auch Tau, Wind oder einen etwas anderen Bildausschnitt — und
+wird herausgerechnet:
+
+```
+CSC_kontrollbezogen = (1 − (nachher / vorher) / (Kontrolle_nachher / Kontrolle_vorher)) × 100 %
+Änderung Kontrolle  = (Kontrolle_nachher / Kontrolle_vorher − 1) × 100 %   (relativ)
+```
+
+Im Feldversuch zeigte die unbehandelte Fläche allein durch den Lichtwechsel
+einen Schein-CSC von 8–11 %. Kontrollbilder fließen **nicht** in die
+Mittelwerte der behandelten Gruppen ein. Die Kontrolle nutzt dieselbe Basis
+wie der CSC; fehlt sie den Kontrollbildern (Modus C: auf der Kontrolle keine
+Reihen erkannt), wird ihre relative Änderung an der gefilterten bzw.
+Gesamt-Bedeckung gemessen (die App weist darauf hin). Ist keine Korrektur
+möglich, nennt die App den Grund: roher CSC nicht berechenbar, kein
+Kontrollwert für die Basis, oder 0 % Bedeckung auf der Kontrollfläche.
+
 Wichtig fürs Aufnahmeprotokoll: Alle Bilder einer Auswertung sollten aus
 ähnlicher Höhe und möglichst senkrecht (Nadir) aufgenommen werden — die
 Gruppen-Mittelung setzt voraus, dass jedes Bild eine vergleichbare Fläche
@@ -170,16 +251,25 @@ zeilenweise umbrochen. Die Auswertungs-Panels (Original | Pflanzenmaske |
 Gefiltert | Unkrautgefiltert) tragen je Spalte Titel und Bedeckungswert,
 Reihen-Overlay und Rahmen-Kontrollbild eine Legende.
 
-## 5. Validierung an echten Feldbildern (Stand v1.5)
+## 5. Validierung an echten Feldbildern (Stand v1.5, historisch)
+
+> **Hinweis v1.8:** Dieser Abschnitt beschreibt den Stand bis v1.7 (Standard
+> ExG + Otsu). Die v1.8-Standardmethode (soilref) wurde **nicht** an diesen 24
+> Fotos nachvalidiert, sondern an der Punkt-Bonitur des Feldversuchs
+> 30./31.10.2026 (siehe §2). Auf den 24 Fotos weichen die Werte deutlich von
+> ExG + Otsu ab (z. B. feld_01 40,4 → 13,0 %, feld_05 44,9 → 13,7 %, feld_08
+> 0,2 → 27,6 %); für diese Fotos gibt es keine Referenzmessung, die
+> entscheidet, welcher Wert näher an der Wahrheit liegt.
 
 Erstkalibrierung (v1.3) an 14 realen Feldfotos; inzwischen liegen 24 Fotos
 unter `testdaten/feldbilder/` (Sonnenlicht, verschiedene Bewuchsdichten),
-gegen die jede Algorithmus-Änderung nachvalidiert wird — zusätzlich zu den
-synthetischen Kontrollbildern der automatischen Testsuite:
+gegen die bis v1.7 jede Algorithmus-Änderung nachvalidiert wurde —
+zusätzlich zu den synthetischen Kontrollbildern der automatischen Testsuite:
 
-- **Segmentierung:** ExG+Otsu segmentiert die Pflanzen auf allen Realbildern
-  sauber und ist sichtbar robuster als HSV (die feste HSV-Schwelle verfehlt
-  Vegetation bei ungünstigem Licht deutlich). ExG+Otsu ist daher Standard.
+- **Segmentierung (bis v1.7):** ExG+Otsu segmentierte die Pflanzen auf allen
+  Realbildern sichtbar robuster als HSV (die feste HSV-Schwelle verfehlt
+  Vegetation bei ungünstigem Licht deutlich). ExG+Otsu war daher bis v1.7
+  Standard; im Feldversuch 10/2026 versagte es bei tiefer Sonne (siehe §2).
 - **Reihen-Erkennung:** Auf den Realbildern springt Modus C nur bei echter,
   grober Reihenstruktur an (bei den vorliegenden, meist dicht bewachsenen
   Zufallsbildern ~4 von 14) und fällt sonst korrekt zurück — 0 Fehlalarme auf
@@ -225,10 +315,10 @@ Vorher und Nachher direkt nacheinander an derselben Stelle aufgenommen werden.
   eigentliche CSC-Messung werden **echte Vorher-/Nachher-Paare** derselben
   Stelle benötigt — die Feinjustierung der Reihen-Parameter erfolgt an
   diesen Paaren.
-- **Geplant:** Abgleich der gemessenen Bedeckungsgrade gegen eine
-  Referenzmessung (z. B. die frei verfügbare App *Canopeo* der Oklahoma State
-  University) sowie gegen manuelle Auszählung. Erst damit lässt sich
-  entscheiden, ob ExGR statt ExG+Otsu Standard werden sollte.
+- **Erledigt (v1.8):** Abgleich gegen eine manuelle Punkt-Bonitur (36 Bilder
+  × 100 Punkte, Feldversuch 10/2026) — Ergebnis: soilref wurde Standard.
+  Offen: Verhalten bei dichtem Bestand (> 50 % Bedeckung) und bei anderem Licht
+  als tiefer Sonne / Bewölkung (z. B. Dämmerung) ist nicht validiert.
 - Die Licht-Warnung ist an 18 Fotos einer Kamera kalibriert; mit den eigenen
   Versuchsfotos (Sonne/Wolken) ist die Schwelle 2,1 zu überprüfen.
 

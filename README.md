@@ -12,6 +12,57 @@ gestriegelt werden, liegt er darüber, sollte die Intensität reduziert werden.
 > Hochschule Reutlingen – Jahresprojekt 2025/2026
 > Abdic, Amel · Aktepe, Tarik · Frank, Manuel · Kader, Alan · Koca, Cem
 
+## Neu in v1.8
+
+Grundlage ist der Feldversuch vom 30./31.10.2026 (1235 Fotos; Referenz:
+36 Bilder × 100 Punkte, von 2 Personen bonitiert, Kappa 0,87).
+
+- **Neue Standard-Segmentierung „Boden-referenziert" (Lab a\*):** misst die
+  Bodenfarbe im Bild selbst (Median der weniger grünen Bildhälfte) und zählt
+  nur Pixel als Pflanze, die deutlich grüner sind. Warum: Bei tiefer,
+  warmer Sonne gibt der gelbgrüne Farbstich dem Boden positives ExG — das
+  alte **ExG + Otsu** zählte dann in 34–37 % der Sonnenbilder das ganze Bild
+  als Pflanze oder trennte nur helle von dunklen Blättern (Trefferquote
+  gegen die Referenz nur 0,30 vorher / 0,08 nachher). Die im Feld angezeigten
+  CSC-Werte von ~90 % bzw. −100 % waren Messfehler. Das neue Verfahren:
+  93 % Genauigkeit, ≤ 4 % Fehlalarme in allen Lichtsituationen,
+  Trefferquote 0,76–0,92; Vorher/Nachher am selben Tag ohne
+  Korrekturfaktor vergleichbar. Bestehende Installationen mit gespeichertem
+  „exg" werden einmalig umgestellt; ExG bleibt als „alt" wählbar.
+  **Grenze:** Bei mehr als ~50 % echter Bedeckung enthält auch die „weniger
+  grüne" Bildhälfte Pflanzen — die Bedeckung wird dann stark unterschätzt
+  (bei fast geschlossenem Bestand bis auf ~0 %). Solche Bilder markiert die
+  App als „dichter Bestand“; bitte per Auge prüfen.
+- **Kontrollfläche (optional):** Auf der Analyse-Seite (eingeklappt) lassen
+  sich Bilder einer unbehandelten Fläche „Kontrolle vorher/nachher" wählen —
+  gleichzeitig und unter gleichem Licht wie die gestriegelte Fläche
+  fotografiert. Die App rechnet damit Licht- und Tageszeit-Effekte heraus:
+  `CSC_kontrollbezogen = (1 − (nachher/vorher) / (Kontrolle_nachher/Kontrolle_vorher)) × 100`.
+  Im Versuch zeigte die Kontrolle allein durch den Lichtwechsel einen „CSC"
+  von 8–11 %. Die Ergebnis-Seite zeigt dann den kontrollbezogenen CSC groß
+  (Empfehlung danach), den rohen CSC darunter und die Veränderung der
+  Kontrollfläche. Kontrollbilder fließen nicht in die Mittelwerte der
+  behandelten Fläche ein. Ohne Kontrollbilder läuft alles wie bisher.
+- **Grauer U-Zählrahmen:** Der im Feld genutzte graue Metall-Rahmen
+  (50 × 50 cm, drei Stäbe, eine Seite offen, blauer Stab an einer Ecke)
+  wird jetzt erkannt; danach wird wie bisher ein roter Rahmen gesucht. Die
+  Ergebnis-Seite zeigt, welcher Rahmen gefunden wurde. Fotos **ohne** Rahmen
+  werden unverändert als ganzes Bild ausgewertet. Ragt der Rahmen aus dem
+  Foto (z. B. offene Seite abgeschnitten), wird er verworfen und das ganze
+  Bild ausgewertet; die Rahmensuche ist zeitlich gedeckelt.
+- **Plausibilitäts-Warnung:** Bilder mit Bedeckung unter 3 % oder über
+  80 % werden markiert („bitte Bilder prüfen"). Mit der Standardmethode
+  (boden-referenziert) kann „über 80 %" praktisch nie auftreten — dichte
+  Bestände erkennt dort der eigene Hinweis „dichter Bestand“ (Bedeckung
+  wahrscheinlich unterschätzt). Kein Hinweis heißt nicht „sicher richtig“.
+- **Fehlerbehebungen:** Galerie-Ordner Vorher/Nachher waren nach einer
+  Analyse teils leer (Export lief erst nach der Ergebnis-Meldung im
+  Hintergrund und wurde abgebrochen, sobald die App in den Hintergrund ging) —
+  jetzt wird jedes Bild direkt nach seiner Auswertung exportiert, Fehlschläge
+  werden angezeigt. Buttons in den Einstellungen („Als Admin anmelden",
+  „Zurücksetzen") waren grüne Flächen ohne lesbare Schrift.
+- Das CSC-Zielband (8–12 %) ist unverändert.
+
 ## Funktionen
 
 - **Kamera-Seite:** Vorher-/Nachher-Fotos aufnehmen oder Bilder importieren
@@ -21,10 +72,12 @@ gestriegelt werden, liegt er darüber, sollte die Intensität reduziert werden.
   Bild groß, das ✕ entfernt ein versehentlich gewähltes Bild, „Alle
   entfernen" leert die Gruppe; weitere Bilder werden angehängt. Drei Modi: A ohne Filter, B mit Unkrautfilter, **C mit
   Reihen-Erkennung** (trennt Kulturpflanze von Unkraut und liefert einen
-  Kultur-CSC plus Unkraut-Wirkungsgrad). Drei Segmentierungsverfahren wählbar:
-  **ExG + Otsu** (Standard), **ExGR** mit fester Schwelle oder HSV-Farbschwelle.
-  Liegt ein **roter Zählrahmen** im Bild, wird nur sein Inneres ausgewertet
-  (ohne erkannten Rahmen das ganze Bild, mit Hinweis). Analyse läuft lokal und
+  Kultur-CSC plus Unkraut-Wirkungsgrad). Vier Segmentierungsverfahren wählbar:
+  **Boden-referenziert** (Standard seit v1.8), ExG + Otsu (alt), **ExGR** mit
+  fester Schwelle oder HSV-Farbschwelle. Liegt ein **Zählrahmen** im Bild
+  (grauer U-Rahmen oder roter Rahmen), wird nur sein Inneres ausgewertet
+  (ohne erkannten Rahmen das ganze Bild, mit Hinweis). Optional:
+  **Kontrollfläche** für einen licht-korrigierten CSC (siehe „Neu in v1.8"). Analyse läuft lokal und
   offline via Python/OpenCV. Details siehe [METHODIK.md](METHODIK.md).
 - **Ergebnis-Seite:** Großer CSC-Wert mit farbcodierter Handlungsempfehlung
   (Zielband standardmäßig 8–12 %: darunter „aggressiver striegeln", im Band
@@ -62,6 +115,8 @@ Pictures/SmartWeed/
     └── Analyse_11-20-05_A/           ← eine Analyse (Uhrzeit_Modus A/B/C)
         ├── Vorher/                              (analysierte Vorher-Bilder)
         ├── Nachher/                             (analysierte Nachher-Bilder)
+        ├── Kontrolle_Vorher/                    (nur mit Kontrollfläche, v1.8)
+        ├── Kontrolle_Nachher/
         ├── 00_Uebersicht_2026-10-18_10-30.jpg   (Vergleichsbild mit CSC)
         ├── Vorher_01_Auswertung.jpg             (Original | Masken)
         └── Nachher_01_Auswertung.jpg
@@ -145,24 +200,28 @@ zum Download.
 
 `testdaten/feldbilder/` enthält 24 echte Feldfotos (Wintergetreide, frühes
 Stadium, Sonnenlicht). Die Erstkalibrierung (v1.3) erfolgte an 14 dieser
-Fotos; inzwischen wird jede Algorithmus-Änderung gegen alle 24 nachvalidiert
-(siehe [METHODIK.md](METHODIK.md) §5).
+Fotos; bis v1.7 wurde jede Algorithmus-Änderung gegen alle 24 nachvalidiert
+(siehe [METHODIK.md](METHODIK.md) §5). Die v1.8-Standardmethode wurde
+stattdessen an der Punkt-Bonitur des Feldversuchs vom Oktober 2026 validiert,
+nicht an diesen 24 Fotos (für sie gibt es keine Referenzmessung).
 
 ## Hinweise / bekannte Einschränkungen
 
 - Die Beschriftungen in den generierten Ergebnisbildern (z. B. „Vorher“,
   „Gefiltert“) sind fest auf Deutsch, da sie in `analysis.py` ins Bild
   gerendert werden.
-- **Methodik:** Standard-Segmentierung ist **ExG + Otsu** (an echten
-  Feldbildern validiert). Ihre bildabhängige Schwelle wandert allerdings mit
-  dem Licht — Vorher- und Nachher-Fotos deshalb möglichst bei gleichem Licht
-  aufnehmen (die App warnt bei Sonne/Wolken-Wechsel). **ExGR** (feste Schwelle)
-  und die klassische HSV-Schwelle sind als Alternativen wählbar; ob ExGR
-  Standard werden sollte, entscheidet erst eine Referenzmessung.
-  Details und Validierungsstand in [METHODIK.md](METHODIK.md).
-- **Zählrahmen:** Erkannt werden rote bzw. rosa Rahmen. Graue Drahtrahmen
-  vorher mit rotem oder orangem Klebeband umwickeln; Blätter nach Möglichkeit
-  vom Rahmen fernhalten.
+- **Methodik:** Standard-Segmentierung ist seit v1.8 **Boden-referenziert
+  (Lab a\*)**, validiert gegen eine Punkt-Bonitur aus dem Feldversuch
+  30./31.10.2026. Bei mehr als ~50 % echter Bedeckung unterschätzt sie die
+  Bedeckung (die Bodenreferenz enthält dann Pflanzen). Vorher- und
+  Nachher-Fotos trotzdem möglichst bei gleichem Licht aufnehmen; am
+  zuverlässigsten mit Kontrollfläche. ExG + Otsu (alt), **ExGR** und die
+  HSV-Schwelle bleiben als Alternativen wählbar. Details in
+  [METHODIK.md](METHODIK.md).
+- **Zählrahmen:** Erkannt werden der graue U-Rahmen mit blauem Stab und rote
+  bzw. rosa Rahmen. Blätter nach Möglichkeit vom Rahmen fernhalten.
+- **Datenschutz:** Die Fotos des Feldversuchs vom Oktober 2026 gehören nicht ins Repository; die neuen
+  Tests arbeiten mit synthetischen Bildern.
 - Die früheren Platzhalter-Screens „Monitoring“ und „Manuell“ (Traktor-/
   Striegelsteuerung) wurden entfernt — sie hatten keine Funktion. Die
   Git-Historie enthält sie weiterhin, falls die Idee wieder aufgegriffen wird.

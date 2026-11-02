@@ -1,23 +1,48 @@
 # app/src/main/python/analysis.py
 #
-# Bildanalyse für SmartWeedControl (v1.7)
+# Bildanalyse für SmartWeedControl (v1.8)
 #
 # Ablauf: Die App analysiert jedes Bild einzeln (analyze_image) und fasst
 # anschließend alle Vorher-/Nachher-Bilder zu einer Gruppen-Auswertung zusammen
 # (build_group_summary). Vorher- und Nachher-Gruppe dürfen unterschiedlich
 # viele Bilder enthalten — die Bedeckungsgrade werden je Gruppe gemittelt.
 #
-# Zählrahmen (optional): Liegt ein roter Zählrahmen im Bild, wird nur sein
-# Inneres ausgewertet (entzerrt, Originalauflösung). Ohne gefundenen Rahmen
-# fällt die Analyse auf das ganze Bild zurück (frame_found=false).
+# Kontrollfläche (optional, v1.8): Eine unbehandelte Parzelle wird am selben
+# Tag vorher und nachher unter demselben Licht fotografiert (Tags
+# "control_before"/"control_after"). Ihre Bedeckungsänderung ist reiner
+# Tages-/Lichteffekt und wird herausgerechnet:
+#   CSC_kontrollbezogen = (1 - (nachher/vorher) / (kontr_nachher/kontr_vorher)) * 100
+# Im Feldversuch zeigte die unbehandelte Fläche allein durch den Lichtwechsel
+# einen Schein-CSC von 8-11 %. Kontrollbilder fließen NICHT in die Mittelwerte
+# der behandelten Gruppen ein.
+#
+# Zählrahmen (optional): Zuerst wird der graue Metall-U-Rahmen mit blauem Stiel
+# gesucht (frame_u.py, so wird im Feld gearbeitet), danach der alte rote
+# Rahmen. Nur das Innere wird ausgewertet (entzerrt, Originalauflösung). Ohne
+# gefundenen Rahmen fällt die Analyse auf das ganze Bild zurück
+# (frame_found=false).
 #
 # Segmentierung (Pflanze vs. Boden), wählbar in den Experten-Einstellungen:
+#   - "soilref": bodenreferenziertes Lab-a* (Standard seit v1.8). Der Farbstich
+#             des Lichts wird am Boden desselben Bildes gemessen und abgezogen
+#             (siehe _soilref_mask).
 #   - "hsv":  fester Grünton-Bereich im HSV-Farbraum (klassisch)
 #   - "exg":  Excess-Green-Index (2g−r−b) mit automatischem Otsu-Schwellwert
-#             (Woebbecke 1995); Standard, an 24 Feldbildern validiert.
+#             (Woebbecke 1995); bis v1.7 Standard.
 #   - "exgr": Excess Green minus Excess Red mit fester Schwelle 0
 #             (Meyer & Neto 2008) — ohne bildabhängige Schwelle, daher ohne
 #             deren Licht-Drift (siehe _exgr_mask).
+#
+# Warum v1.8 (Feldversuch 30./31.10.2026, 1235 Fotos, Referenz: 36 Bilder x
+# 100 Punkte von 2 Bonitierenden, Kappa 0.87): ExG+Otsu versagte bei tief
+# stehender, warmer Sonne. Der gelbgrüne Farbstich gibt dem Boden einen
+# positiven ExG — der frühere Vollbewuchs-Rückfall zählte dann in 34-37 % der
+# Sonnenbilder den ganzen Boden als Pflanze; sonst trennte Otsu helle von
+# dunklen Blättern (~0-3 % Bedeckung). Trefferquote gegen die Referenz nur
+# 0.30 (vorher) / 0.08 (nachher); CSC-Werte von ~90 % bzw. -100 % im Feld
+# waren Messfehler. Das bodenreferenzierte Lab-a* erreichte 93 % Genauigkeit,
+# <= 4 % Falsch-Positive in allen Lichtsituationen und Trefferquote 0.76-0.92;
+# Vorher/Nachher am selben Tag braucht keinen Korrekturfaktor.
 #
 # Modus C (Reihen-Erkennung): Grün AUF den Saatreihen zählt als Kulturpflanze,
 # Grün ZWISCHEN den Reihen als Unkraut. Wird keine klare Reihenstruktur
@@ -26,6 +51,8 @@
 import os, json
 import cv2
 import numpy as np
+
+import frame_u
 
 # -------------------------------
 # Konstanten / Parameter
@@ -36,14 +63,45 @@ SV_MIN         = 40    # Mindest-Sättigung/-Helligkeit für "grün" (nur HSV-Me
 MIN_SIZE       = 50    # Komponenten kleiner als 50 px werden entfernt
 EXG_MIN        = 0.05  # ExG-Untergrenze: Grün muss dominieren (verhindert
                        # Fehl-Detektionen auf reinem Boden)
-EXG_UNIMODAL_FRACTION = 0.85  # ab diesem Grün-Anteil gilt das Bild als
-                              # vollflächig bewachsen -> Otsu überspringen
+
+# Bodenreferenziertes Lab-a* (Methode "soilref", Auswertungsname sr_laba_t10)
+SOILREF_THRESHOLD     = 10.0  # so viel grüner als der Boden (a*-Einheiten)
+SOILREF_SOIL_QUANTILE = 50    # die weniger grüne Hälfte gilt als Boden-Referenz
+# Dichter-Bestand-Warnung (dense_warning, nur soilref; Heuristik, nicht gegen
+# die Bonitur validiert): Boden-Referenz grüner als -a* = 8 heißt, die
+# "Boden"-Hälfte ist Pflanze (Feldfotos 26.-31.10.2026: Boden-Referenz
+# höchstens 4, Blätter ~20-40). Gemessene Bedeckung über 45 % liegt im Bereich,
+# in dem die Unterschätzung beginnt (Feldfotos: ~2.5 % der Bilder).
+SOILREF_DENSE_SOIL_REF = 8.0
+SOILREF_DENSE_COVER    = 45.0
 
 METHOD_HSV = "hsv"
 METHOD_EXG = "exg"
 METHOD_EXGR = "exgr"
+METHOD_SOILREF = "soilref"
 
-# Zählrahmen-Erkennung (roter/rosa Rahmen um die Bonitur-Fläche)
+# Bild-Gruppen (Tags von analyze_image / build_group_summary)
+TAG_BEFORE = "before"
+TAG_AFTER = "after"
+TAG_CONTROL_BEFORE = "control_before"
+TAG_CONTROL_AFTER = "control_after"
+TAGS = (TAG_BEFORE, TAG_AFTER, TAG_CONTROL_BEFORE, TAG_CONTROL_AFTER)
+
+# Plausibilitäts-Warnung je Bild (Pflanzenmaske): unter 3 % ist meist Boden
+# ohne Bestand oder eine Fehlsegmentierung (Feld: ExG-Otsu 0-3 %), über 80 %
+# meist als Pflanze gezählter Boden (Feld: ExG-Vollbewuchs-Rückfall).
+# ACHTUNG: Mit soilref (Standard) kann "high" praktisch nie auftreten (soilref
+# meldet höchstens ~75 %); dichte Bestände erkennt dort dense_warning.
+COVERAGE_WARN_LOW  = 3.0
+COVERAGE_WARN_HIGH = 80.0
+
+# Zählrahmen-Erkennung. Grauer U-Rahmen (frame_u.py): Die Ecken liegen auf den
+# Stab-MITTELlinien; 4 % der Seite (~2 cm bei 50 cm) nach innen halten die
+# ~1 cm breiten Stäbe sicher aus dem Ausschnitt.
+U_FRAME_MARGIN          = 0.04
+FRAME_KIND_U            = "u_frame"
+FRAME_KIND_RED          = "red"
+# Roter/rosa Rahmen um die Bonitur-Fläche (bis v1.7)
 FRAME_MIN_AREA_FRACTION = 0.08  # Rahmeninneres muss >= 8 % des Bildes einnehmen
 FRAME_MAX_ASPECT        = 1.6   # Seitenverhältnis des Inneren (Quadrat ~1.0)
 FRAME_MIN_SIDE          = 120   # Mindest-Kantenlänge des Inneren in px
@@ -175,24 +233,22 @@ def _hsv_mask(bgr, h_low, h_high):
 
 def _exg_otsu_mask(bgr):
     """Excess Green (auf normalisierten RGB-Werten) + Otsu-Schwellwert.
-    Der Schwellwert passt sich jedem Bild automatisch an => robust gegen
-    Sonne/Wolken/Tageszeit. Zwei Schutzmechanismen gegen Otsu-Fehltrennungen
-    auf (nahezu) unimodalen Histogrammen:
-      - vegetationsARM:  Untergrenze EXG_MIN verhindert, dass Bodenrauschen
-        als Pflanze geteilt wird.
-      - vegetationsREICH: Ist fast das ganze Bild grün-dominant, würde Otsu
-        den Schwellwert MITTEN in die Vegetation legen und die Bedeckung
-        halbieren — dann zählt direkt die EXG_MIN-Maske.
+    Der Schwellwert passt sich jedem Bild an; die Untergrenze EXG_MIN
+    verhindert auf vegetationsarmen Bildern, dass Bodenrauschen als Pflanze
+    geteilt wird.
 
-    Bekannte Grenze (bewusst NICHT "gefixt"): Bei 50-84 % Bewuchs mit sehr
-    breiter ExG-Verteilung (starke Sonne/Schatten-Kontraste im Bestand) kann
-    Otsu die Schwelle in die Vegetation legen und die Bedeckung unterschätzen.
-    Ein Fallback auf die EXG_MIN-Maske ist hier KEINE Option: Auf den 24
-    validierten Feldbildern schneidet Otsu regulär 30-70 % der ExG-positiven
-    Pixel weg (grünstichiger Boden/Moos knapp über EXG_MIN) — auch bei
-    Grün-Anteilen über 50 %. Der pathologische Fall ist metrisch nicht vom
-    Feld-Normalfall unterscheidbar; ein Guard würde die validierte Messung
-    auf echten Bildern massiv verfälschen (z. B. feld_08: 10 % -> 66 %)."""
+    Feldbefund v1.8 (30./31.10.2026, Referenz 36 Bilder x 100 Punkte): Bei
+    tief stehender, warmer Sonne versagt die Methode. Der gelbgrüne Farbstich
+    macht den Boden ExG-positiv. Der frühere Vollbewuchs-Rückfall ("ab 85 %
+    ExG > EXG_MIN zählt alles") wertete dadurch in 34-37 % der Sonnenbilder
+    den ganzen Boden als Pflanze und wurde ENTFERNT. In den übrigen Bildern
+    trennt Otsu helle von dunklen Blättern statt Pflanze von Boden (~0-3 %
+    Bedeckung). Trefferquote gegen die Referenz nur 0.30 (vorher) / 0.08
+    (nachher). Deshalb ist seit v1.8 "soilref" der Standard; ExG bleibt
+    wählbar (Vergleich mit älteren Auswertungen).
+
+    Bekannte Grenze: Ohne den Rückfall unterschätzt Otsu nahezu vollflächigen
+    Bewuchs (unimodales Histogramm -> Schwelle mitten in der Vegetation)."""
     f = bgr.astype(np.float32)
     b, g, r = f[:, :, 0], f[:, :, 1], f[:, :, 2]
     s = b + g + r
@@ -200,16 +256,60 @@ def _exg_otsu_mask(bgr):
     exg = 2.0 * g / s - r / s - b / s          # Wertebereich [-1..2]
     positive = ((exg > EXG_MIN).astype(np.uint8)) * 255
 
-    # Nahezu vollflächige Vegetation: kein Boden-Modus vorhanden => Otsu wäre
-    # bedeutungslos und würde die Vegetationsverteilung selbst zerteilen.
-    if float((positive > 0).mean()) >= EXG_UNIMODAL_FRACTION:
-        return positive
-
     # Vollen Wertebereich [-1..2] auf 0..255 abbilden (kein Clipping bei +1,
     # das das Otsu-Histogramm oben stauchen würde)
     exg8 = np.clip((exg + 1.0) / 3.0 * 255.0, 0, 255).astype(np.uint8)
     _, otsu = cv2.threshold(exg8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return cv2.bitwise_and(otsu, positive)
+
+
+def _soilref_mask(bgr):
+    """Bodenreferenziertes Lab-a* (Standard seit v1.8, Auswertung sr_laba_t10).
+
+    a* (Lab) misst Grün-Rot unabhängig von der Helligkeit. Statt einer festen
+    oder Otsu-Schwelle wird der Farbstich des Lichts am BODEN desselben Bildes
+    gemessen: Die weniger grüne Hälfte der Pixel (unter dem
+    SOILREF_SOIL_QUANTILE-Perzentil) ist überwiegend Boden, ihr Median ist die
+    Boden-Referenz. Pflanze = mehr als SOILREF_THRESHOLD a*-Einheiten grüner
+    als der Boden. Ein gelbgrüner Sonnen-Farbstich verschiebt Boden und
+    Pflanzen gleichermaßen und hebt sich damit heraus.
+
+    Feldversuch 30./31.10.2026 (36 Bilder x 100 Referenzpunkte): Genauigkeit
+    93 %, Falsch-Positive <= 4 % in allen Lichtsituationen, Trefferquote
+    0.76-0.92; Vorher/Nachher am selben Tag ohne Korrekturfaktor vergleichbar.
+
+    Bekannte Grenze: Bei mehr als ~50 % echter Bedeckung enthält auch die
+    "weniger grüne Hälfte" Pflanzen — die Boden-Referenz wird zu grün und die
+    Bedeckung wird STARK unterschätzt; bei fast geschlossenem Bestand bricht
+    sie bis auf ~0 % ein (die Referenz IST dann Pflanze). Die Boden-Referenz
+    liegt etwa beim 25. Perzentil, mehr als ~75 % Bedeckung kann soilref also
+    gar nicht melden — die "high"-Warnung (> 80 %) greift mit soilref NIE.
+    Dafür gibt es die eigene Warnung dense_warning (siehe _soilref_dense)."""
+    idx, soil_ref = _soilref_index(bgr)
+    return ((idx - soil_ref) > SOILREF_THRESHOLD).astype(np.uint8) * 255
+
+
+def _soilref_index(bgr):
+    """Grün-Index (-a*, größer = grüner) und Boden-Referenz für soilref."""
+    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
+    idx = -(lab[..., 1].astype(np.float32) - 128.0)      # größer = grüner
+    lo = np.percentile(idx, SOILREF_SOIL_QUANTILE)
+    soil_ref = float(np.median(idx[idx <= lo]))
+    return idx, soil_ref
+
+
+def _soilref_dense(bgr, cov_bw):
+    """True, wenn soilref auf diesem Bild wahrscheinlich UNTERSCHÄTZT
+    (dichter Bestand, bekannte Grenze):
+    - die Boden-Referenz ist selbst deutlich grün (-a* > SOILREF_DENSE_SOIL_REF):
+      die "weniger grüne Hälfte" ist überwiegend Pflanze, die Bedeckung kann
+      dann bis auf ~0 % einbrechen (sonst sähe das wie "kein Bestand" aus), oder
+    - die gemessene Bedeckung liegt schon über SOILREF_DENSE_COVER (ab ~50 %
+      echter Bedeckung beginnt die Unterschätzung)."""
+    if cov_bw > SOILREF_DENSE_COVER:
+        return True
+    _, soil_ref = _soilref_index(bgr)
+    return soil_ref > SOILREF_DENSE_SOIL_REF
 
 
 def _chromatic(bgr):
@@ -238,7 +338,9 @@ def _exgr_mask(bgr):
 
 
 def _segment_plants(bgr, method, h_low, h_high):
-    if method == METHOD_EXG:
+    if method == METHOD_SOILREF:
+        mask = _soilref_mask(bgr)
+    elif method == METHOD_EXG:
         mask = _exg_otsu_mask(bgr)
     elif method == METHOD_EXGR:
         mask = _exgr_mask(bgr)
@@ -381,6 +483,25 @@ def _crop_to_frame(bgr):
     warp = cv2.warpPerspective(bgr, cv2.getPerspectiveTransform(quad, dst), (side, side))
     m = int(side * FRAME_MARGIN)
     return np.ascontiguousarray(warp[m:side - m, m:side - m]), quad
+
+
+def _crop_to_any_frame(bgr):
+    """v1.8: Erst den grauen U-Rahmen (frame_u, der im Feld benutzte Rahmen),
+    dann den alten roten Rahmen suchen.
+    Rückgabe: (ausschnitt, quad, kind) oder (None, None, None)."""
+    try:
+        roi, info = frame_u.crop_to_frame(bgr, U_FRAME_MARGIN)
+    except Exception as e:      # Detektor-Fehler darf die Analyse nie abbrechen
+        print(f"[PY] frame_u failed: {e!r}")
+        roi, info = None, {"reason": "error"}
+    if roi is not None and roi.size:
+        print(f"[PY] frame_u: conf={info.get('confidence')} {info.get('reason')}")
+        return roi, np.asarray(info["corners"], np.float32), FRAME_KIND_U
+    print(f"[PY] frame_u: none ({info.get('reason')})")
+    roi, quad = _crop_to_frame(bgr)
+    if roi is not None:
+        return roi, quad, FRAME_KIND_RED
+    return None, None, None
 
 
 # -------------------------------
@@ -840,17 +961,31 @@ def _legend_band(width, entries, height=None):
 # ==========================================================
 # Einzelbild-Analyse (wird von der App pro Bild aufgerufen)
 # ==========================================================
+def _coverage_warning(cov_bw):
+    """"low"/"high" bei unplausibler Bedeckung, sonst None (Schlüssel entfällt)."""
+    if cov_bw < COVERAGE_WARN_LOW:
+        return "low"
+    if cov_bw > COVERAGE_WARN_HIGH:
+        return "high"
+    return None
+
+
 def analyze_image(path, out_dir, tag, index,
                   weed_filter=False, row_mode=False,
                   min_size=MIN_SIZE, h_low=H_LOW_DEFAULT, h_high=H_HIGH_DEFAULT,
-                  method=METHOD_EXG, frame_crop=False):
+                  method=METHOD_SOILREF, frame_crop=False):
     """
     Analysiert EIN Bild und legt die Detailbilder unter <out_dir>/details/ ab.
-    - tag: "before" oder "after", index: Position innerhalb der Gruppe
-    - frame_crop: nur das Innere eines roten Zählrahmens auswerten (Rückfall
-      auf das ganze Bild, wenn keiner gefunden wird)
+    - tag: "before", "after", "control_before" oder "control_after"
+      (Kontrollfläche, optional), index: Position innerhalb der Gruppe
+    - method: "soilref" (Standard), "exg", "exgr" oder "hsv"
+    - frame_crop: nur das Innere eines Zählrahmens auswerten (grauer U-Rahmen,
+      sonst roter Rahmen; Rückfall auf das ganze Bild, wenn keiner gefunden wird)
     Rückgabe: JSON-String (ein Item für build_group_summary).
     """
+    tag = str(tag)
+    if tag not in TAGS:
+        raise ValueError(f"unknown tag: {tag!r} (expected one of {TAGS})")
     path = str(path)
     if not os.path.isfile(path):
         raise FileNotFoundError(path)
@@ -866,18 +1001,20 @@ def analyze_image(path, out_dir, tag, index,
     # Zählrahmen: ab hier gilt nur noch das Rahmeninnere als Bild. Ein
     # Kontrollbild mit eingezeichnetem Ausschnitt macht die Erkennung prüfbar.
     frame_found = None
+    frame_kind = None
     frame_check_path = None
     if frame_crop:
-        roi, quad = _crop_to_frame(bgr)
+        roi, quad, frame_kind = _crop_to_any_frame(bgr)
         frame_found = roi is not None
-        print(f"[PY] frame {prefix}: found={frame_found}")
+        print(f"[PY] frame {prefix}: found={frame_found} kind={frame_kind}")
         if frame_found:
             check = bgr.copy()
             cv2.polylines(check, [quad.astype(np.int32)], True, (255, 255, 0),
                           max(2, int(round(max(check.shape[:2]) / 250.0))))
             check = _resize_to_height(check, min(MAX_PANEL_HEIGHT, check.shape[0]))
+            kind_label = "U-Rahmen" if frame_kind == FRAME_KIND_U else "roter Rahmen"
             check = np.concatenate([check, _legend_band(check.shape[1], [
-                ((255, 255, 0), "Erkannter Zaehlrahmen - nur das Innere wird ausgewertet")])],
+                ((255, 255, 0), f"Erkannter Zaehlrahmen ({kind_label}) - nur das Innere wird ausgewertet")])],
                 axis=0)
             frame_check_path = os.path.join(detail_dir, f"{prefix}_rahmen.jpg")
             _imwrite(frame_check_path, check, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
@@ -951,8 +1088,16 @@ def analyze_image(path, out_dir, tag, index,
     }
     if soil_light_span is not None:
         item["soil_light_span"] = soil_light_span
+    warn = _coverage_warning(cov_bw)
+    if warn is not None:
+        item["coverage_warning"] = warn
+    dense = method == METHOD_SOILREF and _soilref_dense(bgr, cov_bw)
+    if dense:
+        item["dense_warning"] = True   # Schlüssel fehlt sonst (kein false/null)
     if frame_found is not None:
         item["frame_found"] = frame_found
+        if frame_kind is not None:
+            item["frame_kind"] = frame_kind
         if frame_check_path:
             item["outputs"]["frame_check"] = frame_check_path
     if cov_wf is not None:
@@ -965,8 +1110,9 @@ def analyze_image(path, out_dir, tag, index,
             item["coverage_weed_percent"] = cov_weed
             item["outputs"]["row_overlay"] = overlay_path
 
-    print(f"[PY] analyze_image {prefix}: bw={cov_bw}% f={cov_f}% "
-          f"wf={cov_wf} crop={cov_crop} weed={cov_weed} bright={brightness}")
+    print(f"[PY] analyze_image {prefix}: method={method} bw={cov_bw}% f={cov_f}% "
+          f"wf={cov_wf} crop={cov_crop} weed={cov_weed} bright={brightness} warn={warn} "
+          f"dense={dense}")
     # allow_nan=False als Wächter: NaN/Inf würde sonst zu ungültigem JSON,
     # das die Java-Seite erst beim Parsen crashen ließe
     return json.dumps(item, ensure_ascii=False, allow_nan=False)
@@ -1031,9 +1177,12 @@ def _wrap_tiles(tiles, inner_w, gap):
 
 
 def _build_overview(before_items, after_items, out_dir, key="coverage_bw_percent",
-                    key_label="Bedeckung", csc=None, avg_before=None, avg_after=None):
+                    key_label="Bedeckung", csc=None, avg_before=None, avg_after=None,
+                    csc_label="CSC", control_line=None):
     """Übersichtsbild: Titelleiste, je Gruppe eine Kopfzeile (Anzahl, Mittel)
-    und die Bilder als Kacheln mit Nummer, Dateiname und Messwert."""
+    und die Bilder als Kacheln mit Nummer, Dateiname und Messwert.
+    control_line: optionale Textzeile zur Kontrollfläche (deren Bilder werden
+    bewusst NICHT als Kacheln gezeigt — das Bild bleibt lesbar)."""
     tile_h = OVERVIEW_TILE_HEIGHT
     gap, margin = 12, 24
     groups = []
@@ -1054,7 +1203,7 @@ def _build_overview(before_items, after_items, out_dir, key="coverage_bw_percent
     head_h = 64
     head = np.empty((head_h, width, 3), np.uint8)
     head[:] = UI_ACCENT
-    right = f"CSC {csc:.1f} %" if isinstance(csc, (int, float)) else ""
+    right = f"{csc_label} {csc:.1f} %" if isinstance(csc, (int, float)) else ""
     rw = _put(head, right, margin, head_h / 2.0, inner_w, 0.95, UI_ON_ACCENT, 2,
               align="right") if right else 0
     _put(head, "SmartWeed  |  Vorher / Nachher", margin, head_h / 2.0,
@@ -1078,6 +1227,8 @@ def _build_overview(before_items, after_items, out_dir, key="coverage_bw_percent
             blocks.append(cv2.copyMakeBorder(line, 0, gap, margin, margin,
                                              cv2.BORDER_CONSTANT, value=UI_BG))
 
+    if control_line:
+        blocks.append(_band(width, 40, control_line, fg=UI_TEXT, scale=0.55, pad=margin))
     blocks.append(_band(width, 40, f"Werte: {key_label} in % der ausgewerteten Bildflaeche",
                         fg=UI_TEXT_MUTED, scale=0.5, pad=margin))
     overview = np.concatenate(blocks, axis=0)
@@ -1094,8 +1245,12 @@ def build_group_summary(items_json, out_dir):
     Rückgabe: JSON-String mit Mittelwerten, Deltas, Warn-Flags und Übersichtsbild.
     """
     items = json.loads(str(items_json))
-    before = [i for i in items if i.get("tag") == "before"]
-    after = [i for i in items if i.get("tag") == "after"]
+    before = [i for i in items if i.get("tag") == TAG_BEFORE]
+    after = [i for i in items if i.get("tag") == TAG_AFTER]
+    # Kontrollfläche: eigene Gruppen, fließen NICHT in avg_before/avg_after,
+    # count_before/count_after oder die Kacheln der behandelten Gruppen ein
+    ctrl_before = [i for i in items if i.get("tag") == TAG_CONTROL_BEFORE]
+    ctrl_after = [i for i in items if i.get("tag") == TAG_CONTROL_AFTER]
 
     def group_avg(group):
         # Nicht berechenbare Mittelwerte werden WEGGELASSEN statt None gesetzt
@@ -1112,6 +1267,8 @@ def build_group_summary(items_json, out_dir):
 
     avg_b = group_avg(before)
     avg_a = group_avg(after)
+    avg_cb = group_avg(ctrl_before)
+    avg_ca = group_avg(ctrl_after)
 
     def delta(key):
         if avg_b.get(key) is None or avg_a.get(key) is None:
@@ -1175,8 +1332,64 @@ def build_group_summary(items_json, out_dir):
     csc = None
     if b_val is not None and a_val is not None and b_val > 0 and a_val >= 0:
         csc = (b_val - a_val) / b_val * 100.0
-    overview_path = _build_overview(before, after, out_dir, key, key_label, csc,
-                                    b_val, a_val)
+
+    # Kontrollbezogener CSC: Die Bedeckungsänderung der unbehandelten Fläche
+    # (Tages-/Lichteffekt) wird herausgerechnet. Basis wie oben; fehlt sie den
+    # Kontrollbildern (Modus C: auf der Kontrolle keine Reihen erkannt -> kein
+    # "crop"-Wert), wird die relative Änderung der Kontrolle auf der gefilterten
+    # bzw. SW-Bedeckung gemessen (control_basis meldet, welche Basis galt).
+    control_basis = None
+    for cand in (basis, "filtered", "bw"):
+        if cand in avg_cb and cand in avg_ca:
+            control_basis = cand
+            break
+    cb_val = avg_cb.get(control_basis) if control_basis else None
+    ca_val = avg_ca.get(control_basis) if control_basis else None
+    control_change = None
+    if cb_val is not None and ca_val is not None and cb_val > 0:
+        control_change = (ca_val / cb_val - 1.0) * 100.0
+    csc_corrected = None
+    if (csc is not None and cb_val is not None and ca_val is not None
+            and cb_val > 0 and ca_val > 0):
+        csc_corrected = (1.0 - (a_val / b_val) / (ca_val / cb_val)) * 100.0
+    # Warum keine Korrektur? (nur wenn beide Kontrollgruppen Bilder haben)
+    #   no_csc   - roher CSC nicht berechenbar (behandelt vorher 0 % / fehlt)
+    #   no_basis - Kontrollbilder ohne verwertbaren Bedeckungswert
+    #   no_cover - auf der Kontrollfläche (vorher oder nachher) 0 % Bedeckung
+    control_unavailable_reason = None
+    if ctrl_before and ctrl_after and csc_corrected is None:
+        if csc is None:
+            control_unavailable_reason = "no_csc"
+        elif cb_val is None or ca_val is None:
+            control_unavailable_reason = "no_basis"
+        else:
+            control_unavailable_reason = "no_cover"
+
+    control_line = None
+    if ctrl_before or ctrl_after:
+        def fmt(v):
+            return f"{v:.2f} %" if isinstance(v, (int, float)) else "-"
+        control_line = (f"Kontrollflaeche: vorher {len(ctrl_before)} Bild(er), Mittel {fmt(cb_val)}"
+                        f"  |  nachher {len(ctrl_after)} Bild(er), Mittel {fmt(ca_val)}")
+        if control_change is not None:
+            control_line += f"  |  Aenderung {control_change:+.1f} % (relativ)"
+        if control_basis is not None and control_basis != basis:
+            control_line += f"  |  Kontrolle auf Basis {control_basis}"
+        if csc_corrected is not None and csc is not None:
+            control_line += f"  |  CSC roh {csc:.1f} %"
+    if csc_corrected is not None:
+        overview_path = _build_overview(before, after, out_dir, key, key_label, csc_corrected,
+                                        b_val, a_val, csc_label="CSC kontrollbezogen",
+                                        control_line=control_line)
+    else:
+        overview_path = _build_overview(before, after, out_dir, key, key_label, csc,
+                                        b_val, a_val, control_line=control_line)
+
+    # Plausibilitäts-Warnungen aller Gruppen (inkl. Kontrolle)
+    coverage_warning_count = sum(1 for i in before + after + ctrl_before + ctrl_after
+                                 if i.get("coverage_warning"))
+    dense_warning_count = sum(1 for i in before + after + ctrl_before + ctrl_after
+                              if i.get("dense_warning"))
 
     # Kontrakt Python->Java: Optionale Schlüssel werden durchgängig WEGGELASSEN
     # statt auf None/null gesetzt — Androids JSONObject.optString würde aus
@@ -1187,6 +1400,10 @@ def build_group_summary(items_json, out_dir):
         "mode": "group",
         "count_before": len(before),
         "count_after": len(after),
+        "count_control_before": len(ctrl_before),
+        "count_control_after": len(ctrl_after),
+        "coverage_warning_count": coverage_warning_count,
+        "dense_warning_count": dense_warning_count,
         "weed_filter": weed_filter,
         "row_mode": row_mode,
         "brightness_warning": brightness_warning,
@@ -1195,12 +1412,24 @@ def build_group_summary(items_json, out_dir):
         "out_dir": out_dir,
         "avg_before": avg_b,
         "avg_after": avg_a,
+        "avg_control_before": avg_cb,
+        "avg_control_after": avg_ca,
         "delta": {k: v for k, v in deltas.items() if v is not None},
         "combo": {"overview": overview_path} if overview_path else {},
         "items": items,
     }
     if rows_detected is not None:
         result["rows_detected"] = rows_detected
+    if csc is not None:
+        result["csc"] = round(float(csc), 2)
+    if csc_corrected is not None:
+        result["csc_control_corrected"] = round(float(csc_corrected), 2)
+    if control_change is not None:
+        result["control_change_percent"] = round(float(control_change), 2)
+    if control_basis is not None and (ctrl_before or ctrl_after):
+        result["control_basis"] = control_basis
+    if control_unavailable_reason is not None:
+        result["control_unavailable_reason"] = control_unavailable_reason
     # Zählrahmen: nur gesetzt, wenn der Rahmen-Zuschnitt angefordert war
     frame_items = [i for i in items if "frame_found" in i]
     if frame_items:
@@ -1209,5 +1438,9 @@ def build_group_summary(items_json, out_dir):
     print(f"[PY] group summary: {len(before)} vorher / {len(after)} nachher, "
           f"rows={rows_detected}, bright_warn={brightness_warning}, "
           f"spread_warn={brightness_spread_warning}, light_warn={light_mismatch_warning}, "
-          f"frame_missing={result.get('frame_missing_count')}")
+          f"frame_missing={result.get('frame_missing_count')}, "
+          f"kontrolle={len(ctrl_before)}/{len(ctrl_after)}, csc={result.get('csc')}, "
+          f"csc_kontr={result.get('csc_control_corrected')}, "
+          f"cov_warn={coverage_warning_count}, dense_warn={dense_warning_count}, "
+          f"kontr_basis={control_basis}, kontr_grund={control_unavailable_reason}")
     return json.dumps(result, ensure_ascii=False, allow_nan=False)

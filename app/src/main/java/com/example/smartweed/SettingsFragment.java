@@ -125,13 +125,16 @@ public class SettingsFragment extends Fragment {
     private int radioIdForMethod(String method) {
         if (AnalysisSettings.METHOD_HSV.equals(method)) return R.id.rbMethodHsv;
         if (AnalysisSettings.METHOD_EXGR.equals(method)) return R.id.rbMethodExgr;
-        return R.id.rbMethodExg;
+        if (AnalysisSettings.METHOD_EXG.equals(method)) return R.id.rbMethodExg;
+        // v1.8: Standard (und Rückfall für unbekannte Werte) ist "soilref"
+        return R.id.rbMethodSoilref;
     }
 
     private String methodForRadioId(int id) {
         if (id == R.id.rbMethodHsv) return AnalysisSettings.METHOD_HSV;
         if (id == R.id.rbMethodExgr) return AnalysisSettings.METHOD_EXGR;
-        return AnalysisSettings.METHOD_EXG;
+        if (id == R.id.rbMethodExg) return AnalysisSettings.METHOD_EXG;
+        return AnalysisSettings.METHOD_SOILREF;
     }
 
     private void populateFields() {

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/scrollRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -65,6 +66,7 @@
             android:layout_marginTop="16dp">
 
             <TextView
+                android:id="@+id/tvCscHeroTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/csc_hero_title"
@@ -85,6 +87,17 @@
                 android:letterSpacing="-0.02"
                 android:textColor="@color/text_primary"/>
 
+            <!-- v1.8: roher CSC als Zweitwert, wenn der kontrollbezogene oben steht -->
+            <TextView
+                android:id="@+id/tvCscRaw"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:gravity="center"
+                android:textSize="14sp"
+                android:textColor="@color/text_secondary"
+                android:visibility="gone"/>
+
             <TextView
                 android:id="@+id/tvCscTarget"
                 android:layout_width="wrap_content"
@@ -103,6 +116,18 @@
                 android:textStyle="bold"
                 android:textSize="20sp"
                 android:textColor="@color/traktor_green"/>
+
+            <!-- v1.8: Veränderung der Kontrollfläche (Licht-/Tageseffekt) -->
+            <TextView
+                android:id="@+id/tvControlInfo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="center"
+                android:textSize="13sp"
+                android:lineSpacingExtra="2dp"
+                android:textColor="@color/text_secondary"
+                android:visibility="gone"/>
 
             <!-- Unkraut-Wirkungsgrad (nur Modus C: Reihen-Erkennung) -->
             <TextView
@@ -127,6 +152,18 @@
             android:padding="14dp"
             android:textSize="13sp"
             android:textColor="@color/status_warning"
+            android:visibility="gone"/>
+
+        <!-- v1.8: Welcher Zählrahmen wurde gefunden (U-Rahmen / rot) -->
+        <TextView
+            android:id="@+id/tvFrameInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_card_soft"
+            android:padding="14dp"
+            android:textSize="13sp"
+            android:textColor="@color/text_secondary"
             android:visibility="gone"/>
 
         <!-- Statistics Cards Row -->
@@ -496,6 +533,7 @@
             android:background="@drawable/bg_primary_button"
             android:foreground="@drawable/ripple_light"
             android:stateListAnimator="@null"
+            app:backgroundTint="@null"
             android:visibility="gone"/>
 
         <Button
@@ -510,6 +548,7 @@
             android:background="@drawable/bg_trash_button"
             android:foreground="@drawable/ripple_light"
             android:stateListAnimator="@null"
+            app:backgroundTint="@null"
             android:visibility="gone"/>
 
     </LinearLayout>

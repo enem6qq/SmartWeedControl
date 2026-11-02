@@ -50,6 +50,42 @@ public final class CscCalculator {
         return (coverageBefore - coverageAfter) / coverageBefore * 100.0;
     }
 
+    /**
+     * CSC mit Kontrollflächen-Korrektur (v1.8).
+     *
+     * Eine unbehandelte Kontrollfläche, die zur selben Zeit unter demselben
+     * Licht vorher und nachher fotografiert wurde, erfasst alle Effekte, die
+     * NICHTS mit dem Striegeln zu tun haben (Lichtwechsel über den Tag,
+     * Tau, Wind). Im Feldversuch (30./31.10.2026) zeigte die Kontrolle allein
+     * durch den Lichtwechsel einen "CSC" von 8–11 %. Diese Änderung wird
+     * herausgerechnet:
+     *
+     *   CSC_korr = (1 − (nachher / vorher) / (kontrolle_nachher / kontrolle_vorher)) × 100
+     *
+     * Ohne Veränderung der Kontrolle (Verhältnis 1) ist das Ergebnis identisch
+     * mit {@link #compute(Double, Double)}.
+     *
+     * @return korrigierter CSC in Prozent, oder null bei unbrauchbaren Eingaben
+     *         (ein Wert null/NaN/unendlich, vorher ≤ 0, Kontrolle vorher ≤ 0,
+     *         Kontrolle nachher ≤ 0 oder nachher &lt; 0)
+     */
+    public static Double computeControlCorrected(Double before, Double after,
+                                                 Double controlBefore, Double controlAfter) {
+        if (before == null || after == null || controlBefore == null || controlAfter == null) return null;
+        if (!isFinite(before) || !isFinite(after) || !isFinite(controlBefore) || !isFinite(controlAfter)) {
+            return null;
+        }
+        if (before <= 0 || after < 0 || controlBefore <= 0 || controlAfter <= 0) return null;
+        double treatedRatio = after / before;
+        double controlRatio = controlAfter / controlBefore;
+        double corrected = (1.0 - treatedRatio / controlRatio) * 100.0;
+        return isFinite(corrected) ? corrected : null;
+    }
+
+    private static boolean isFinite(double v) {
+        return !Double.isNaN(v) && !Double.isInfinite(v);
+    }
+
     /** Empfehlung anhand des Standard-Zielbands (8–12 %). */
     public static Recommendation recommend(Double csc) {
         return recommend(csc, DEFAULT_BAND_LOW, DEFAULT_BAND_HIGH);

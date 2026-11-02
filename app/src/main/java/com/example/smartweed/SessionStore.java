@@ -27,6 +27,8 @@ import java.util.Locale;
  *       └── Analyse_18-59-30_A/    ← Analyse-Ergebnis (Uhrzeit + Modus A/B/C)
  *           ├── Vorher/            ← die ausgewerteten Vorher-Bilder
  *           ├── Nachher/           ← die ausgewerteten Nachher-Bilder
+ *           ├── Kontrolle_Vorher/  ← optional (v1.8): unbehandelte Kontrollfläche vorher
+ *           ├── Kontrolle_Nachher/ ← optional (v1.8): Kontrollfläche nachher
  *           └── details/           ← Masken/Einzelbilder
  */
 public final class SessionStore {
@@ -43,6 +45,9 @@ public final class SessionStore {
     /** Unterordner IM Analyse-Ordner mit den ausgewerteten Bildern */
     public static final String ANALYSIS_BEFORE_DIR = "Vorher";
     public static final String ANALYSIS_AFTER_DIR = "Nachher";
+    /** v1.8: optionale Kontrollfläche (unbehandelt, gleiches Licht) */
+    public static final String ANALYSIS_CONTROL_BEFORE_DIR = "Kontrolle_Vorher";
+    public static final String ANALYSIS_CONTROL_AFTER_DIR = "Kontrolle_Nachher";
 
     private static final String TRASH_DIR_NAME = ".trash";
 
@@ -127,7 +132,8 @@ public final class SessionStore {
             if (analyses != null) {
                 for (File a : analyses) {
                     // Ergebnis = Bild direkt im Ordner oder in details/ — die
-                    // kopierten Eingangsbilder (Vorher/, Nachher/) allein zählen nicht
+                    // kopierten Eingangsbilder (Vorher/, Nachher/, Kontrolle_*/)
+                    // allein zählen nicht (countImages ist nicht rekursiv)
                     if (countImages(a) > 0 || findFirstImage(new File(a, "details")) != null) analysisCount++;
                 }
             }
