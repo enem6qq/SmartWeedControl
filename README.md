@@ -190,8 +190,9 @@ Documents/SmartWeed/
 Die Bilder in `Vorher/`, `Nachher/` usw. sind seit v1.9 auf die
 Analyse-Auflösung verkleinerte Kopien (lange Seite 1600 px); die Originale
 liegen unverändert in `vorher/` und `nachher/` bzw. dort, wo sie ausgewählt
-wurden. Die CSV nutzt `;` als Trennzeichen und das Dezimalzeichen der
-App-Sprache.
+wurden. Die CSV folgt der App-Sprache, so wie Excel derselben Sprache sie
+erwartet: Deutsch/Französisch mit Dezimalkomma und `;` als Trennzeichen,
+Englisch mit Dezimalpunkt und `,`.
 
 Jeder Analyse-Lauf bekommt einen eigenen Ordner — auch wenn dieselben Bilder
 mit einer anderen Variante (A/B/C) erneut ausgewertet werden (seit v1.7.2).

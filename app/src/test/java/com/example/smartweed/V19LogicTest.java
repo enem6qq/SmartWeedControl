@@ -69,12 +69,24 @@ public class V19LogicTest {
 
     @Test
     public void csvCell_setztNurBeiBedarfAnfuehrungszeichen() {
-        assertEquals("IMG_1234.jpg", ResultStore.csvCell("IMG_1234.jpg"));
-        assertEquals("12,34", ResultStore.csvCell("12,34"));
-        assertEquals("\"a;b.jpg\"", ResultStore.csvCell("a;b.jpg"));
-        assertEquals("\"sagt \"\"hallo\"\".jpg\"", ResultStore.csvCell("sagt \"hallo\".jpg"));
-        assertEquals("\"zeile1\nzeile2\"", ResultStore.csvCell("zeile1\nzeile2"));
-        assertEquals("", ResultStore.csvCell(null));
+        assertEquals("IMG_1234.jpg", ResultStore.csvCell("IMG_1234.jpg", ';'));
+        // Dezimalkomma ist bei ";" als Trennzeichen kein Sonderzeichen
+        assertEquals("12,34", ResultStore.csvCell("12,34", ';'));
+        assertEquals("\"a;b.jpg\"", ResultStore.csvCell("a;b.jpg", ';'));
+        assertEquals("\"a,b.jpg\"", ResultStore.csvCell("a,b.jpg", ','));
+        assertEquals("a;b.jpg", ResultStore.csvCell("a;b.jpg", ','));
+        assertEquals("\"sagt \"\"hallo\"\".jpg\"", ResultStore.csvCell("sagt \"hallo\".jpg", ';'));
+        assertEquals("\"zeile1\nzeile2\"", ResultStore.csvCell("zeile1\nzeile2", ';'));
+        assertEquals("", ResultStore.csvCell(null, ';'));
+    }
+
+    @Test
+    public void separatorFor_passtZumDezimalzeichenDerSprache() {
+        assertEquals(';', ResultStore.separatorFor(java.util.Locale.GERMANY));
+        assertEquals(';', ResultStore.separatorFor(java.util.Locale.FRANCE));
+        assertEquals(',', ResultStore.separatorFor(java.util.Locale.US));
+        assertEquals(';', ResultStore.separatorFor(new java.util.Locale("de")));
+        assertEquals(',', ResultStore.separatorFor(new java.util.Locale("en")));
     }
 
     @Test

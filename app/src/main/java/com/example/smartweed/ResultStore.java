@@ -125,41 +125,47 @@ public final class ResultStore {
     }
 
     /**
-     * Ergebnis als Tabelle. Trennzeichen ist immer ";" (die erste Zeile
-     * "sep=;" sagt das Excel in jeder Sprache); Dezimalzeichen nach der
-     * Sprache der App — deutsches Excel liest "3.11" sonst als Datum.
+     * Ergebnis als Tabelle im Format der App-Sprache, so wie Excel derselben
+     * Sprache es erwartet: Deutsch/Französisch mit Dezimalkomma und ";" als
+     * Trennzeichen, Englisch mit Dezimalpunkt und ",". (Deutsches Excel liest
+     * "3.11" sonst als Datum.)
+     * Bewusst OHNE "sep=;"-Kopfzeile: Sie ließe ein englisches Excel die
+     * deutsche Datei zwar in Spalten teilen, "12,34" aber still als 1234
+     * lesen — ohne die Zeile fällt eine falsche Spracheinstellung sofort auf
+     * (alles in einer Spalte). Außerdem ignoriert Excel mit "sep=" das
+     * Byte-Order-Mark, Umlaute in Dateinamen wären dann zerstört.
      * Die Spaltennamen sind feste, sprachunabhängige Bezeichner.
      */
     static String buildCsv(JSONObject root, Locale locale) {
         StringBuilder sb = new StringBuilder();
-        sb.append("sep=;\n");
+        final char sep = separatorFor(locale);
         JSONObject meta = root.optJSONObject("meta");
         if (meta == null) meta = new JSONObject();
-        row(sb, "SmartWeedControl", meta.optString("app_version", ""));
-        row(sb, "Session", meta.optString("session", ""));
-        row(sb, "Analyse", meta.optString("analysis", ""));
-        row(sb, "Datum", meta.optString("created", ""));
-        row(sb, "Modus", meta.optString("mode", ""));
-        row(sb, "Segmentierung", meta.optString("method", ""));
-        row(sb, "Mindestgroesse_px", meta.has("min_size") ? String.valueOf(meta.optInt("min_size")) : "");
-        row(sb, "Zaehlrahmen_Auswertung", meta.has("frame_crop") ? (meta.optBoolean("frame_crop") ? "ja" : "nein") : "");
+        row(sb, sep, "SmartWeedControl", meta.optString("app_version", ""));
+        row(sb, sep, "Session", meta.optString("session", ""));
+        row(sb, sep, "Analyse", meta.optString("analysis", ""));
+        row(sb, sep, "Datum", meta.optString("created", ""));
+        row(sb, sep, "Modus", meta.optString("mode", ""));
+        row(sb, sep, "Segmentierung", meta.optString("method", ""));
+        row(sb, sep, "Mindestgroesse_px", meta.has("min_size") ? String.valueOf(meta.optInt("min_size")) : "");
+        row(sb, sep, "Zaehlrahmen_Auswertung", meta.has("frame_crop") ? (meta.optBoolean("frame_crop") ? "ja" : "nein") : "");
         String basis = root.optString("csc_basis", "");
-        row(sb, "CSC_Basis", basis);
-        row(sb, "CSC_%", num(root, "csc", locale));
-        row(sb, "CSC_kontrollbezogen_%", num(root, "csc_control_corrected", locale));
-        row(sb, "Aenderung_Kontrolle_%", num(root, "control_change_percent", locale));
-        row(sb, "Bilder_vorher", String.valueOf(root.optInt("count_before", 0)));
-        row(sb, "Bilder_nachher", String.valueOf(root.optInt("count_after", 0)));
-        row(sb, "Bilder_Kontrolle_vorher", String.valueOf(root.optInt("count_control_before", 0)));
-        row(sb, "Bilder_Kontrolle_nachher", String.valueOf(root.optInt("count_control_after", 0)));
-        row(sb, "Bilder_nicht_im_Mittel", String.valueOf(root.optInt("excluded_count", 0)));
-        row(sb, "Bilder_uebersprungen", String.valueOf(root.optInt("skipped_count", 0)));
+        row(sb, sep, "CSC_Basis", basis);
+        row(sb, sep, "CSC_%", num(root, "csc", locale));
+        row(sb, sep, "CSC_kontrollbezogen_%", num(root, "csc_control_corrected", locale));
+        row(sb, sep, "Aenderung_Kontrolle_%", num(root, "control_change_percent", locale));
+        row(sb, sep, "Bilder_vorher", String.valueOf(root.optInt("count_before", 0)));
+        row(sb, sep, "Bilder_nachher", String.valueOf(root.optInt("count_after", 0)));
+        row(sb, sep, "Bilder_Kontrolle_vorher", String.valueOf(root.optInt("count_control_before", 0)));
+        row(sb, sep, "Bilder_Kontrolle_nachher", String.valueOf(root.optInt("count_control_after", 0)));
+        row(sb, sep, "Bilder_nicht_im_Mittel", String.valueOf(root.optInt("excluded_count", 0)));
+        row(sb, sep, "Bilder_uebersprungen", String.valueOf(root.optInt("skipped_count", 0)));
         if (!basis.isEmpty()) {
-            row(sb, "Mittel_vorher_%", num(root.optJSONObject("avg_before"), basis, locale));
-            row(sb, "Mittel_nachher_%", num(root.optJSONObject("avg_after"), basis, locale));
+            row(sb, sep, "Mittel_vorher_%", num(root.optJSONObject("avg_before"), basis, locale));
+            row(sb, sep, "Mittel_nachher_%", num(root.optJSONObject("avg_after"), basis, locale));
         }
         sb.append('\n');
-        row(sb, "Gruppe", "Nr", "Datei", "Bedeckung_%", "Bedeckung_gefiltert_%",
+        row(sb, sep, "Gruppe", "Nr", "Datei", "Bedeckung_%", "Bedeckung_gefiltert_%",
                 "Bedeckung_unkrautgefiltert_%", "Kultur_%", "Unkraut_%",
                 "Zaehlrahmen", "Im_Mittelwert", "Hinweis");
         JSONArray items = root.optJSONArray("items");
@@ -180,7 +186,7 @@ public final class ResultStore {
                     if (hint.length() > 0) hint.append(' ');
                     hint.append("dichter_Bestand");
                 }
-                row(sb, groupLabel(it.optString("tag", "")),
+                row(sb, sep, groupLabel(it.optString("tag", "")),
                         String.valueOf(it.optInt("index", i) + 1),
                         it.optString("file", ""),
                         num(it, "coverage_bw_percent", locale),
@@ -212,18 +218,23 @@ public final class ResultStore {
         return (Double.isNaN(v) || Double.isInfinite(v)) ? "" : String.format(locale, "%.2f", v);
     }
 
-    private static void row(StringBuilder sb, String... cells) {
+    /** ";" für Sprachen mit Dezimalkomma (de, fr), sonst "," — wie Excel es je Sprache erwartet. */
+    static char separatorFor(Locale locale) {
+        return new java.text.DecimalFormatSymbols(locale).getDecimalSeparator() == ',' ? ';' : ',';
+    }
+
+    private static void row(StringBuilder sb, char sep, String... cells) {
         for (int i = 0; i < cells.length; i++) {
-            if (i > 0) sb.append(';');
-            sb.append(csvCell(cells[i]));
+            if (i > 0) sb.append(sep);
+            sb.append(csvCell(cells[i], sep));
         }
         sb.append('\n');
     }
 
     /** Zellen mit Trennzeichen, Anführungszeichen oder Zeilenumbruch in "…" setzen. */
-    static String csvCell(String s) {
+    static String csvCell(String s, char sep) {
         if (s == null) return "";
-        if (s.indexOf(';') < 0 && s.indexOf('"') < 0 && s.indexOf('\n') < 0 && s.indexOf('\r') < 0) {
+        if (s.indexOf(sep) < 0 && s.indexOf('"') < 0 && s.indexOf('\n') < 0 && s.indexOf('\r') < 0) {
             return s;
         }
         return '"' + s.replace("\"", "\"\"") + '"';
