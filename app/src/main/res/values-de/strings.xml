@@ -39,7 +39,7 @@
         <item quantity="other">%1$d Bilder in den Papierkorb verschoben</item>
     </plurals>
     <string name="btn_discard_analysis">Diese Analyse verwerfen</string>
-    <string name="analysis_discard_confirm_message">Die erzeugten Ergebnisbilder werden in den Papierkorb verschoben.</string>
+    <string name="analysis_discard_confirm_message">Die Analyse wird in den Papierkorb verschoben und aus der Galerie entfernt.</string>
 
     <!-- Second Fragment (Camera) -->
     <string name="camera_preview_desc">Kamera-Vorschau</string>
@@ -269,5 +269,39 @@
     <plurals name="warning_gallery_export_failed">
         <item quantity="one">%1$d Bild konnte nicht in die Galerie gelegt werden – es liegt weiterhin im App-Speicher.</item>
         <item quantity="other">%1$d Bilder konnten nicht in die Galerie gelegt werden – sie liegen weiterhin im App-Speicher.</item>
+    </plurals>
+
+    <!-- v1.9 -->
+    <string name="notification_channel_analysis">Laufende Analyse</string>
+    <string name="notification_analysis_title">SmartWeed wertet aus</string>
+    <string name="notification_analysis_text">Die Bilder werden ausgewertet. Antippen, um zur App zurückzukehren.</string>
+    <string name="progress_frame_search">Suche Zählrahmen: Bild %1$d von %2$d …</string>
+    <string name="warning_frame_ignored">Zählrahmen nur in einem Teil der Bilder erkannt – alle Bilder wurden als ganzes Bild ausgewertet, damit die Werte vergleichbar bleiben.</string>
+    <string name="label_excluded_from_mean">Nicht im Mittelwert (kein Zählrahmen erkannt)</string>
+    <string name="label_frame_ignored">Zählrahmen erkannt, aber nicht verwendet – ganzes Bild</string>
+    <string name="error_no_readable_images">Kein lesbares Vorher- oder Nachher-Bild übrig</string>
+    <string name="overview_pages_info">Übersichtsbild: %1$d Seiten (alle in der Galerie)</string>
+    <string name="output_csv_path">Tabelle (CSV): %1$s</string>
+    <string name="session_delete_also_gallery">Auch aus der Galerie entfernen</string>
+    <string name="camera_resume_title">Aufnahme fortsetzen?</string>
+    <string name="camera_resume_message">Letzte Aufnahme: \"%1$s\" (%2$d vorher, %3$d nachher). Sollen die neuen Fotos dazu?</string>
+    <string name="camera_resume_continue">Fortsetzen</string>
+    <string name="camera_resume_new">Neue Aufnahme</string>
+    <string name="camera_session_label">Aufnahme: %1$s</string>
+    <string name="session_add_photos">Fotos hinzufügen</string>
+    <string name="session_show_results">Ergebnisse (%1$d)</string>
+    <string name="session_results_title">Gespeicherte Ergebnisse</string>
+    <string name="toast_result_not_readable">Das gespeicherte Ergebnis konnte nicht geladen werden.</string>
+    <plurals name="warning_frame_excluded">
+        <item quantity="one">%1$d Bild ohne Zählrahmen wurde ausgewertet, zählt aber nicht in den Mittelwert.</item>
+        <item quantity="other">%1$d Bilder ohne Zählrahmen wurden ausgewertet, zählen aber nicht in den Mittelwert.</item>
+    </plurals>
+    <plurals name="warning_images_skipped">
+        <item quantity="one">%1$d Bild konnte nicht gelesen werden und wurde übersprungen: %2$s</item>
+        <item quantity="other">%1$d Bilder konnten nicht gelesen werden und wurden übersprungen: %2$s</item>
+    </plurals>
+    <plurals name="trash_folder_item">
+        <item quantity="one">%2$s (%1$d Bild)</item>
+        <item quantity="other">%2$s (%1$d Bilder)</item>
     </plurals>
 </resources>

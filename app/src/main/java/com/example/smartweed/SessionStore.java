@@ -99,6 +99,67 @@ public final class SessionStore {
         return false;
     }
 
+    // ------------------------------------------------------------------
+    // v1.9: "aktive" Kamera-Session merken
+    // ------------------------------------------------------------------
+    // Bis v1.8 bekam jede neu geöffnete Kamera-Seite eine NEUE Session (Name
+    // aus der aktuellen Minute). Wer zwischen Vorher- und Nachher-Fotos zur
+    // Startseite zurückging (oder dessen App beim Striegeln beendet wurde),
+    // hatte die Nachher-Fotos in einer anderen Session als die Vorher-Fotos.
+    // Jetzt wird die zuletzt benutzte Session gemerkt und beim nächsten
+    // Öffnen der Kamera zum Fortsetzen angeboten.
+
+    private static final String PREFS_CAMERA = "camera_session";
+    private static final String KEY_ACTIVE_NAME = "active_name";
+    private static final String KEY_ACTIVE_USED = "active_used_ms";
+    /** So lange nach dem letzten Foto wird das Fortsetzen angeboten */
+    static final long RESUME_WINDOW_MS = 12 * 60 * 60 * 1000L;
+
+    /** Nach jedem Foto/Import aufrufen: Diese Session ist die aktive. */
+    public static void rememberActiveSession(Context context, String sessionName) {
+        if (sessionName == null || sessionName.isEmpty()) return;
+        context.getApplicationContext()
+                .getSharedPreferences(PREFS_CAMERA, Context.MODE_PRIVATE).edit()
+                .putString(KEY_ACTIVE_NAME, sessionName)
+                .putLong(KEY_ACTIVE_USED, System.currentTimeMillis())
+                .apply();
+    }
+
+    /**
+     * Name der Session, die sich fortsetzen lässt, oder null: zuletzt benutzt,
+     * jünger als {@link #RESUME_WINDOW_MS}, Ordner existiert noch und enthält
+     * Fotos (nicht gelöscht, nicht leer).
+     */
+    public static String getResumableSession(Context context) {
+        android.content.SharedPreferences prefs = context.getApplicationContext()
+                .getSharedPreferences(PREFS_CAMERA, Context.MODE_PRIVATE);
+        String name = prefs.getString(KEY_ACTIVE_NAME, null);
+        long used = prefs.getLong(KEY_ACTIVE_USED, 0);
+        if (!isResumable(name, used, System.currentTimeMillis())) return null;
+        File dir = new File(getBaseDir(context), name);
+        if (countImages(new File(dir, BEFORE_DIR_NAME)) + countImages(new File(dir, AFTER_DIR_NAME)) == 0) {
+            return null;
+        }
+        return name;
+    }
+
+    /** Reine Zeit-/Namensprüfung (ohne Dateisystem, per JUnit testbar). */
+    static boolean isResumable(String name, long lastUsedMs, long nowMs) {
+        if (name == null || name.isEmpty() || lastUsedMs <= 0) return false;
+        long age = nowMs - lastUsedMs;
+        // age < 0: Uhr wurde zurückgestellt -> lieber nicht anbieten
+        return age >= 0 && age < RESUME_WINDOW_MS;
+    }
+
+    /** Nach dem Umbenennen einer Session den gemerkten Namen nachziehen. */
+    public static void renameActiveSession(Context context, String oldName, String newName) {
+        android.content.SharedPreferences prefs = context.getApplicationContext()
+                .getSharedPreferences(PREFS_CAMERA, Context.MODE_PRIVATE);
+        if (oldName != null && oldName.equals(prefs.getString(KEY_ACTIVE_NAME, null))) {
+            prefs.edit().putString(KEY_ACTIVE_NAME, newName).apply();
+        }
+    }
+
     /** Daten einer Session für die Übersichts-Seite */
     public static class Session {
         public File dir;
@@ -106,6 +167,8 @@ public final class SessionStore {
         public int afterCount;
         public int analysisCount;
         public File thumbnail;
+        /** v1.9: Analyse-Ordner mit gespeichertem Ergebnis (ergebnis.json), neueste zuerst */
+        public List<File> resultDirs = new ArrayList<>();
     }
 
     /** Alle Sessions, neueste zuerst (Papierkorb wird ausgeblendet) */
@@ -135,9 +198,11 @@ public final class SessionStore {
                     // kopierten Eingangsbilder (Vorher/, Nachher/, Kontrolle_*/)
                     // allein zählen nicht (countImages ist nicht rekursiv)
                     if (countImages(a) > 0 || findFirstImage(new File(a, "details")) != null) analysisCount++;
+                    if (ResultStore.hasResult(a)) s.resultDirs.add(a);
                 }
             }
             s.analysisCount = analysisCount;
+            Collections.sort(s.resultDirs, (a, b) -> b.getName().compareTo(a.getName()));
 
             s.thumbnail = findFirstImage(new File(dir, BEFORE_DIR_NAME));
             if (s.thumbnail == null) s.thumbnail = findFirstImage(new File(dir, AFTER_DIR_NAME));

@@ -133,29 +133,33 @@ public class TrashFragment extends Fragment {
         Button btnRestore = itemView.findViewById(R.id.btnRestore);
         Button btnDelete = itemView.findViewById(R.id.btnDeletePermanently);
 
-        // Info setzen
-        tvName.setText(item.originalName);
+        // Info setzen (v1.9: Ordner-Einträge = ganze Session/Analyse mit Bildanzahl)
+        final String displayName = item.isDirectory
+                ? getResources().getQuantityString(R.plurals.trash_folder_item,
+                        item.imageCount, item.imageCount, item.originalName)
+                : item.originalName;
+        tvName.setText(displayName);
         tvDate.setText(getString(R.string.trash_deleted_on, item.getFormattedDate()));
 
         int daysLeft = item.getDaysRemaining();
         tvSize.setText(getString(R.string.trash_size_and_days, item.getFormattedSize(), daysLeft));
 
-        // Thumbnail laden
-        File trashFile = item.trashFile;
-        if (trashFile != null && trashFile.exists()) {
+        // Thumbnail laden (bei Ordnern das erste Bild darin)
+        File thumb = item.thumbnail;
+        if (thumb != null && thumb.isFile()) {
             Glide.with(this)
-                    .load(trashFile)
+                    .load(thumb)
                     .diskCacheStrategy(DiskCacheStrategy.NONE)
                     .skipMemoryCache(true)
-                    .signature(new ObjectKey(trashFile.lastModified()))
+                    .signature(new ObjectKey(thumb.lastModified()))
                     .centerCrop()
                     .into(ivThumb);
         }
 
         // Fullscreen bei Klick aufs Bild
         ivThumb.setOnClickListener(v -> {
-            if (trashFile != null && trashFile.exists()) {
-                SummaryFragment.FullscreenImageDialog.show(TrashFragment.this, trashFile.getAbsolutePath());
+            if (thumb != null && thumb.isFile()) {
+                SummaryFragment.FullscreenImageDialog.show(TrashFragment.this, thumb.getAbsolutePath());
             }
         });
 
@@ -163,15 +167,25 @@ public class TrashFragment extends Fragment {
         btnRestore.setOnClickListener(v -> {
             activeDialog = new AlertDialog.Builder(requireContext())
                     .setTitle(R.string.trash_restore_confirm_title)
-                    .setMessage(getString(R.string.trash_restore_confirm_message, item.originalName))
+                    .setMessage(getString(R.string.trash_restore_confirm_message, displayName))
                     .setPositiveButton(R.string.trash_restore, (d, w) -> {
                         final boolean[] success = new boolean[1];
+                        final android.content.Context appCtx = requireContext().getApplicationContext();
                         runInBackground(
-                                () -> success[0] = trashManager.restoreFromTrash(item.trashName),
+                                () -> {
+                                    File restored = trashManager.restoreFromTrashTo(item.trashName);
+                                    success[0] = restored != null;
+                                    // v1.9: Beim Löschen wurden die Galerie-Kopien
+                                    // entfernt -> wiederhergestellte Ordner wieder
+                                    // in die Galerie legen
+                                    if (restored != null && restored.isDirectory()) {
+                                        ResultStore.reexportToGallery(appCtx, restored);
+                                    }
+                                },
                                 () -> {
                                     if (success[0]) {
                                         Toast.makeText(requireContext(),
-                                                getString(R.string.trash_restored, item.originalName),
+                                                getString(R.string.trash_restored, displayName),
                                                 Toast.LENGTH_SHORT).show();
                                     } else {
                                         Toast.makeText(requireContext(),
@@ -189,14 +203,14 @@ public class TrashFragment extends Fragment {
         btnDelete.setOnClickListener(v -> {
             activeDialog = new AlertDialog.Builder(requireContext())
                     .setTitle(R.string.trash_delete_confirm_title)
-                    .setMessage(getString(R.string.trash_delete_confirm_message, item.originalName))
+                    .setMessage(getString(R.string.trash_delete_confirm_message, displayName))
                     .setPositiveButton(R.string.trash_delete_permanently, (d, w) -> {
                         final boolean[] success = new boolean[1];
                         runInBackground(
                                 () -> success[0] = trashManager.deletePermanently(item.trashName),
                                 () -> Toast.makeText(requireContext(),
                                         success[0]
-                                                ? getString(R.string.trash_deleted_permanently, item.originalName)
+                                                ? getString(R.string.trash_deleted_permanently, displayName)
                                                 : getString(R.string.trash_delete_failed),
                                         Toast.LENGTH_SHORT).show());
                     })
