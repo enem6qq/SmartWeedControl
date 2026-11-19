@@ -38,9 +38,9 @@ Zehn Schwachstellen aus dem Code-Review nach dem Feldversuch (26.10.–03.11.202
 - **Segmentierung: Mindest-Grün.** „Boden-referenziert“ verlangt jetzt
   zusätzlich, dass ein Pixel selbst mindestens leicht grün ist. Auf kräftig
   braunem oder rötlichem Boden wurden sonst graue Steine und Stroh als
-  Pflanze gezählt (sie sind „grüner als der Boden“). Auf den 36
-  Referenzbildern des Feldversuchs ändert das nichts; von 400 Feldfotos
-  ändern sich 16, höchstens um 1,5 Prozentpunkte.
+  Pflanze gezählt (sie sind „grüner als der Boden“). An den Bildern des
+  Feldversuchs ändert das nichts (36 Referenzbilder, 400 Feldfotos und 60
+  Rahmen-Ausschnitte geprüft).
 - **Verwerfen/Löschen räumt die Galerie auf.** Beim Verwerfen einer Analyse
   werden ihre Galerie-Bilder und die CSV entfernt; beim Löschen einer
   Aufnahme ist das wählbar (Standard: ja). Beim Wiederherstellen aus dem

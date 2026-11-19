@@ -86,13 +86,17 @@ SOILREF_SOIL_QUANTILE = 50    # die weniger grüne Hälfte gilt als Boden-Refere
 # oder rötlichem Boden nicht — neutrale graue Steine und Stroh liegen dort
 # 15-30 Einheiten über dem Boden und wurden vollständig als Pflanze gezählt
 # (synthetischer Test: Boden RGB 150/90/60, Steine/Stroh zu 100 %).
-# Kalibrierung am Feldversuch 26.10.-03.11.2026: Mit 3.0 sind alle 36
-# Referenzbilder (x 100 Punkte) UNVERÄNDERT bewertet; von 400 Feldfotos sind
-# 16 betroffen, größte Änderung -1.5 Prozentpunkte, im Mittel -0.05. Ab 4.0
-# sinkt die Trefferquote nach dem Striegeln (0.92 -> 0.88, bei 6.0 -> 0.85).
-# Bekannte Grenze: Bei starkem Grünstich des Lichts UND rötlichem Boden können
-# helle neutrale Objekte knapp über die Schwelle rutschen.
-SOILREF_MIN_GREEN     = 3.0
+# Kalibrierung am Feldversuch 26.10.-03.11.2026: Die Boden-Referenz lag dort
+# nie unter -8 (400 Feldfotos, 60 Rahmen-Ausschnitte), die Schwelle "Boden +
+# 10" also nie unter 2 — mit 2.0 ändert sich an KEINEM dieser Bilder etwas,
+# auch nicht an den 36 Referenzbildern (x 100 Punkte, Genauigkeit 0.931).
+# Mit 3.0 sänke die Bedeckung in Rahmen-Ausschnitten nach dem Striegeln im
+# Mittel um 0.4 Prozentpunkte (höchstens 1.5) — das verschöbe den CSC um
+# etwa einen Prozentpunkt; ab 4.0 sinkt die Trefferquote (0.92 -> 0.88).
+# Bekannte Grenze: leicht grünstichige Steine (-a* ~ 5) und sehr helles Stroh
+# werden auf rötlichem Boden nur zum Teil ausgeschlossen (synthetisch: 3 von
+# 14 % bzw. 1 von 14 %); bei starkem Grünstich des Lichts entsprechend mehr.
+SOILREF_MIN_GREEN     = 2.0
 # Dichter-Bestand-Warnung (dense_warning, nur soilref; Heuristik, nicht gegen
 # die Bonitur validiert): Boden-Referenz grüner als -a* = 8 heißt, die
 # "Boden"-Hälfte ist Pflanze (Feldfotos 26.-31.10.2026: Boden-Referenz

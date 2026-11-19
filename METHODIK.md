@@ -108,17 +108,19 @@ Vier Verfahren stehen zur Wahl (Analyse-Einstellungen → Segmentierung):
   ≤ 4 % in allen Lichtsituationen (tiefe Sonne, Bewölkung), Trefferquote
   0,76–0,92; Vorher/Nachher am selben Tag ohne Korrekturfaktor vergleichbar.
   **Mindest-Grün (seit v1.9):** Zusätzlich muss das Pixel selbst mindestens
-  leicht grün sein (`−a* > 3`, 0 = neutral grau). „Grüner als der Boden“
+  leicht grün sein (`−a* > 2`, 0 = neutral grau). „Grüner als der Boden“
   allein genügt auf kräftig braunem oder rötlichem Boden nicht: Neutrale
   graue Steine und Stroh liegen dort 15–30 Einheiten über dem Boden und
   wurden vollständig als Pflanze gezählt (synthetischer Test, Boden RGB
-  150/90/60). Auf dem graubraunen Boden des Feldversuchs (Boden-Referenz −8
-  bis +3) greift die Grenze praktisch nicht: alle 36 Referenzbilder werden
-  unverändert bewertet, von 400 Feldfotos ändern sich 16 (höchstens −1,5
-  Prozentpunkte). Ab einem Wert von 4 sinkt die Trefferquote nach dem
-  Striegeln (0,92 → 0,88). Offen: Bei starkem Grünstich des Lichts **und**
-  rötlichem Boden können helle neutrale Objekte knapp über die Schwelle
-  rutschen — auf einem zweiten Boden nachvalidieren.
+  150/90/60). Auf dem graubraunen Boden des Feldversuchs lag die
+  Boden-Referenz nie unter −8, die Schwelle „Boden + 10“ also nie unter 2:
+  An keinem der geprüften Bilder ändert sich etwas (36 Referenzbilder, 400
+  Feldfotos, 60 Rahmen-Ausschnitte). Mit dem Wert 3 sänke die Bedeckung in
+  Rahmen-Ausschnitten nach dem Striegeln im Mittel um 0,4 Prozentpunkte
+  (CSC etwa +1 Prozentpunkt), ab 4 sinkt die Trefferquote (0,92 → 0,88).
+  Grenze: Leicht grünstichige Steine und sehr helles Stroh werden auf
+  rötlichem Boden nur zum Teil ausgeschlossen — auf einem zweiten Boden
+  nachvalidieren.
   **Grenze (dichter Bestand):** Ab ~50 % echter Bedeckung enthält auch die
   „weniger grüne Hälfte“ Pflanzen, die Boden-Referenz wird zu grün und die
   Bedeckung wird **stark unterschätzt**; bei fast geschlossenem, einheitlichem
