@@ -36,6 +36,11 @@ public final class ResultStore {
     public static final String RESULT_FILE = "ergebnis.json";
     public static final String CSV_FILE = "ergebnis.csv";
 
+    /** Byte-Order-Mark am Dateianfang: Excel erkennt die CSV sonst nicht als
+     *  UTF-8 (Umlaute). Als Zahl notiert — das Zeichen selbst darf nicht im
+     *  Quelltext stehen (Lint "ByteOrderMark"). */
+    private static final String UTF8_BOM = String.valueOf((char) 0xFEFF);
+
     private ResultStore() { }
 
     public static boolean hasResult(File analysisDir) {
@@ -116,7 +121,7 @@ public final class ResultStore {
     public static File writeCsv(File analysisDir, JSONObject result) {
         File f = new File(analysisDir, CSV_FILE);
         // BOM voran: Excel erkennt die Datei sonst nicht als UTF-8 (Umlaute)
-        return writeText(f, "﻿" + buildCsv(result, Locale.getDefault())) ? f : null;
+        return writeText(f, UTF8_BOM + buildCsv(result, Locale.getDefault())) ? f : null;
     }
 
     /**
