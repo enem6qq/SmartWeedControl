@@ -1427,3 +1427,280 @@ def test_u_rahmen_arbeitsbudget(monkeypatch, u_scene):
     r = frame_u.detect_frame(u_scene[0])
     assert len(calls) == 0 and r["truncated"] is True
     assert not r["ok"] and "budget" in r["reason"], r["reason"]
+
+
+# ============================================================================
+# v1.9
+# ============================================================================
+def make_coloured_soil_scene(soil_rgb, obj_rgb, frac=0.15, seed=3, size=600, noise=6):
+    """Einfarbiger Boden mit runden Objekten bekannter Fläche (RGB-Angaben).
+    Rückgabe: (bild, objektanteil_in_prozent)."""
+    rng = np.random.RandomState(seed)
+    img = np.empty((size, size, 3), np.float32)
+    img[:] = soil_rgb[::-1]
+    m = np.zeros((size, size), np.uint8)
+    for _ in range(int(frac * size * size / (np.pi * 18 * 18))):
+        cv2.circle(m, (rng.randint(0, size), rng.randint(0, size)), 18, 255, -1)
+    img[m > 0] = obj_rgb[::-1]
+    img += rng.normal(0, noise, img.shape)
+    return np.clip(img, 0, 255).astype(np.uint8), float((m > 0).mean() * 100)
+
+
+# --- soilref: Mindest-Grün ---------------------------------------------------
+@pytest.mark.parametrize("soil", [(140, 100, 70), (150, 90, 60), (160, 80, 55)])
+@pytest.mark.parametrize("obj", [(135, 135, 135), (190, 170, 120)])
+def test_soilref_neutrale_objekte_auf_rotem_boden_keine_pflanze(soil, obj):
+    """v1.9-Regression: Graue Steine und Stroh sind auf braunem/rötlichem Boden
+    "grüner als der Boden" und wurden bis v1.8 (fast) vollständig als Pflanze
+    gezählt. Mit dem Mindest-Grün bleiben sie Boden."""
+    img, true = make_coloured_soil_scene(soil, obj)
+    assert true > 10
+    cov = analysis._coverage_percent(seg(img, "soilref"))
+    assert cov < 1.0, cov
+
+
+@pytest.mark.parametrize("soil", [(120, 105, 90), (140, 100, 70), (160, 80, 55)])
+@pytest.mark.parametrize("leaf", [(70, 130, 50), (120, 150, 95)])
+def test_soilref_blaetter_auf_jedem_boden_erkannt(soil, leaf):
+    """Das Mindest-Grün darf echte (auch blasse) Blätter nicht kosten."""
+    img, true = make_coloured_soil_scene(soil, leaf)
+    cov = analysis._coverage_percent(seg(img, "soilref"))
+    assert abs(cov - true) < 1.5, (cov, true)
+
+
+def test_soilref_mindestgruen_greift_nicht_bei_neutralem_boden():
+    """Auf dem graubraunen Boden des Feldversuchs (Boden-Referenz >= -7) ist
+    die Schwelle weiterhin "Boden + 10" — die Validierung von v1.8 gilt."""
+    img, _ = make_coloured_soil_scene((120, 105, 90), (70, 130, 50))
+    _, ref = analysis._soilref_index(img)
+    assert ref + analysis.SOILREF_THRESHOLD >= analysis.SOILREF_MIN_GREEN
+
+
+# --- Zählrahmen in zwei Schritten: find_frame / plan_frame_use ---------------
+def test_find_frame_und_crop_identisch_zum_direktweg(tmp_path, u_scene):
+    """find_frame + analyze_image(frame_decision="crop") liefert exakt dieselben
+    Werte wie der bisherige Einschritt-Weg (frame_crop=True)."""
+    img, _, _ = u_scene
+    src = str(tmp_path / "u.png")
+    cv2.imwrite(src, img)
+    direkt = json.loads(analysis.analyze_image(src, str(tmp_path / "a"), "before", 0,
+                                               frame_crop=True))
+    frame = analysis.find_frame(src)
+    info = json.loads(frame)
+    assert info["found"] is True and info["kind"] == "u_frame"
+    assert len(info["corners"]) == 4 and info["width"] == img.shape[1]
+    zwei = json.loads(analysis.analyze_image(src, str(tmp_path / "b"), "before", 0,
+                                             frame=frame, frame_decision="crop"))
+    assert zwei["frame_found"] is True and zwei["frame_kind"] == "u_frame"
+    assert zwei["coverage_bw_percent"] == direkt["coverage_bw_percent"]
+    assert zwei["coverage_filtered_percent"] == direkt["coverage_filtered_percent"]
+    assert "excluded_from_mean" not in zwei and "frame_ignored" not in zwei
+    assert_no_none(zwei)
+
+
+def test_find_frame_roter_rahmen_und_ohne_rahmen(tmp_path):
+    img, soll = make_frame_scene()
+    src = str(tmp_path / "rot.jpg")
+    cv2.imwrite(src, img, [cv2.IMWRITE_JPEG_QUALITY, 95])
+    frame = analysis.find_frame(src)
+    assert json.loads(frame)["kind"] == "red"
+    item = json.loads(analysis.analyze_image(src, str(tmp_path / "a"), "before", 0,
+                                             method="exg", frame=frame, frame_decision="crop"))
+    assert item["frame_kind"] == "red"
+    assert abs(item["coverage_bw_percent"] - soll) < 3.0
+
+    feld, _, _ = make_field()
+    src2 = str(tmp_path / "feld.png")
+    cv2.imwrite(src2, feld)
+    info = json.loads(analysis.find_frame(src2))
+    assert info == {"found": False, "width": feld.shape[1], "height": feld.shape[0]}
+
+
+def test_find_frame_unlesbare_datei(tmp_path):
+    """Die App überspringt unlesbare Bilder (z. B. HEIC) einzeln — dafür muss
+    der Fehler als Exception kommen, nicht als stilles Ergebnis."""
+    bad = tmp_path / "foto.heic.jpg"
+    bad.write_bytes(b"kein bild")
+    with pytest.raises(ValueError):
+        analysis.find_frame(str(bad))
+    with pytest.raises(ValueError):
+        analysis.analyze_image(str(bad), str(tmp_path / "o"), "before", 0)
+
+
+def test_analyze_image_frame_decision_full_und_exclude(tmp_path, u_scene):
+    img, _, _ = u_scene
+    src = str(tmp_path / "u.png")
+    cv2.imwrite(src, img)
+    frame = analysis.find_frame(src)
+    ganz = json.loads(analysis.analyze_image(src, str(tmp_path / "a"), "before", 0))
+    full = json.loads(analysis.analyze_image(src, str(tmp_path / "b"), "before", 0,
+                                             frame=frame, frame_decision="full"))
+    assert full["frame_found"] is False and full["frame_ignored"] is True
+    assert "frame_kind" not in full and "excluded_from_mean" not in full
+    assert full["coverage_bw_percent"] == ganz["coverage_bw_percent"]   # ganzes Bild
+
+    excl = json.loads(analysis.analyze_image(src, str(tmp_path / "c"), "after", 1,
+                                             frame='{"found": false}', frame_decision="exclude"))
+    assert excl["frame_found"] is False and excl["excluded_from_mean"] == "no_frame"
+    assert "frame_ignored" not in excl
+    # Rahmen nicht gefunden + Gruppe rechnet ganz -> kein "ignoriert"
+    none = json.loads(analysis.analyze_image(src, str(tmp_path / "d"), "after", 2,
+                                             frame='{"found": false}', frame_decision="full"))
+    assert none["frame_found"] is False and "frame_ignored" not in none
+    with pytest.raises(ValueError):
+        analysis.analyze_image(src, str(tmp_path / "e"), "after", 3, frame_decision="quatsch")
+
+
+def _plan(*entries):
+    return json.loads(analysis.plan_frame_use(json.dumps(
+        [{"tag": t, "found": f} for t, f in entries])))
+
+
+def test_plan_frame_use_alle_oder_keiner():
+    p = _plan(("before", True), ("before", True), ("after", True))
+    assert p["treated_mode"] == "frame" and p["decisions"] == ["crop"] * 3
+    assert p["control_mode"] == "empty"
+    p = _plan(("before", False), ("after", False))
+    assert p["treated_mode"] == "none" and p["decisions"] == ["full", "full"]
+
+
+def test_plan_frame_use_einzelner_ausreisser_wird_ausgeschlossen():
+    """254 von 255 Rahmen wurden im Feld gefunden: Ein einzelnes Bild ohne
+    Rahmen darf nicht die ganze Auswertung auf "ganzes Bild" kippen."""
+    p = _plan(("before", True), ("before", True), ("before", True), ("before", False),
+              ("after", True), ("after", True))
+    assert p["treated_mode"] == "frame_partial"
+    assert p["decisions"] == ["crop", "crop", "crop", "exclude", "crop", "crop"]
+
+
+def test_plan_frame_use_gruppe_ueberwiegend_ohne_rahmen_alles_ganz():
+    """Vorher mit Rahmen, nachher (fast) ohne: Dann zählt für ALLE das ganze
+    Bild — sonst stünde der Nachher-Mittelwert auf einem einzigen Bild."""
+    p = _plan(("before", True), ("before", True), ("after", True), ("after", False),
+              ("after", False))
+    assert p["treated_mode"] == "full" and p["decisions"] == ["full"] * 5
+    p = _plan(("before", True), ("after", False))
+    assert p["treated_mode"] == "full" and p["decisions"] == ["full", "full"]
+    # genau die Hälfte reicht
+    p = _plan(("before", True), ("before", False), ("after", True), ("after", False))
+    assert p["treated_mode"] == "frame_partial"
+
+
+def test_plan_frame_use_kontrolle_unabhaengig():
+    p = _plan(("before", True), ("after", True),
+              ("control_before", False), ("control_after", False))
+    assert p["treated_mode"] == "frame" and p["control_mode"] == "none"
+    assert p["decisions"] == ["crop", "crop", "full", "full"]
+    p = _plan(("before", False), ("after", False),
+              ("control_before", True), ("control_after", True))
+    assert p["decisions"] == ["full", "full", "crop", "crop"]
+    with pytest.raises(ValueError):
+        _plan(("vorher", True))
+
+
+def test_gruppe_ausgeschlossene_bilder_nicht_im_mittel(tmp_path):
+    items = [_item("before", 0, 20.0, 20.0, 100), _item("before", 1, 22.0, 22.0, 100),
+             _item("before", 2, 60.0, 60.0, 100),      # ohne Rahmen: ganzes Bild
+             _item("after", 0, 18.0, 18.0, 100)]
+    for it in items:
+        it["frame_found"] = True
+    items[2]["frame_found"] = False
+    items[2]["excluded_from_mean"] = "no_frame"
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    assert s["count_before"] == 2 and s["count_after"] == 1
+    assert s["avg_before"]["bw"] == 21.0
+    assert s["excluded_count"] == 1
+    assert s["frame_missing_count"] == 0          # eigener Zähler, kein Doppel-Hinweis
+    assert abs(s["csc"] - (21.0 - 18.0) / 21.0 * 100) < 0.01
+    assert len(s["items"]) == 4                   # bleibt sichtbar
+    assert "frame_ignored_count" not in s
+    assert_no_none(s)
+
+
+def test_gruppe_ignorierte_rahmen_zaehler(tmp_path):
+    items = [_item("before", 0, 20.0, 20.0, 100), _item("after", 0, 18.0, 18.0, 100)]
+    items[0]["frame_found"] = False
+    items[0]["frame_ignored"] = True
+    items[1]["frame_found"] = False
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    assert s["frame_ignored_count"] == 1
+    assert s["frame_missing_count"] == 1          # nur das Bild wirklich ohne Rahmen
+    assert "excluded_count" not in s
+
+
+# --- Übersichtsbild auf mehreren Seiten --------------------------------------
+def test_overview_wenige_bilder_eine_seite_ohne_pages_schluessel(tmp_path):
+    items = _write_items_with_originals(tmp_path, [(900, 1600)] * 4, [(900, 1600)] * 4)
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    assert "overview_pages" not in s["combo"]
+    assert cv2.imread(s["combo"]["overview"]) is not None
+
+
+def test_overview_48_bilder_volle_aufloesung(tmp_path):
+    """Bis v1.8 wurde ab ~8 Kachelzeilen das GANZE Bild verkleinert (48+48
+    Hochformat: 1923 px breit, 96+96: 997 px). Jetzt bleibt die Breite voll."""
+    items = _write_items_with_originals(tmp_path, [(900, 1600)] * 48, [(900, 1600)] * 48)
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    ov = cv2.imread(s["combo"]["overview"])
+    assert ov.shape[1] == analysis.MAX_OVERVIEW_WIDTH
+
+
+def test_overview_viele_bilder_mehrere_seiten(tmp_path):
+    import os
+    items = _write_items_with_originals(tmp_path, [(900, 1600)] * 96, [(900, 1600)] * 96)
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    pages = s["combo"]["overview_pages"]
+    assert len(pages) >= 2 and pages[0] == s["combo"]["overview"]
+    assert len(set(pages)) == len(pages)
+    tile_rows = 0
+    for p in pages:
+        assert os.path.isfile(p)
+        page = cv2.imread(p)
+        assert page.shape[1] == analysis.MAX_OVERVIEW_WIDTH          # nie verkleinert
+        # Fußzeilen dürfen die Seitenhöhe leicht überschreiten
+        assert page.shape[0] <= analysis.MAX_OVERVIEW_PAGE_HEIGHT + 200
+        tile_rows += page.shape[0] // (analysis.OVERVIEW_TILE_HEIGHT + 48)
+    # alle 192 Kacheln sind untergebracht (13 Hochformat-Kacheln je Zeile)
+    assert tile_rows >= 2 * 8
+
+
+def test_overview_hinweis_ausgeschlossene_bilder_crasht_nicht(tmp_path):
+    items = _write_items_with_originals(tmp_path, [(900, 1600)] * 3, [(900, 1600)] * 2)
+    items[0]["excluded_from_mean"] = "no_frame"
+    s = json.loads(analysis.build_group_summary(json.dumps(items), str(tmp_path)))
+    assert s["excluded_count"] == 1 and s["count_before"] == 2
+    assert cv2.imread(s["combo"]["overview"]) is not None
+
+
+# --- Arbeitskopie verkleinern (shrink_input) ----------------------------------
+def test_shrink_input_verkleinert_grosse_jpeg_kopie(tmp_path):
+    import os
+    big, _, _ = make_field(w=3200, h=2400)
+    src = str(tmp_path / "gross.jpg")
+    cv2.imwrite(src, big, [cv2.IMWRITE_JPEG_QUALITY, 97])
+    size_before = os.path.getsize(src)
+    ohne = json.loads(analysis.analyze_image(src, str(tmp_path / "a"), "before", 0))
+    assert os.path.getsize(src) == size_before                  # Standard: unberührt
+    mit = json.loads(analysis.analyze_image(src, str(tmp_path / "b"), "before", 0,
+                                            shrink_input=True))
+    kopie = cv2.imread(src)
+    assert max(kopie.shape[:2]) == analysis.MAX_SIDE_FOR_ANALYSIS
+    assert os.path.getsize(src) < size_before / 2
+    assert mit["coverage_bw_percent"] == ohne["coverage_bw_percent"]   # Messwert gleich
+    assert not os.path.exists(src + ".tmp.jpg")
+
+
+def test_shrink_input_laesst_kleine_und_png_in_ruhe(tmp_path):
+    import os
+    small, _, _ = make_field(w=1200, h=900)
+    src = str(tmp_path / "klein.jpg")
+    cv2.imwrite(src, small)
+    raw = open(src, "rb").read()
+    analysis.analyze_image(src, str(tmp_path / "a"), "before", 0, shrink_input=True)
+    assert open(src, "rb").read() == raw
+    big, _, _ = make_field(w=2400, h=1800)
+    png = str(tmp_path / "gross.png")
+    cv2.imwrite(png, big)
+    raw = open(png, "rb").read()
+    analysis.analyze_image(png, str(tmp_path / "b"), "before", 0, shrink_input=True)
+    assert open(png, "rb").read() == raw

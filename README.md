@@ -12,6 +12,64 @@ gestriegelt werden, liegt er darüber, sollte die Intensität reduziert werden.
 > Hochschule Reutlingen – Jahresprojekt 2025/2026
 > Abdic, Amel · Aktepe, Tarik · Frank, Manuel · Kader, Alan · Koca, Cem
 
+## Neu in v1.9
+
+Zehn Schwachstellen aus dem Code-Review nach dem Feldversuch (26.10.–03.11.2026):
+
+- **Unlesbare Bilder brechen die Analyse nicht mehr ab.** HEIC/HEIF, AVIF und
+  GIF lehnt schon der Bild-Picker der Analyse-Seite ab; was trotzdem nicht
+  lesbar ist (defekte Datei), wird einzeln **übersprungen** und auf der
+  Ergebnis-Seite genannt. Bis v1.8 scheiterte der ganze Lauf an einem Bild.
+- **Die Analyse läuft im Hintergrund weiter.** Während gerechnet wird, bleibt
+  das Display an; ein Vordergrund-Dienst mit Benachrichtigung („SmartWeed
+  wertet aus“) und ein WakeLock verhindern, dass Android die Analyse pausiert
+  oder beendet, wenn das Display ausgeht oder die App kurz verlassen wird.
+- **Aufnahme fortsetzen:** Öffnet man die Kamera-Seite erneut (z. B. nach dem
+  Striegeln für die Nachher-Fotos), bietet die App an, die zuletzt benutzte
+  Aufnahme fortzusetzen (bis 12 Stunden nach dem letzten Foto). Unter „Meine
+  Aufnahmen“ gibt es außerdem **„Fotos hinzufügen“** je Aufnahme. Die
+  Kamera-Seite zeigt, in welche Aufnahme die Fotos gehen. Bis v1.8 landeten
+  die Nachher-Fotos in einer neuen Session.
+- **Ergebnisse werden gespeichert:** Jede Analyse legt `ergebnis.json`
+  (vollständiges Ergebnis) und `ergebnis.csv` (Tabelle für Excel: Kennzahlen
+  und je Bild Bedeckung, Rahmen, Hinweise) ab. Die CSV liegt zusätzlich unter
+  `Documents/SmartWeed/<Aufnahme>/<Analyse>/`. Unter „Meine Aufnahmen“ öffnet
+  **„Ergebnisse (n)“** eine gespeicherte Analyse wieder auf der Ergebnis-Seite.
+- **Segmentierung: Mindest-Grün.** „Boden-referenziert“ verlangt jetzt
+  zusätzlich, dass ein Pixel selbst mindestens leicht grün ist. Auf kräftig
+  braunem oder rötlichem Boden wurden sonst graue Steine und Stroh als
+  Pflanze gezählt (sie sind „grüner als der Boden“). Auf den 36
+  Referenzbildern des Feldversuchs ändert das nichts; von 400 Feldfotos
+  ändern sich 16, höchstens um 1,5 Prozentpunkte.
+- **Verwerfen/Löschen räumt die Galerie auf.** Beim Verwerfen einer Analyse
+  werden ihre Galerie-Bilder und die CSV entfernt; beim Löschen einer
+  Aufnahme ist das wählbar (Standard: ja). Beim Wiederherstellen aus dem
+  Papierkorb kommen sie zurück in die Galerie.
+- **Übersichtsbild auf mehreren Seiten.** Bei vielen Bildern wird das
+  Übersichtsbild nicht mehr bis zur Unlesbarkeit verkleinert (96 + 96 Bilder:
+  bisher 997 px breit), sondern auf Seiten verteilt
+  (`00_Uebersicht_<Aufnahme>.jpg`, `…_2.jpg`, …).
+- **Weniger Speicher je Analyse.** Die Arbeitskopien im Analyse-Ordner und in
+  der Galerie werden auf die Analyse-Auflösung (lange Seite 1600 px)
+  verkleinert — ausgewertet wird ohnehin nur diese Auflösung. Ein 12-MP-Foto
+  belegte bisher je Lauf zweimal 4–5 MB. Die Originale bleiben unberührt.
+- **Papierkorb: ein Eintrag je Ordner.** Eine gelöschte Aufnahme oder
+  verworfene Analyse ist jetzt **ein** Eintrag und wird als Ganzes
+  wiederhergestellt. Bisher wurde jede Datei einzeln verschoben (eine
+  Analyse mit 96 + 96 Bildern: über 1000 Einträge inklusive jeder Maske).
+- **Zählrahmen einheitlich.** Die App sucht den Rahmen jetzt zuerst in allen
+  Bildern und entscheidet dann einheitlich: Fehlt er nur in einzelnen
+  Bildern, werden diese ausgewertet und angezeigt, zählen aber **nicht in den
+  Mittelwert**; fehlt er in einer Gruppe überwiegend, werden **alle** Bilder
+  als ganzes Bild ausgewertet. Rahmen-Ausschnitte und ganze Bilder werden nie
+  mehr in einen CSC gemischt. Die Kontrollfläche wird getrennt entschieden.
+- Das CSC-Zielband (8–12 %) ist unverändert.
+
+**Nicht am Gerät getestet:** Die Änderungen sind über die automatischen Tests
+und den CI-Build abgesichert; Hintergrund-Dienst, Benachrichtigung,
+Galerie-Löschen und CSV-Ablage sollten auf einem echten Handy einmal
+durchgespielt werden.
+
 ## Neu in v1.8
 
 Grundlage ist der Feldversuch vom 30./31.10.2026 (1235 Fotos; Referenz:
@@ -65,7 +123,8 @@ Grundlage ist der Feldversuch vom 30./31.10.2026 (1235 Fotos; Referenz:
 
 ## Funktionen
 
-- **Kamera-Seite:** Vorher-/Nachher-Fotos aufnehmen oder Bilder importieren
+- **Kamera-Seite:** Vorher-/Nachher-Fotos aufnehmen oder Bilder importieren;
+  eine begonnene Aufnahme lässt sich fortsetzen (v1.9)
 - **Analyse-Seite:** Beliebig viele Vorher- und Nachher-Bilder auswählen
   (Anzahl darf sich unterscheiden — die Bedeckungsgrade werden je Gruppe
   gemittelt). Die Auswahl erscheint als Vorschau-Kacheln: Antippen zeigt das
@@ -86,17 +145,18 @@ Grundlage ist der Feldversuch vom 30./31.10.2026 (1235 Fotos; Referenz:
   erkannt"), darunter Bedeckungsgrade, Differenzen und Bilder pro Paar;
   bei mehreren Paaren mit Fortschrittsanzeige; Hinweise bei Lichtwechsel
   (Sonne vs. bewölkt) und nicht erkanntem Zählrahmen; Analysen können in den
-  Papierkorb verworfen werden
+  Papierkorb verworfen werden; das Ergebnis wird gespeichert (v1.9)
 - **Meine Aufnahmen:** Übersicht aller Sessions mit Vorschaubild und
   Bildanzahl — Antippen öffnet die Session direkt in der Analyse, das
-  Papierkorb-Symbol verschiebt sie (wiederherstellbar) in den Papierkorb
+  Papierkorb-Symbol verschiebt sie (wiederherstellbar) in den Papierkorb;
+  „Fotos hinzufügen“ und „Ergebnisse“ je Aufnahme (v1.9)
 - **Analyse-Einstellungen (Experten-Modus):** Grünton-Schwellen, minimale
   Objektgröße, Segmentierungsverfahren, Zählrahmen-Zuschnitt und CSC-Zielband sind über das Menü →
   „Einstellungen" anpassbar (z. B. für Feldtests mit anderen Kulturen).
   Änderungen erfordern die **Admin-Anmeldung** (siehe unten) — Ansehen ist
   für alle möglich, die App selbst läuft komplett ohne Anmeldung
-- **Papierkorb:** Gelöschte Bilder werden 30 Tage aufbewahrt und können
-  wiederhergestellt werden
+- **Papierkorb:** Gelöschte Aufnahmen und verworfene Analysen werden 30 Tage
+  aufbewahrt und können als Ganzes wiederhergestellt werden
 - **Mehrsprachig:** Deutsch, Englisch und Französisch (umschaltbar über das Menü)
 
 ## Ablage der Bilder
@@ -117,10 +177,21 @@ Pictures/SmartWeed/
         ├── Nachher/                             (analysierte Nachher-Bilder)
         ├── Kontrolle_Vorher/                    (nur mit Kontrollfläche, v1.8)
         ├── Kontrolle_Nachher/
-        ├── 00_Uebersicht_2026-10-18_10-30.jpg   (Vergleichsbild mit CSC)
+        ├── 00_Uebersicht_2026-10-18_10-30.jpg   (Vergleichsbild mit CSC;
+        │                                          bei vielen Bildern …_2.jpg usw.)
         ├── Vorher_01_Auswertung.jpg             (Original | Masken)
         └── Nachher_01_Auswertung.jpg
+
+Documents/SmartWeed/
+└── 2026-10-18_10-30/Analyse_11-20-05_A/
+    └── Ergebnis_2026-10-18_10-30_Analyse_11-20-05_A.csv   (Tabelle, v1.9)
 ```
+
+Die Bilder in `Vorher/`, `Nachher/` usw. sind seit v1.9 auf die
+Analyse-Auflösung verkleinerte Kopien (lange Seite 1600 px); die Originale
+liegen unverändert in `vorher/` und `nachher/` bzw. dort, wo sie ausgewählt
+wurden. Die CSV nutzt `;` als Trennzeichen und das Dezimalzeichen der
+App-Sprache.
 
 Jeder Analyse-Lauf bekommt einen eigenen Ordner — auch wenn dieselben Bilder
 mit einer anderen Variante (A/B/C) erneut ausgewertet werden (seit v1.7.2).
@@ -137,7 +208,7 @@ die klassische Speicher-Berechtigung. Beim Deinstallieren der App wird der
 App-Speicher entfernt; die Galerie-Kopien bleiben erhalten.
 
 HEIC-Bilder (z. B. iPhone) kann die Analyse nicht lesen — die App weist beim
-Import darauf hin; bitte als JPG/PNG speichern.
+Import und bei der Bildauswahl darauf hin; bitte als JPG/PNG speichern.
 
 ## Admin-Bereich
 
@@ -184,7 +255,8 @@ Danach normal in Android Studio öffnen und bauen, oder per CLI:
 
 ## Tests & CI
 
-- **Java:** CSC-Berechnung und Empfehlungslogik (`CscCalculator`) mit JUnit —
+- **Java:** CSC-Berechnung und Empfehlungslogik (`CscCalculator`) sowie die
+  Ablage-Logik aus v1.9 (`V19LogicTest`) mit JUnit —
   `./gradlew testDebugUnitTest`
 - **Python:** Golden-Image-Tests für Segmentierung, Reihen-Erkennung und
   Gruppen-Auswertung (`app/src/test/python/`) —

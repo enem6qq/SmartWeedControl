@@ -21,6 +21,13 @@ import java.util.List;
  * Bilder werden in einen .trash-Ordner verschoben statt permanent geloescht,
  * sodass sie bei Bedarf wiederhergestellt werden koennen.
  *
+ * Seit v1.9 wandert ein ganzer Ordner (Session oder Analyse) als EIN Eintrag
+ * in den Papierkorb und wird auch als Ganzes wiederhergestellt. Vorher wurde
+ * jede Datei einzeln verschoben — eine Analyse mit 96+96 Bildern ergab ueber
+ * 1000 Eintraege (inkl. jeder Maske), und fuer jede Datei wurde die komplette
+ * Metadaten-Datei neu gelesen und geschrieben. Alte Einzel-Eintraege bleiben
+ * weiter lesbar.
+ *
  * Thread-Sicherheit: Alle Operationen, die die Metadaten-JSON lesen/schreiben,
  * laufen unter einem gemeinsamen Lock. Ohne das Lock koennten z. B. der
  * autoCleanup()-Thread beim App-Start und ein gleichzeitiges Session-Loeschen
@@ -128,19 +135,95 @@ public class TrashManager {
     }
 
     /**
-     * Einen ganzen Ordner (Session inkl. Unterordner) in den Papierkorb verschieben.
-     * Bilder werden wiederherstellbar in den Papierkorb gelegt; Hilfsdateien
-     * (.nomedia, summary.json) werden direkt geloescht. Leere Ordner werden entfernt.
-     * @return Anzahl der in den Papierkorb verschobenen Bilder
+     * Einen ganzen Ordner (Session oder Analyse, inkl. Unterordner) als EINEN
+     * Eintrag in den Papierkorb verschieben. Der Ordner bleibt vollstaendig
+     * erhalten (auch Masken, ergebnis.json), damit er als Ganzes
+     * wiederhergestellt werden kann.
+     * @return Anzahl der Bilder des Ordners (ohne Zwischenbilder in details/),
+     *         0 wenn nichts verschoben wurde
      */
     public int moveDirectoryToTrash(File dir) {
+        if (dir == null || !dir.isDirectory()) return 0;
+        int images = countImages(dir);
+        long size = sizeOf(dir);
+        if (size == 0 && images == 0) {
+            // Leerer Ordner (oder nur leere Unterordner): nichts aufzubewahren
+            deleteRecursively(dir);
+            return 0;
+        }
+        synchronized (METADATA_LOCK) {
+            File movedTo = null;   // gesetzt, sobald der Ordner im Papierkorb liegt
+            try {
+                String trashName = System.currentTimeMillis() + "_" + dir.getName();
+                File trashFile = new File(trashDir, trashName);
+                int counter = 1;
+                while (trashFile.exists()) {
+                    trashName = System.currentTimeMillis() + "_" + (counter++) + "_" + dir.getName();
+                    trashFile = new File(trashDir, trashName);
+                }
+                String originalPath = dir.getAbsolutePath();
+                // Quelle und Papierkorb liegen im selben Verzeichnisbaum: O(1)
+                if (!dir.renameTo(trashFile)) {
+                    Log.w(TAG, "Directory rename failed, falling back to file-wise move: " + originalPath);
+                    return moveDirectoryFilewise(dir);
+                }
+                movedTo = trashFile;
+
+                JSONObject meta = loadMetadata();
+                JSONObject entry = new JSONObject();
+                entry.put("originalPath", originalPath);
+                entry.put("trashName", trashName);
+                // Anzeigename mit Session davor ("2026-11-19_09-10/Analyse_09-40-12_A"),
+                // der reine Ordnername einer Analyse waere mehrdeutig
+                entry.put("originalName", displayNameFor(dir, originalPath));
+                entry.put("deletedAt", System.currentTimeMillis());
+                entry.put("fileSize", size);
+                entry.put("isDirectory", true);
+                entry.put("imageCount", images);
+                JSONArray items = meta.optJSONArray("items");
+                if (items == null) items = new JSONArray();
+                items.put(entry);
+                meta.put("items", items);
+                if (!saveMetadata(meta)) {
+                    // Ohne Eintrag laege der Ordner unsichtbar im Papierkorb
+                    if (!trashFile.renameTo(dir)) {
+                        Log.e(TAG, "Rollback after metadata failure failed: " + trashName);
+                    }
+                    return 0;
+                }
+                Log.i(TAG, "Moved directory to trash: " + originalPath + " -> " + trashName);
+                return images;
+            } catch (Exception e) {
+                Log.e(TAG, "Error moving directory to trash: " + dir.getName(), e);
+                // Ohne Metadaten-Eintrag waere der Ordner unsichtbar im
+                // Papierkorb verwaist -> zurueck an seinen Platz
+                if (movedTo != null && movedTo.exists() && !dir.exists() && !movedTo.renameTo(dir)) {
+                    Log.e(TAG, "Rollback after error failed: " + movedTo.getName());
+                }
+            }
+            return 0;
+        }
+    }
+
+    /** Anzeigename eines Ordners relativ zum App-Datenverzeichnis. */
+    private String displayNameFor(File dir, String absolutePath) {
+        String base = SessionStore.getBaseDir(context).getAbsolutePath() + File.separator;
+        return absolutePath.startsWith(base) ? absolutePath.substring(base.length()) : dir.getName();
+    }
+
+    /**
+     * Rueckfall (bis v1.8 der Normalweg): jede Bilddatei einzeln in den
+     * Papierkorb, Hilfsdateien direkt loeschen. Nur noch benutzt, wenn sich
+     * der Ordner nicht als Ganzes verschieben laesst.
+     */
+    private int moveDirectoryFilewise(File dir) {
         if (dir == null || !dir.isDirectory()) return 0;
         int count = 0;
         File[] files = dir.listFiles();
         if (files != null) {
             for (File f : files) {
                 if (f.isDirectory()) {
-                    count += moveDirectoryToTrash(f);
+                    count += moveDirectoryFilewise(f);
                 } else if (isImageFile(f.getName())) {
                     if (moveToTrash(f)) count++;
                 } else {
@@ -159,13 +242,59 @@ public class TrashManager {
         return count;
     }
 
-    /** Bild aus dem Papierkorb wiederherstellen */
+    /** Bilder eines Ordners rekursiv zaehlen — ohne die Zwischenbilder in details/. */
+    private static int countImages(File dir) {
+        int n = 0;
+        File[] files = dir.listFiles();
+        if (files == null) return 0;
+        for (File f : files) {
+            if (f.isDirectory()) {
+                if (!"details".equals(f.getName())) n += countImages(f);
+            } else if (isImageFile(f.getName())) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    private static long sizeOf(File f) {
+        if (f.isFile()) return f.length();
+        long total = 0;
+        File[] files = f.listFiles();
+        if (files != null) {
+            for (File c : files) total += sizeOf(c);
+        }
+        return total;
+    }
+
+    /** Datei oder Ordner (rekursiv) loeschen; true, wenn danach nichts mehr da ist. */
+    private static boolean deleteRecursively(File f) {
+        if (f.isDirectory()) {
+            File[] files = f.listFiles();
+            if (files != null) {
+                for (File c : files) deleteRecursively(c);
+            }
+        }
+        return !f.exists() || f.delete();
+    }
+
+    /** Bild oder Ordner aus dem Papierkorb wiederherstellen */
     public boolean restoreFromTrash(String trashName) {
+        return restoreFromTrashTo(trashName) != null;
+    }
+
+    /**
+     * Wie {@link #restoreFromTrash(String)}, liefert aber die wiederhergestellte
+     * Datei bzw. den Ordner (v1.9: damit der Aufrufer Ordner wieder in die
+     * Galerie legen kann).
+     * @return Ziel der Wiederherstellung oder null bei Fehlschlag
+     */
+    public File restoreFromTrashTo(String trashName) {
         synchronized (METADATA_LOCK) {
             try {
                 JSONObject meta = loadMetadata();
                 JSONArray items = meta.optJSONArray("items");
-                if (items == null) return false;
+                if (items == null) return null;
 
                 for (int i = 0; i < items.length(); i++) {
                     JSONObject entry = items.getJSONObject(i);
@@ -175,7 +304,7 @@ public class TrashManager {
                             // Datei nicht mehr vorhanden, Eintrag entfernen
                             items.remove(i);
                             saveMetadata(meta);
-                            return false;
+                            return null;
                         }
 
                         String originalPath = entry.optString("originalPath");
@@ -184,7 +313,7 @@ public class TrashManager {
                         // App-Datenverzeichnisses wiederherstellen
                         if (!isInsideBaseDir(originalFile)) {
                             Log.w(TAG, "Restore target outside base dir refused: " + originalPath);
-                            return false;
+                            return null;
                         }
                         File parentDir = originalFile.getParentFile();
                         if (parentDir != null && !parentDir.exists()) {
@@ -197,10 +326,13 @@ public class TrashManager {
                         // fester Ausweichname (_restored) haette bei der
                         // zweiten Wiederherstellung desselben Namens die erste
                         // zerstoert (Datenverlust im Restore-Feature selbst).
+                        boolean isDir = trashFile.isDirectory();
                         File restoreTarget = originalFile;
                         if (restoreTarget.exists()) {
-                            String name = entry.optString("originalName", trashFile.getName());
-                            int dot = name.lastIndexOf('.');
+                            // Ordnernamen haben keine Endung (Session-Namen
+                            // duerfen Punkte enthalten) -> Zusatz ans Ende
+                            String name = originalFile.getName();
+                            int dot = isDir ? -1 : name.lastIndexOf('.');
                             String base = (dot > 0) ? name.substring(0, dot) : name;
                             String ext = (dot > 0) ? name.substring(dot) : "";
                             restoreTarget = new File(parentDir, base + "_restored" + ext);
@@ -212,7 +344,9 @@ public class TrashManager {
 
                         boolean moved = trashFile.renameTo(restoreTarget);
                         if (!moved) {
-                            if (!copyFile(trashFile, restoreTarget)) return false;
+                            // Ordner werden nur als Ganzes verschoben (gleiches
+                            // Dateisystem); der Kopier-Rueckfall gilt fuer Dateien
+                            if (isDir || !copyFile(trashFile, restoreTarget)) return null;
                             if (!trashFile.delete()) {
                                 Log.w(TAG, "Trash file could not be deleted after restore: " + trashName);
                             }
@@ -220,13 +354,13 @@ public class TrashManager {
                         items.remove(i);
                         saveMetadata(meta);
                         Log.i(TAG, "Restored from trash: " + trashName + " -> " + restoreTarget.getAbsolutePath());
-                        return true;
+                        return restoreTarget;
                     }
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Error restoring from trash: " + trashName, e);
             }
-            return false;
+            return null;
         }
     }
 
@@ -235,7 +369,7 @@ public class TrashManager {
         synchronized (METADATA_LOCK) {
             try {
                 File trashFile = trashFileFor(trashName);
-                boolean fileGone = !trashFile.exists() || trashFile.delete();
+                boolean fileGone = deleteRecursively(trashFile);
                 if (!fileGone) {
                     // Datei existiert weiterhin -> keinen Erfolg vortaeuschen,
                     // Metadaten-Eintrag behalten, damit sie sichtbar bleibt
@@ -271,7 +405,7 @@ public class TrashManager {
             if (files != null) {
                 for (File f : files) {
                     if (!f.getName().equals(METADATA_FILE)) {
-                        if (!f.delete()) {
+                        if (!deleteRecursively(f)) {
                             Log.w(TAG, "Could not delete trash file: " + f.getName());
                         }
                     }
@@ -318,7 +452,7 @@ public class TrashManager {
                         // Eintrag behalten und beim naechsten Lauf erneut versuchen
                         String trashName = entry.optString("trashName");
                         File trashFile = trashFileFor(trashName);
-                        if (!trashFile.exists() || trashFile.delete()) {
+                        if (deleteRecursively(trashFile)) {
                             removed++;
                         } else {
                             Log.w(TAG, "Auto-cleanup could not delete: " + trashName);
@@ -359,6 +493,12 @@ public class TrashManager {
                     item.deletedAt = entry.optLong("deletedAt", 0);
                     item.fileSize = entry.optLong("fileSize", 0);
                     item.trashFile = trashFile;
+                    item.isDirectory = trashFile.isDirectory();
+                    item.imageCount = entry.optInt("imageCount", 0);
+                    // Vorschaubild: bei Ordnern das erste Bild darin (bei
+                    // Analysen die Uebersicht, sie liegt direkt im Ordner)
+                    item.thumbnail = item.isDirectory
+                            ? SessionStore.findFirstImage(trashFile) : trashFile;
                     result.add(item);
                 }
             } catch (Exception e) {
@@ -404,6 +544,12 @@ public class TrashManager {
         public long deletedAt;
         public long fileSize;
         public File trashFile;
+        /** v1.9: Eintrag ist ein ganzer Ordner (Session oder Analyse) */
+        public boolean isDirectory;
+        /** Anzahl Bilder im Ordner (ohne Zwischenbilder), 0 bei Einzeldateien */
+        public int imageCount;
+        /** Bild fuer die Vorschau (bei Ordnern das erste Bild darin), kann null sein */
+        public File thumbnail;
 
         public String getFormattedDate() {
             java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat(

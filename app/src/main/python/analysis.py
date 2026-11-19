@@ -1,6 +1,6 @@
 # app/src/main/python/analysis.py
 #
-# Bildanalyse für SmartWeedControl (v1.8)
+# Bildanalyse für SmartWeedControl (v1.9)
 #
 # Ablauf: Die App analysiert jedes Bild einzeln (analyze_image) und fasst
 # anschließend alle Vorher-/Nachher-Bilder zu einer Gruppen-Auswertung zusammen
@@ -44,6 +44,19 @@
 # <= 4 % Falsch-Positive in allen Lichtsituationen und Trefferquote 0.76-0.92;
 # Vorher/Nachher am selben Tag braucht keinen Korrekturfaktor.
 #
+# Neu in v1.9:
+#   - soilref verlangt zusätzlich ein Mindest-Grün (SOILREF_MIN_GREEN): Auf
+#     kräftig braunem/rötlichem Boden zählten sonst neutrale Objekte (graue
+#     Steine, Stroh) als Pflanze, weil sie "grüner als der Boden" sind.
+#   - Zählrahmen in zwei Schritten: find_frame sucht je Bild den Rahmen,
+#     plan_frame_use entscheidet dann je Bildpaar-Gruppe EINHEITLICH, ob mit
+#     Rahmen-Ausschnitt oder mit dem ganzen Bild gerechnet wird — Ausschnitte
+#     und ganze Bilder werden nie mehr in einen Mittelwert gemischt.
+#   - Das Übersichtsbild wird bei vielen Bildern auf mehrere Seiten verteilt
+#     statt bis zur Unlesbarkeit verkleinert.
+#   - shrink_input: Die Arbeitskopie eines Bildes wird auf die Analyse-
+#     Auflösung verkleinert gespeichert (spart Speicher je Analyse).
+#
 # Modus C (Reihen-Erkennung): Grün AUF den Saatreihen zählt als Kulturpflanze,
 # Grün ZWISCHEN den Reihen als Unkraut. Wird keine klare Reihenstruktur
 # gefunden, fällt die Analyse ehrlich auf die Gesamtbedeckung zurück
@@ -67,6 +80,19 @@ EXG_MIN        = 0.05  # ExG-Untergrenze: Grün muss dominieren (verhindert
 # Bodenreferenziertes Lab-a* (Methode "soilref", Auswertungsname sr_laba_t10)
 SOILREF_THRESHOLD     = 10.0  # so viel grüner als der Boden (a*-Einheiten)
 SOILREF_SOIL_QUANTILE = 50    # die weniger grüne Hälfte gilt als Boden-Referenz
+# Mindest-Grün (v1.9): Ein Pixel zählt nur als Pflanze, wenn es SELBST
+# mindestens so grün ist (-a* in OpenCV-Einheiten, 0 = neutral grau).
+# Warum: "10 Einheiten grüner als der Boden" allein genügt auf kräftig braunem
+# oder rötlichem Boden nicht — neutrale graue Steine und Stroh liegen dort
+# 15-30 Einheiten über dem Boden und wurden vollständig als Pflanze gezählt
+# (synthetischer Test: Boden RGB 150/90/60, Steine/Stroh zu 100 %).
+# Kalibrierung am Feldversuch 26.10.-03.11.2026: Mit 3.0 sind alle 36
+# Referenzbilder (x 100 Punkte) UNVERÄNDERT bewertet; von 400 Feldfotos sind
+# 16 betroffen, größte Änderung -1.5 Prozentpunkte, im Mittel -0.05. Ab 4.0
+# sinkt die Trefferquote nach dem Striegeln (0.92 -> 0.88, bei 6.0 -> 0.85).
+# Bekannte Grenze: Bei starkem Grünstich des Lichts UND rötlichem Boden können
+# helle neutrale Objekte knapp über die Schwelle rutschen.
+SOILREF_MIN_GREEN     = 3.0
 # Dichter-Bestand-Warnung (dense_warning, nur soilref; Heuristik, nicht gegen
 # die Bonitur validiert): Boden-Referenz grüner als -a* = 8 heißt, die
 # "Boden"-Hälfte ist Pflanze (Feldfotos 26.-31.10.2026: Boden-Referenz
@@ -101,6 +127,14 @@ COVERAGE_WARN_HIGH = 80.0
 U_FRAME_MARGIN          = 0.04
 FRAME_KIND_U            = "u_frame"
 FRAME_KIND_RED          = "red"
+# v1.9: Entscheidung je Bild, wie mit dem Zählrahmen umzugehen ist
+# (plan_frame_use). "crop" = Rahmen-Inneres auswerten, "full" = ganzes Bild,
+# "exclude" = ganzes Bild auswerten und anzeigen, aber NICHT in die Mittelwerte
+# nehmen (Bild ohne Rahmen in einer Gruppe, die sonst mit Rahmen rechnet).
+FRAME_DECISION_CROP     = "crop"
+FRAME_DECISION_FULL     = "full"
+FRAME_DECISION_EXCLUDE  = "exclude"
+FRAME_DECISIONS         = (FRAME_DECISION_CROP, FRAME_DECISION_FULL, FRAME_DECISION_EXCLUDE)
 # Roter/rosa Rahmen um die Bonitur-Fläche (bis v1.7)
 FRAME_MIN_AREA_FRACTION = 0.08  # Rahmeninneres muss >= 8 % des Bildes einnehmen
 FRAME_MAX_ASPECT        = 1.6   # Seitenverhältnis des Inneren (Quadrat ~1.0)
@@ -128,6 +162,11 @@ MAX_PANEL_HEIGHT      = 720
 OVERVIEW_TILE_HEIGHT  = 300    # Kachelhöhe der Bilder im Übersichtsbild
 OVERVIEW_MIN_WIDTH    = 960    # Mindestbreite: Kopfzeilen nie abgeschnitten
 MAX_OVERVIEW_WIDTH    = 2400
+# v1.9: Das Übersichtsbild wird nicht mehr als Ganzes verkleinert (bei 96+96
+# Bildern schrumpfte es auf 997 px Breite, Beschriftung ~6 px), sondern auf
+# Seiten dieser Maximalhöhe verteilt (Kopf + ~10 Kachelzeilen). Die Seitenhöhe
+# bleibt so klein, dass die App jede Seite scharf anzeigen kann.
+MAX_OVERVIEW_PAGE_HEIGHT = 3600
 
 # Gestaltung der Ergebnisbilder (BGR). Beschriftung steht in eigenen Leisten
 # ÜBER/UNTER den Bildern statt im Foto — bleibt auf jedem Untergrund lesbar
@@ -272,7 +311,8 @@ def _soilref_mask(bgr):
     SOILREF_SOIL_QUANTILE-Perzentil) ist überwiegend Boden, ihr Median ist die
     Boden-Referenz. Pflanze = mehr als SOILREF_THRESHOLD a*-Einheiten grüner
     als der Boden. Ein gelbgrüner Sonnen-Farbstich verschiebt Boden und
-    Pflanzen gleichermaßen und hebt sich damit heraus.
+    Pflanzen gleichermaßen und hebt sich damit heraus. Seit v1.9 muss das
+    Pixel zusätzlich selbst mindestens SOILREF_MIN_GREEN grün sein.
 
     Feldversuch 30./31.10.2026 (36 Bilder x 100 Referenzpunkte): Genauigkeit
     93 %, Falsch-Positive <= 4 % in allen Lichtsituationen, Trefferquote
@@ -286,7 +326,10 @@ def _soilref_mask(bgr):
     gar nicht melden — die "high"-Warnung (> 80 %) greift mit soilref NIE.
     Dafür gibt es die eigene Warnung dense_warning (siehe _soilref_dense)."""
     idx, soil_ref = _soilref_index(bgr)
-    return ((idx - soil_ref) > SOILREF_THRESHOLD).astype(np.uint8) * 255
+    # v1.9: zusätzlich Mindest-Grün — "grüner als der Boden" UND selbst grün
+    # (siehe SOILREF_MIN_GREEN; neutrale Steine/Stroh auf rötlichem Boden)
+    threshold = max(soil_ref + SOILREF_THRESHOLD, SOILREF_MIN_GREEN)
+    return (idx > threshold).astype(np.uint8) * 255
 
 
 def _soilref_index(bgr):
@@ -478,11 +521,34 @@ def _crop_to_frame(bgr):
     quad = _frame_inner_quad(bgr)
     if quad is None:
         return None, None
+    return _warp_red_frame(bgr, quad), quad
+
+
+def _warp_red_frame(bgr, quad):
+    """Entzerrter Ausschnitt des roten Rahmens zu bekannten Ecken."""
+    quad = np.asarray(quad, np.float32).reshape(4, 2)
     side = int(round(np.mean([np.linalg.norm(quad[i] - quad[(i + 1) % 4]) for i in range(4)])))
     dst = np.array([[0, 0], [side, 0], [side, side], [0, side]], dtype=np.float32)
     warp = cv2.warpPerspective(bgr, cv2.getPerspectiveTransform(quad, dst), (side, side))
     m = int(side * FRAME_MARGIN)
-    return np.ascontiguousarray(warp[m:side - m, m:side - m]), quad
+    return np.ascontiguousarray(warp[m:side - m, m:side - m])
+
+
+def _crop_with_quad(bgr, quad, kind):
+    """v1.9: Ausschnitt zu Ecken, die find_frame schon bestimmt hat — ohne die
+    (teure) Rahmensuche zu wiederholen. Liefert denselben Ausschnitt wie
+    _crop_to_any_frame; None, wenn der Ausschnitt nicht (mehr) möglich ist."""
+    try:
+        quad = np.asarray(quad, np.float32).reshape(4, 2)
+    except (TypeError, ValueError):
+        return None
+    if kind == FRAME_KIND_U:
+        roi, _ = frame_u.crop_with_corners(bgr, quad, U_FRAME_MARGIN)
+    elif kind == FRAME_KIND_RED:
+        roi = _warp_red_frame(bgr, quad)
+    else:
+        return None
+    return roi if roi is not None and roi.size else None
 
 
 def _crop_to_any_frame(bgr):
@@ -970,10 +1036,127 @@ def _coverage_warning(cov_bw):
     return None
 
 
+def _load_for_analysis(path):
+    """Bild laden und auf die Analyse-Auflösung bringen (EXIF-Drehung wendet
+    cv2.imread selbst an). Rückgabe: (bgr, wurde_verkleinert).
+    Nicht lesbare Dateien (HEIC, defekt, 0 Byte) -> ValueError; die App
+    überspringt solche Bilder seit v1.9 einzeln, statt die ganze Analyse
+    abzubrechen."""
+    path = str(path)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(path)
+    full = cv2.imread(path)
+    if full is None:
+        raise ValueError(f"cannot read image: {path}")
+    bgr = _maybe_downscale_long_side(full, MAX_SIDE_FOR_ANALYSIS)
+    return bgr, bgr is not full
+
+
+def find_frame(path):
+    """v1.9, Schritt 1 der Zählrahmen-Auswertung: Sucht in EINEM Bild den
+    Zählrahmen (grauer U-Rahmen, sonst roter Rahmen) und liefert die Ecken im
+    Koordinatensystem des Analyse-Bildes (lange Seite <= MAX_SIDE_FOR_ANALYSIS).
+
+    "found" heißt: Der Ausschnitt ist auch tatsächlich möglich (ein Rahmen,
+    der aus dem Foto ragt, gilt als nicht gefunden) — damit plan_frame_use auf
+    verlässlichen Angaben entscheidet.
+    Rückgabe: JSON-String {"found": bool, "width": w, "height": h,
+    ["kind": "u_frame"|"red", "corners": [[x, y] x 4]]}."""
+    bgr, _ = _load_for_analysis(path)
+    roi, quad, kind = _crop_to_any_frame(bgr)
+    h, w = bgr.shape[:2]
+    res = {"found": roi is not None, "width": int(w), "height": int(h)}
+    if roi is not None:
+        res["kind"] = kind
+        # float(): float32 -> JSON -> float32 bleibt exakt, der spätere
+        # Ausschnitt ist damit identisch zum direkt berechneten
+        res["corners"] = [[float(x), float(y)] for x, y in np.asarray(quad, np.float32)]
+    return json.dumps(res, allow_nan=False)
+
+
+def plan_frame_use(entries_json):
+    """v1.9, Schritt 2: Entscheidet EINHEITLICH, wie die Bilder ausgewertet
+    werden, damit nie Rahmen-Ausschnitte und ganze Bilder in denselben
+    Mittelwert fließen (im Feldversuch wichen Rahmen-Inneres und Umgebung am
+    selben Tag um bis zu 3, Tage später um bis zu 10 Prozentpunkte ab).
+
+    entries_json: JSON-Array [{"tag": "before"|..., "found": bool}, ...] in
+    Bildreihenfolge. Entschieden wird getrennt für das behandelte Paar
+    (before/after) und das Kontrollpaar (control_before/control_after) — die
+    Kontrolle geht nur als relative Änderung ein, sie darf also anders
+    gemessen sein als die behandelte Fläche, aber in sich einheitlich:
+      - Rahmen in allen Bildern            -> alle "crop"            (Modus "frame")
+      - Rahmen in keinem Bild              -> alle "full"            (Modus "none")
+      - in JEDER Gruppe des Paars hat mindestens die Hälfte der Bilder einen
+        Rahmen                             -> mit Rahmen "crop", ohne Rahmen
+                                              "exclude"              (Modus "frame_partial")
+      - sonst (eine Gruppe überwiegend ohne Rahmen)
+                                           -> alle "full", gefundene Rahmen
+                                              werden ignoriert       (Modus "full")
+    Die Hälfte-Regel verhindert, dass ein Mittelwert nur noch auf einem
+    einzelnen Bild steht, bloß weil dort zufällig ein Rahmen erkannt wurde.
+    Rückgabe: JSON-String {"decisions": [...], "treated_mode": ..., "control_mode": ...}
+    (Modus "empty", wenn das Paar keine Bilder hat)."""
+    entries = json.loads(str(entries_json))
+    decisions = [FRAME_DECISION_FULL] * len(entries)
+
+    def decide(tags):
+        idx = [i for i, e in enumerate(entries) if e.get("tag") in tags]
+        if not idx:
+            return "empty"
+        found = [bool(entries[i].get("found")) for i in idx]
+        if all(found):
+            for i in idx:
+                decisions[i] = FRAME_DECISION_CROP
+            return "frame"
+        if not any(found):
+            return "none"
+        groups_ok = True
+        for t in tags:
+            flags = [bool(e.get("found")) for e in entries if e.get("tag") == t]
+            if flags and sum(flags) * 2 < len(flags):
+                groups_ok = False
+        if groups_ok:
+            for i in idx:
+                decisions[i] = (FRAME_DECISION_CROP if entries[i].get("found")
+                                else FRAME_DECISION_EXCLUDE)
+            return "frame_partial"
+        return "full"
+
+    for e in entries:
+        if e.get("tag") not in TAGS:
+            raise ValueError(f"unknown tag: {e.get('tag')!r} (expected one of {TAGS})")
+    result = {
+        "treated_mode": decide((TAG_BEFORE, TAG_AFTER)),
+        "control_mode": decide((TAG_CONTROL_BEFORE, TAG_CONTROL_AFTER)),
+        "decisions": decisions,
+    }
+    print(f"[PY] plan_frame_use: treated={result['treated_mode']} "
+          f"control={result['control_mode']} n={len(entries)}")
+    return json.dumps(result)
+
+
+def _parse_frame(frame):
+    """find_frame-Ergebnis (JSON-String, dict oder None/"") als dict oder None."""
+    if frame is None:
+        return None
+    if isinstance(frame, dict):
+        return frame
+    text = str(frame).strip()
+    if not text:
+        return None
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def analyze_image(path, out_dir, tag, index,
                   weed_filter=False, row_mode=False,
                   min_size=MIN_SIZE, h_low=H_LOW_DEFAULT, h_high=H_HIGH_DEFAULT,
-                  method=METHOD_SOILREF, frame_crop=False):
+                  method=METHOD_SOILREF, frame_crop=False,
+                  frame=None, frame_decision=None, shrink_input=False):
     """
     Analysiert EIN Bild und legt die Detailbilder unter <out_dir>/details/ ab.
     - tag: "before", "after", "control_before" oder "control_after"
@@ -981,32 +1164,70 @@ def analyze_image(path, out_dir, tag, index,
     - method: "soilref" (Standard), "exg", "exgr" oder "hsv"
     - frame_crop: nur das Innere eines Zählrahmens auswerten (grauer U-Rahmen,
       sonst roter Rahmen; Rückfall auf das ganze Bild, wenn keiner gefunden wird)
+    - frame / frame_decision (v1.9, so ruft die App auf): frame ist das Ergebnis
+      von find_frame für dieses Bild, frame_decision die Entscheidung aus
+      plan_frame_use ("crop" | "full" | "exclude"). Ist frame_decision gesetzt,
+      wird NICHT mehr selbst nach einem Rahmen gesucht (frame_crop ist dann
+      ohne Bedeutung); ohne frame_decision gilt das alte Verhalten.
+    - shrink_input (v1.9): Die Datei unter path wird mit dem auf die Analyse-
+      Auflösung verkleinerten Bild überschrieben (nur JPEG, nur wenn sie größer
+      war). Die App übergibt hier ihre ARBEITSKOPIE im Analyse-Ordner — nie
+      das Original des Nutzers. Ein 12-MP-Foto (4-5 MB) schrumpft so auf
+      ~0.4 MB; ausgewertet wird ohnehin nur diese Auflösung.
     Rückgabe: JSON-String (ein Item für build_group_summary).
     """
     tag = str(tag)
     if tag not in TAGS:
         raise ValueError(f"unknown tag: {tag!r} (expected one of {TAGS})")
+    decision = str(frame_decision) if frame_decision else None
+    if decision is not None and decision not in FRAME_DECISIONS:
+        raise ValueError(f"unknown frame_decision: {decision!r} (expected one of {FRAME_DECISIONS})")
     path = str(path)
-    if not os.path.isfile(path):
-        raise FileNotFoundError(path)
+    bgr, downscaled = _load_for_analysis(path)
     os.makedirs(out_dir, exist_ok=True)
     detail_dir = _ensure_detail_dir(out_dir)
-
-    bgr = cv2.imread(path)
-    if bgr is None:
-        raise ValueError(f"cannot read image: {path}")
-    bgr = _maybe_downscale_long_side(bgr, MAX_SIDE_FOR_ANALYSIS)
     prefix = f"{tag}_{index:02d}"
+
+    if shrink_input and downscaled and path.lower().endswith((".jpg", ".jpeg")):
+        # Erst in eine Nachbardatei schreiben, dann ersetzen: Ein Abbruch
+        # mitten im Schreiben ließe sonst eine halbe Bilddatei zurück
+        tmp_path = path + ".tmp.jpg"
+        try:
+            _imwrite(tmp_path, bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+            os.replace(tmp_path, path)
+        except (IOError, OSError) as e:
+            print(f"[PY] shrink_input failed for {prefix}: {e!r}")
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
     # Zählrahmen: ab hier gilt nur noch das Rahmeninnere als Bild. Ein
     # Kontrollbild mit eingezeichnetem Ausschnitt macht die Erkennung prüfbar.
     frame_found = None
     frame_kind = None
     frame_check_path = None
-    if frame_crop:
-        roi, quad, frame_kind = _crop_to_any_frame(bgr)
+    frame_info = _parse_frame(frame)
+    frame_known = bool(frame_info and frame_info.get("found"))
+    roi = quad = None
+    if decision is None:
+        if frame_crop:
+            roi, quad, frame_kind = _crop_to_any_frame(bgr)
+            frame_found = roi is not None
+    elif decision == FRAME_DECISION_CROP:
+        h0, w0 = bgr.shape[:2]
+        if (frame_known and frame_info.get("width") == w0 and frame_info.get("height") == h0):
+            quad = np.asarray(frame_info.get("corners"), np.float32)
+            frame_kind = frame_info.get("kind")
+            roi = _crop_with_quad(bgr, quad, frame_kind)
+        else:
+            # Kein (passendes) find_frame-Ergebnis mitgegeben: selbst suchen
+            roi, quad, frame_kind = _crop_to_any_frame(bgr)
         frame_found = roi is not None
-        print(f"[PY] frame {prefix}: found={frame_found} kind={frame_kind}")
+        if not frame_found:
+            frame_kind = None
+    else:
+        frame_found = False   # "full" / "exclude": ganzes Bild
+    if frame_found is not None:
+        print(f"[PY] frame {prefix}: found={frame_found} kind={frame_kind} decision={decision}")
         if frame_found:
             check = bgr.copy()
             cv2.polylines(check, [quad.astype(np.int32)], True, (255, 255, 0),
@@ -1100,6 +1321,15 @@ def analyze_image(path, out_dir, tag, index,
             item["frame_kind"] = frame_kind
         if frame_check_path:
             item["outputs"]["frame_check"] = frame_check_path
+    # v1.9 (Schlüssel fehlen sonst, kein false/null):
+    #   frame_ignored      - Rahmen war gefunden, wird aber nicht benutzt, weil
+    #                        die Gruppe einheitlich als ganzes Bild rechnet
+    #   excluded_from_mean - Bild zählt nicht in die Mittelwerte (kein Rahmen
+    #                        in einer Gruppe, die mit Rahmen rechnet)
+    if decision == FRAME_DECISION_FULL and frame_known:
+        item["frame_ignored"] = True
+    if decision == FRAME_DECISION_EXCLUDE or (decision == FRAME_DECISION_CROP and not frame_found):
+        item["excluded_from_mean"] = "no_frame"
     if cov_wf is not None:
         item["coverage_weedfiltered_percent"] = cov_wf
         item["outputs"]["weed_filtered"] = wf_path
@@ -1178,11 +1408,16 @@ def _wrap_tiles(tiles, inner_w, gap):
 
 def _build_overview(before_items, after_items, out_dir, key="coverage_bw_percent",
                     key_label="Bedeckung", csc=None, avg_before=None, avg_after=None,
-                    csc_label="CSC", control_line=None):
+                    csc_label="CSC", control_line=None, notes=None):
     """Übersichtsbild: Titelleiste, je Gruppe eine Kopfzeile (Anzahl, Mittel)
     und die Bilder als Kacheln mit Nummer, Dateiname und Messwert.
     control_line: optionale Textzeile zur Kontrollfläche (deren Bilder werden
-    bewusst NICHT als Kacheln gezeigt — das Bild bleibt lesbar)."""
+    bewusst NICHT als Kacheln gezeigt — das Bild bleibt lesbar).
+    notes: weitere Textzeilen (z. B. nicht in den Mittelwert einbezogene Bilder).
+
+    v1.9: Bei vielen Bildern entstehen MEHRERE Seiten (jede höchstens
+    ~MAX_OVERVIEW_PAGE_HEIGHT hoch) statt eines verkleinerten Gesamtbilds.
+    Rückgabe: Liste der Dateipfade (Seite 1 zuerst), leer ohne Kacheln."""
     tile_h = OVERVIEW_TILE_HEIGHT
     gap, margin = 12, 24
     groups = []
@@ -1192,50 +1427,77 @@ def _build_overview(before_items, after_items, out_dir, key="coverage_bw_percent
         if tiles:
             groups.append((title, tiles, color, avg))
     if not groups:
-        return None
+        return []
 
     natural = max(sum(t.shape[1] for t in g[1]) + gap * (len(g[1]) - 1) for g in groups)
     inner_w = int(min(MAX_OVERVIEW_WIDTH - 2 * margin, max(OVERVIEW_MIN_WIDTH - 2 * margin, natural)))
     width = inner_w + 2 * margin
+    head_h, sec_h = 64, 54
 
-    blocks = []
-    # Titelleiste
-    head_h = 64
-    head = np.empty((head_h, width, 3), np.uint8)
-    head[:] = UI_ACCENT
-    right = f"{csc_label} {csc:.1f} %" if isinstance(csc, (int, float)) else ""
-    rw = _put(head, right, margin, head_h / 2.0, inner_w, 0.95, UI_ON_ACCENT, 2,
-              align="right") if right else 0
-    _put(head, "SmartWeed  |  Vorher / Nachher", margin, head_h / 2.0,
-         inner_w - rw - 20, 0.95, UI_ON_ACCENT, 2)
-    blocks.append(head)
+    def make_head(page_no, n_pages):
+        head = np.empty((head_h, width, 3), np.uint8)
+        head[:] = UI_ACCENT
+        right = f"{csc_label} {csc:.1f} %" if isinstance(csc, (int, float)) else ""
+        rw = _put(head, right, margin, head_h / 2.0, inner_w, 0.95, UI_ON_ACCENT, 2,
+                  align="right") if right else 0
+        title = "SmartWeed  |  Vorher / Nachher"
+        if n_pages > 1:
+            title += f"  |  Seite {page_no}/{n_pages}"
+        _put(head, title, margin, head_h / 2.0, inner_w - rw - 20, 0.95, UI_ON_ACCENT, 2)
+        return head
 
-    for title, tiles, color, avg in groups:
-        sec_h = 54
+    def make_section(title, color, n, avg, continued):
         sec = np.empty((sec_h, width, 3), np.uint8)
         sec[:] = UI_BG
         cv2.rectangle(sec, (margin, 14), (margin + 6, sec_h - 8), color, -1)
         tw = _put(sec, title, margin + 16, sec_h / 2.0 + 3, inner_w // 2, 0.8, color, 2)
-        n = len(tiles)
         info = f"{n} {'Bild' if n == 1 else 'Bilder'}"
         if isinstance(avg, (int, float)):
             info += f"   |   Mittel {key_label}: {avg:.2f} %"
+        if continued:
+            info += "   |   Fortsetzung"
         _put(sec, info, margin + 16 + tw + 24, sec_h / 2.0 + 3,
              inner_w - tw - 40, 0.6, UI_TEXT_MUTED)
-        blocks.append(sec)
-        for line in _wrap_tiles(tiles, inner_w, gap):
-            blocks.append(cv2.copyMakeBorder(line, 0, gap, margin, margin,
-                                             cv2.BORDER_CONSTANT, value=UI_BG))
+        return sec
 
+    # Seiten füllen: Eine Gruppen-Kopfzeile steht nie allein am Seitenende,
+    # nach einem Seitenwechsel wird sie mit "Fortsetzung" wiederholt.
+    pages, cur, cur_h = [], [], head_h
+    for title, tiles, color, avg in groups:
+        n = len(tiles)
+        for r, line in enumerate(_wrap_tiles(tiles, inner_w, gap)):
+            row = cv2.copyMakeBorder(line, 0, gap, margin, margin,
+                                     cv2.BORDER_CONSTANT, value=UI_BG)
+            need = row.shape[0] + (sec_h if r == 0 else 0)
+            if cur and cur_h + need > MAX_OVERVIEW_PAGE_HEIGHT:
+                pages.append(cur)
+                cur, cur_h = [], head_h
+                if r > 0:
+                    cur.append(make_section(title, color, n, avg, True))
+                    cur_h += sec_h
+            if r == 0:
+                cur.append(make_section(title, color, n, avg, False))
+                cur_h += sec_h
+            cur.append(row)
+            cur_h += row.shape[0]
+
+    # Fußzeilen ans Ende der letzten Seite
     if control_line:
-        blocks.append(_band(width, 40, control_line, fg=UI_TEXT, scale=0.55, pad=margin))
-    blocks.append(_band(width, 40, f"Werte: {key_label} in % der ausgewerteten Bildflaeche",
-                        fg=UI_TEXT_MUTED, scale=0.5, pad=margin))
-    overview = np.concatenate(blocks, axis=0)
-    overview = _maybe_downscale_long_side(overview, MAX_OVERVIEW_WIDTH)
-    path = os.path.join(out_dir, "uebersicht_vorher_nachher.jpg")
-    _imwrite(path, overview, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-    return path
+        cur.append(_band(width, 40, control_line, fg=UI_TEXT, scale=0.55, pad=margin))
+    for note in (notes or []):
+        cur.append(_band(width, 40, note, fg=UI_TEXT, scale=0.55, pad=margin))
+    cur.append(_band(width, 40, f"Werte: {key_label} in % der ausgewerteten Bildflaeche",
+                     fg=UI_TEXT_MUTED, scale=0.5, pad=margin))
+    pages.append(cur)
+
+    paths = []
+    for no, blocks in enumerate(pages, 1):
+        page = np.concatenate([make_head(no, len(pages))] + blocks, axis=0)
+        name = "uebersicht_vorher_nachher.jpg" if no == 1 else f"uebersicht_vorher_nachher_{no}.jpg"
+        path = os.path.join(out_dir, name)
+        _imwrite(path, page, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+        paths.append(path)
+    return paths
 
 
 def build_group_summary(items_json, out_dir):
@@ -1245,12 +1507,17 @@ def build_group_summary(items_json, out_dir):
     Rückgabe: JSON-String mit Mittelwerten, Deltas, Warn-Flags und Übersichtsbild.
     """
     items = json.loads(str(items_json))
-    before = [i for i in items if i.get("tag") == TAG_BEFORE]
-    after = [i for i in items if i.get("tag") == TAG_AFTER]
+    # v1.9: Bilder mit "excluded_from_mean" (kein Zählrahmen in einer Gruppe,
+    # die mit Rahmen rechnet) bleiben in "items" sichtbar, zählen aber in
+    # KEINEN Mittelwert, keine Anzahl und keine Licht-Warnung
+    used = [i for i in items if not i.get("excluded_from_mean")]
+    excluded_count = len(items) - len(used)
+    before = [i for i in used if i.get("tag") == TAG_BEFORE]
+    after = [i for i in used if i.get("tag") == TAG_AFTER]
     # Kontrollfläche: eigene Gruppen, fließen NICHT in avg_before/avg_after,
     # count_before/count_after oder die Kacheln der behandelten Gruppen ein
-    ctrl_before = [i for i in items if i.get("tag") == TAG_CONTROL_BEFORE]
-    ctrl_after = [i for i in items if i.get("tag") == TAG_CONTROL_AFTER]
+    ctrl_before = [i for i in used if i.get("tag") == TAG_CONTROL_BEFORE]
+    ctrl_after = [i for i in used if i.get("tag") == TAG_CONTROL_AFTER]
 
     def group_avg(group):
         # Nicht berechenbare Mittelwerte werden WEGGELASSEN statt None gesetzt
@@ -1275,7 +1542,7 @@ def build_group_summary(items_json, out_dir):
             return None
         return round(avg_a[key] - avg_b[key], 2)
 
-    row_mode = any("rows_detected" in i for i in items)
+    row_mode = any("rows_detected" in i for i in used)
     rows_detected = None
     if row_mode:
         # Feinere Aggregation statt all(): Reihen gelten je GRUPPE als erkannt,
@@ -1319,7 +1586,7 @@ def build_group_summary(items_json, out_dir):
     # Übersichtsbild mit derselben CSC-Basis wie die App-Ergebnisseite
     # (SummaryFragment): Modus C mit Reihen -> Kultur, Modus B -> unkraut-
     # gefiltert (Rückfall gefiltert), sonst Pflanzenmaske (SW).
-    weed_filter = any("coverage_weedfiltered_percent" in i for i in items)
+    weed_filter = any("coverage_weedfiltered_percent" in i for i in used)
     if rows_detected and "crop" in avg_b and "crop" in avg_a:
         basis, key, key_label = "crop", "coverage_crop_percent", "Kulturbedeckung"
     elif weed_filter and "weedfiltered" in avg_b and "weedfiltered" in avg_a:
@@ -1377,13 +1644,27 @@ def build_group_summary(items_json, out_dir):
             control_line += f"  |  Kontrolle auf Basis {control_basis}"
         if csc_corrected is not None and csc is not None:
             control_line += f"  |  CSC roh {csc:.1f} %"
+    notes = []
+    if excluded_count:
+        notes.append(f"{excluded_count} Bild(er) ohne erkannten Zaehlrahmen: "
+                     f"ausgewertet, aber nicht im Mittelwert")
+    frame_ignored_count = sum(1 for i in used if i.get("frame_ignored"))
+    if frame_ignored_count:
+        notes.append("Zaehlrahmen nur in einem Teil der Bilder erkannt: "
+                     "alle Bilder als ganzes Bild ausgewertet")
     if csc_corrected is not None:
-        overview_path = _build_overview(before, after, out_dir, key, key_label, csc_corrected,
-                                        b_val, a_val, csc_label="CSC kontrollbezogen",
-                                        control_line=control_line)
+        overview_paths = _build_overview(before, after, out_dir, key, key_label, csc_corrected,
+                                         b_val, a_val, csc_label="CSC kontrollbezogen",
+                                         control_line=control_line, notes=notes)
     else:
-        overview_path = _build_overview(before, after, out_dir, key, key_label, csc,
-                                        b_val, a_val, control_line=control_line)
+        overview_paths = _build_overview(before, after, out_dir, key, key_label, csc,
+                                         b_val, a_val, control_line=control_line, notes=notes)
+    combo = {}
+    if overview_paths:
+        combo["overview"] = overview_paths[0]
+        if len(overview_paths) > 1:
+            # v1.9: alle Seiten (inkl. der ersten) — Schlüssel nur bei mehreren
+            combo["overview_pages"] = overview_paths
 
     # Plausibilitäts-Warnungen aller Gruppen (inkl. Kontrolle)
     coverage_warning_count = sum(1 for i in before + after + ctrl_before + ctrl_after
@@ -1415,9 +1696,12 @@ def build_group_summary(items_json, out_dir):
         "avg_control_before": avg_cb,
         "avg_control_after": avg_ca,
         "delta": {k: v for k, v in deltas.items() if v is not None},
-        "combo": {"overview": overview_path} if overview_path else {},
+        "combo": combo,
         "items": items,
     }
+    # v1.9: Basis des CSC ("bw" | "filtered" | "weedfiltered" | "crop") — für
+    # die gespeicherte Tabelle (ergebnis.csv)
+    result["csc_basis"] = basis
     if rows_detected is not None:
         result["rows_detected"] = rows_detected
     if csc is not None:
@@ -1430,11 +1714,20 @@ def build_group_summary(items_json, out_dir):
         result["control_basis"] = control_basis
     if control_unavailable_reason is not None:
         result["control_unavailable_reason"] = control_unavailable_reason
-    # Zählrahmen: nur gesetzt, wenn der Rahmen-Zuschnitt angefordert war
+    # Zählrahmen: nur gesetzt, wenn der Rahmen-Zuschnitt angefordert war.
+    # frame_missing_count zählt Bilder OHNE Rahmen, die als ganzes Bild in die
+    # Mittelwerte eingehen; ausgeschlossene Bilder und ignorierte Rahmen haben
+    # seit v1.9 eigene Zähler (eigene Hinweise in der App).
     frame_items = [i for i in items if "frame_found" in i]
     if frame_items:
         result["frame_crop"] = True
-        result["frame_missing_count"] = sum(1 for i in frame_items if not i["frame_found"])
+        result["frame_missing_count"] = sum(
+            1 for i in frame_items
+            if not i["frame_found"] and not i.get("excluded_from_mean") and not i.get("frame_ignored"))
+    if excluded_count:
+        result["excluded_count"] = excluded_count
+    if frame_ignored_count:
+        result["frame_ignored_count"] = frame_ignored_count
     print(f"[PY] group summary: {len(before)} vorher / {len(after)} nachher, "
           f"rows={rows_detected}, bright_warn={brightness_warning}, "
           f"spread_warn={brightness_spread_warning}, light_warn={light_mismatch_warning}, "

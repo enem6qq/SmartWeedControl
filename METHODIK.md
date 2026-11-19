@@ -60,6 +60,25 @@ dieser Reihenfolge:
    überwiegend Rot, innen kaum Rot, Rot nicht großflächig) verhindert
    Fehlalarme auf rötlichem Boden oder roten Geräten.
 
+**Einheitliche Auswertung (seit v1.9):** Die App sucht den Rahmen zuerst in
+allen Bildern (`find_frame`) und entscheidet dann je Bildpaar-Gruppe
+einheitlich (`plan_frame_use`) — getrennt für die behandelte Fläche
+(vorher/nachher) und die Kontrollfläche:
+
+| Rahmen gefunden … | Auswertung |
+|---|---|
+| in allen Bildern | überall das Rahmen-Innere |
+| in keinem Bild | überall das ganze Bild (Hinweis) |
+| in jeder Gruppe in mindestens der Hälfte der Bilder | Bilder mit Rahmen: Rahmen-Inneres; Bilder ohne Rahmen werden ausgewertet und angezeigt, zählen aber **nicht in den Mittelwert** |
+| sonst (eine Gruppe überwiegend ohne Rahmen) | **alle** Bilder als ganzes Bild, gefundene Rahmen werden nicht verwendet |
+
+Warum: Bis v1.8 flossen Rahmen-Ausschnitte und ganze Bilder gemeinsam in
+einen Mittelwert. Im Feldversuch wichen Rahmen-Inneres und Umgebung am
+selben Tag um bis zu 3 Prozentpunkte ab (bei ~34 % Bedeckung also bis ~9 %
+relativ — so viel wie das Zielband breit ist), Tage nach dem Striegeln um
+bis zu 10. Die Hälfte-Regel verhindert, dass ein Mittelwert nur noch auf
+einem einzelnen Bild steht.
+
 Ohne erkannten Rahmen wird das ganze Bild ausgewertet und das in der App
 angezeigt; ein Kontrollbild mit eingezeichnetem Ausschnitt liegt im
 `details/`-Ordner. Die Ergebnis-Seite zeigt, welcher Rahmen-Typ gefunden
@@ -88,6 +107,18 @@ Vier Verfahren stehen zur Wahl (Analyse-Einstellungen → Segmentierung):
   Punkte, 2 Bonitierende, Kappa 0,87): Genauigkeit 93 %, Falsch-Positive
   ≤ 4 % in allen Lichtsituationen (tiefe Sonne, Bewölkung), Trefferquote
   0,76–0,92; Vorher/Nachher am selben Tag ohne Korrekturfaktor vergleichbar.
+  **Mindest-Grün (seit v1.9):** Zusätzlich muss das Pixel selbst mindestens
+  leicht grün sein (`−a* > 3`, 0 = neutral grau). „Grüner als der Boden“
+  allein genügt auf kräftig braunem oder rötlichem Boden nicht: Neutrale
+  graue Steine und Stroh liegen dort 15–30 Einheiten über dem Boden und
+  wurden vollständig als Pflanze gezählt (synthetischer Test, Boden RGB
+  150/90/60). Auf dem graubraunen Boden des Feldversuchs (Boden-Referenz −8
+  bis +3) greift die Grenze praktisch nicht: alle 36 Referenzbilder werden
+  unverändert bewertet, von 400 Feldfotos ändern sich 16 (höchstens −1,5
+  Prozentpunkte). Ab einem Wert von 4 sinkt die Trefferquote nach dem
+  Striegeln (0,92 → 0,88). Offen: Bei starkem Grünstich des Lichts **und**
+  rötlichem Boden können helle neutrale Objekte knapp über die Schwelle
+  rutschen — auf einem zweiten Boden nachvalidieren.
   **Grenze (dichter Bestand):** Ab ~50 % echter Bedeckung enthält auch die
   „weniger grüne Hälfte“ Pflanzen, die Boden-Referenz wird zu grün und die
   Bedeckung wird **stark unterschätzt**; bei fast geschlossenem, einheitlichem
@@ -247,7 +278,12 @@ unkrautgefiltert, sonst gefiltert; Modus A: Pflanzenmaske), je Gruppe Anzahl
 und Mittelwert sowie unter jeder Bildkachel Nummer, Dateiname und
 Einzelwert. Beschriftungen stehen in eigenen Leisten statt im Foto, werden
 auf die verfügbare Breite eingepasst (nie abgeschnitten) und viele Bilder
-zeilenweise umbrochen. Die Auswertungs-Panels (Original | Pflanzenmaske |
+zeilenweise umbrochen. Seit v1.9 wird das Übersichtsbild bei sehr vielen
+Bildern auf **mehrere Seiten** verteilt (je höchstens ~3600 px hoch, Kopfzeile
+mit „Seite i/n“) statt als Ganzes verkleinert — bei 96 + 96 Hochformat-Bildern
+war es zuvor nur noch 997 px breit, die Beschriftung etwa 6 px hoch. Bilder,
+die nicht in den Mittelwert zählen (kein Zählrahmen), erscheinen nicht als
+Kachel; eine Fußzeile nennt ihre Anzahl. Die Auswertungs-Panels (Original | Pflanzenmaske |
 Gefiltert | Unkrautgefiltert) tragen je Spalte Titel und Bedeckungswert,
 Reihen-Overlay und Rahmen-Kontrollbild eine Legende.
 
@@ -319,6 +355,10 @@ Vorher und Nachher direkt nacheinander an derselben Stelle aufgenommen werden.
   × 100 Punkte, Feldversuch 10/2026) — Ergebnis: soilref wurde Standard.
   Offen: Verhalten bei dichtem Bestand (> 50 % Bedeckung) und bei anderem Licht
   als tiefer Sonne / Bewölkung (z. B. Dämmerung) ist nicht validiert.
+- **Nur ein Boden validiert:** soilref ist gegen die Punkt-Bonitur **eines**
+  graubraunen Bodens geprüft. Das Mindest-Grün (v1.9) fängt den gröbsten
+  Fehler auf anderen Böden ab (Steine/Stroh auf braunem oder rötlichem
+  Boden), ersetzt aber keine Referenzmessung auf einem zweiten Standort.
 - Die Licht-Warnung ist an 18 Fotos einer Kamera kalibriert; mit den eigenen
   Versuchsfotos (Sonne/Wolken) ist die Schwelle 2,1 zu überprüfen.
 

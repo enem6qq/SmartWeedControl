@@ -71,6 +71,21 @@ public class MainActivity extends AppCompatActivity {
             writePermLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
         }
 
+        // v1.9: Display anlassen, solange eine Analyse läuft. Die Rahmen-Suche
+        // braucht auf dem Handy mehrere Sekunden je Bild; ging das Display
+        // nach 30 s ohne Berührung aus, pausierte die Analyse im Ruhezustand.
+        // (Gegen das Wegwischen/Einfrieren im Hintergrund schützt zusätzlich
+        // der AnalysisKeepAliveService.)
+        AnalysisViewModel analysisVM =
+                new androidx.lifecycle.ViewModelProvider(this).get(AnalysisViewModel.class);
+        analysisVM.running.observe(this, running -> {
+            if (Boolean.TRUE.equals(running)) {
+                getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            } else {
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            }
+        });
+
         // Papierkorb-Aufbewahrungsfrist (30 Tage) beim App-Start durchsetzen —
         // nicht erst, wenn der Nutzer den Papierkorb öffnet.
         // Application-Context statt this: Der Thread würde die Activity sonst
