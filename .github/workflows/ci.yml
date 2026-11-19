@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # claude/**: Arbeitszweige bauen ihr APK schon beim Push (ohne Pull
+    # Request) — so gibt es zu jedem Stand ein testbares APK als Artefakt.
+    branches: [main, 'claude/**']
   pull_request:
   workflow_dispatch:
 
