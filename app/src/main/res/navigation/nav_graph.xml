@@ -44,6 +44,14 @@
         <action
             android:id="@+id/action_sessionsFragment_to_AnalysisFragment"
             app:destination="@id/AnalysisFragment" />
+        <!-- v1.9: Fotos zu einer bestehenden Aufnahme hinzufügen -->
+        <action
+            android:id="@+id/action_sessionsFragment_to_CameraFragment"
+            app:destination="@id/CameraFragment" />
+        <!-- v1.9: gespeichertes Ergebnis einer Analyse wieder anzeigen -->
+        <action
+            android:id="@+id/action_sessionsFragment_to_SummaryFragment"
+            app:destination="@id/SummaryFragment" />
     </fragment>
 
     <fragment

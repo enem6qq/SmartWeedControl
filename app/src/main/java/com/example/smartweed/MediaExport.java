@@ -210,6 +210,174 @@ public final class MediaExport {
         return failed;
     }
 
+    // ------------------------------------------------------------------
+    // v1.9: Galerie aufräumen und Tabellen (CSV) nach Documents legen
+    // ------------------------------------------------------------------
+
+    /** Wurzelordner für Tabellen: Documents/SmartWeed/… */
+    public static String documentsPath(String subPath) {
+        return Environment.DIRECTORY_DOCUMENTS + "/" + GALLERY_ROOT
+                + (subPath == null || subPath.isEmpty() ? "" : "/" + subPath);
+    }
+
+    /**
+     * Entfernt einen Session- oder Analyse-Ordner aus der Galerie
+     * (Pictures/SmartWeed/&lt;subPath&gt;/… inkl. Unterordner) und die zugehörigen
+     * Tabellen aus Documents/SmartWeed/&lt;subPath&gt;/….
+     *
+     * Bis v1.8 blieben beim Verwerfen einer Analyse bzw. Löschen einer
+     * Session alle Galerie-Kopien liegen. Best effort: Einträge, die nicht
+     * dieser App-Installation gehören (z. B. nach Neuinstallation), darf
+     * Android 10+ nicht löschen — sie bleiben liegen und werden gezählt.
+     *
+     * @return Anzahl der Dateien, die nicht entfernt werden konnten
+     */
+    public static int deleteGalleryFolder(Context context, String subPath) {
+        if (subPath == null || subPath.isEmpty()) return 0;   // nie die ganze Wurzel löschen
+        int failed = 0;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            failed += deleteByRelativePath(context, MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    galleryPath(subPath) + "/");
+            failed += deleteByRelativePath(context, MediaStore.Files.getContentUri("external"),
+                    documentsPath(subPath) + "/");
+        } else {
+            for (String root : new String[]{Environment.DIRECTORY_PICTURES, Environment.DIRECTORY_DOCUMENTS}) {
+                File dir = new File(Environment.getExternalStoragePublicDirectory(root),
+                        GALLERY_ROOT + "/" + subPath);
+                if (!dir.exists()) continue;
+                java.util.List<String> paths = new java.util.ArrayList<>();
+                collectFiles(dir, paths);
+                failed += deleteTree(dir);
+                // Gelöschte Pfade neu scannen entfernt die toten MediaStore-Einträge
+                if (!paths.isEmpty()) {
+                    MediaScannerConnection.scanFile(context, paths.toArray(new String[0]), null, null);
+                }
+            }
+        }
+        return failed;
+    }
+
+    /** Löscht alle eigenen MediaStore-Einträge, deren RELATIVE_PATH mit prefix beginnt. */
+    @androidx.annotation.RequiresApi(api = Build.VERSION_CODES.Q)
+    private static int deleteByRelativePath(Context context, Uri collection, String prefix) {
+        int failed = 0;
+        android.content.ContentResolver cr = context.getContentResolver();
+        String[] proj = {MediaStore.MediaColumns._ID, MediaStore.MediaColumns.RELATIVE_PATH};
+        java.util.List<Long> ids = new java.util.ArrayList<>();
+        // LIKE grob vorfiltern ("_" ist dort ein Platzhalter), exakt prüfen per startsWith
+        try (android.database.Cursor c = cr.query(collection, proj,
+                MediaStore.MediaColumns.RELATIVE_PATH + " LIKE ?",
+                new String[]{prefix + "%"}, null)) {
+            if (c == null) return 0;
+            int idCol = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID);
+            int pathCol = c.getColumnIndexOrThrow(MediaStore.MediaColumns.RELATIVE_PATH);
+            while (c.moveToNext()) {
+                String rel = c.getString(pathCol);
+                if (rel != null && rel.startsWith(prefix)) ids.add(c.getLong(idCol));
+            }
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Galerie-Abfrage fehlgeschlagen: " + prefix, e);
+            return 0;
+        }
+        for (long id : ids) {
+            Uri item = android.content.ContentUris.withAppendedId(collection, id);
+            try {
+                if (cr.delete(item, null, null) <= 0) failed++;
+            } catch (RuntimeException e) {
+                // RecoverableSecurityException: Eintrag gehört nicht (mehr) uns
+                failed++;
+                Log.w(TAG, "Galerie-Eintrag nicht löschbar: " + item, e);
+            }
+        }
+        return failed;
+    }
+
+    /** Löscht einen Ordner rekursiv; liefert die Zahl nicht löschbarer Dateien. */
+    private static int deleteTree(File dir) {
+        int failed = 0;
+        File[] files = dir.listFiles();
+        if (files != null) {
+            for (File f : files) {
+                if (f.isDirectory()) failed += deleteTree(f);
+                else if (!f.delete()) failed++;
+            }
+        }
+        if (!dir.delete() && dir.exists()) {
+            Log.w(TAG, "Ordner nicht löschbar: " + dir);
+        }
+        return failed;
+    }
+
+    /**
+     * Legt eine Tabelle (CSV) nach Documents/SmartWeed/&lt;subPath&gt;/ — der
+     * App-Speicher (Android/data/…) ist ab Android 11 für Dateimanager nicht
+     * mehr erreichbar. Ab Android 10 ohne Berechtigung über MediaStore.
+     *
+     * @return true, wenn die Datei fertig in Documents liegt
+     */
+    public static boolean exportDocument(Context context, File src, String subPath, String displayName) {
+        if (src == null || !src.isFile() || src.length() == 0) return false;
+        String name = (displayName == null || displayName.isEmpty()) ? src.getName() : displayName;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
+                values.put(MediaStore.MediaColumns.MIME_TYPE, "text/csv");
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, documentsPath(subPath));
+                values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+                Uri uri = context.getContentResolver()
+                        .insert(MediaStore.Files.getContentUri("external"), values);
+                if (uri == null) return false;
+                boolean written = false;
+                boolean published = false;
+                try (InputStream in = new FileInputStream(src);
+                     OutputStream out = context.getContentResolver().openOutputStream(uri)) {
+                    if (out != null) {
+                        byte[] buf = new byte[8192];
+                        int n;
+                        while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+                        written = true;
+                    }
+                } finally {
+                    if (written) {
+                        try {
+                            ContentValues done = new ContentValues();
+                            done.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                            published = context.getContentResolver().update(uri, done, null, null) > 0;
+                        } catch (RuntimeException e) {
+                            Log.w(TAG, "IS_PENDING=0 fehlgeschlagen: " + name, e);
+                        }
+                    }
+                    if (!published) {
+                        try {
+                            context.getContentResolver().delete(uri, null, null);
+                        } catch (RuntimeException e) {
+                            Log.w(TAG, "Pending-Eintrag nicht löschbar: " + uri, e);
+                        }
+                    }
+                }
+                return published;
+            } else {
+                File dstDir = new File(
+                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
+                        GALLERY_ROOT + (subPath == null || subPath.isEmpty() ? "" : "/" + subPath));
+                if (!dstDir.exists() && !dstDir.mkdirs()) return false;
+                File dst = uniqueFile(dstDir, name);
+                try (InputStream in = new FileInputStream(src);
+                     OutputStream out = new FileOutputStream(dst)) {
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+                }
+                return true;
+            }
+        } catch (Exception e) {
+            // Best effort: Die Tabelle liegt in jedem Fall im Analyse-Ordner der App
+            Log.e(TAG, "Tabellen-Export fehlgeschlagen: " + name, e);
+            return false;
+        }
+    }
+
     private static void collectFiles(File dir, java.util.List<String> out) {
         File[] files = dir.listFiles();
         if (files == null) return;

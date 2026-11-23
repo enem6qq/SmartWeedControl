@@ -53,6 +53,9 @@ import java.util.concurrent.Executors;
 public class CameraFragment extends Fragment {
 
     private static final String STATE_SESSION_NAME = "sessionDirName";
+    /** Navigations-Argument (v1.9): Name einer bestehenden Session, in die
+     *  weitere Fotos sollen ("Meine Aufnahmen" → "Fotos hinzufügen") */
+    public static final String ARG_SESSION_NAME = "sessionName";
 
     private FragmentCameraBinding binding;
     private ImageCapture imageCapture;
@@ -123,16 +126,28 @@ public class CameraFragment extends Fragment {
         // savedInstanceState == null, die Fragment-Instanz (und damit das Feld)
         // lebt aber weiter — ohne Guard bekämen die Nachher-Fotos eine NEUE
         // Session und die Analyse sähe die Vorher-Bilder nicht mehr.
+        //
+        // v1.9: Eine NEUE Kamera-Seite (von der Startseite) bekam bisher immer
+        // eine neue Session — die Nachher-Fotos landeten dann getrennt von den
+        // Vorher-Fotos. Jetzt gilt: (1) kommt man aus "Meine Aufnahmen", wird
+        // genau diese Session benutzt; (2) sonst wird die zuletzt benutzte
+        // Session zum Fortsetzen angeboten (siehe offerResumeIfPossible).
+        boolean freshSession = false;
+        String argSession = getArguments() != null ? getArguments().getString(ARG_SESSION_NAME) : null;
         if (savedInstanceState != null && savedInstanceState.getString(STATE_SESSION_NAME) != null) {
             sessionDirName = savedInstanceState.getString(STATE_SESSION_NAME);
         } else if (sessionDirName == null) {
-            sessionDirName = new SimpleDateFormat(SessionStore.SESSION_NAME_PATTERN, Locale.US).format(new Date());
+            if (argSession != null && !argSession.isEmpty()) {
+                sessionDirName = argSession;
+            } else {
+                sessionDirName = new SimpleDateFormat(SessionStore.SESSION_NAME_PATTERN, Locale.US).format(new Date());
+                freshSession = true;
+            }
         }
-        sessionDir = new File(SessionStore.getBaseDir(requireContext()), sessionDirName);
-        beforeDir = new File(sessionDir, SessionStore.BEFORE_DIR_NAME);
-        afterDir = new File(sessionDir, SessionStore.AFTER_DIR_NAME);
+        applySession(sessionDirName);
         // Ordner werden erst beim ersten Foto/Import angelegt (lazy) — sonst
         // hinterlässt jeder Besuch der Kamera-Seite eine leere Session.
+        if (freshSession) offerResumeIfPossible();
 
         // Button-Elevation & kleine Press-Animation
         float elev = getResources().getDisplayMetrics().density * 3f;
@@ -175,6 +190,39 @@ public class CameraFragment extends Fragment {
         prepForIntro(binding.buttonImportImage, 26f);
         prepForIntro(binding.buttonStartAnalysis, 30f);
         view.post(this::runIntroAnimations);
+    }
+
+    /** Stellt alle Ablage-Pfade auf die Session mit diesem Namen um. */
+    private void applySession(String name) {
+        sessionDirName = name;
+        sessionDir = new File(SessionStore.getBaseDir(requireContext()), sessionDirName);
+        beforeDir = new File(sessionDir, SessionStore.BEFORE_DIR_NAME);
+        afterDir = new File(sessionDir, SessionStore.AFTER_DIR_NAME);
+        if (binding != null) {
+            binding.tvCameraSession.setText(getString(R.string.camera_session_label, sessionDirName));
+        }
+    }
+
+    /**
+     * v1.9: Gibt es eine in den letzten Stunden benutzte Session mit Fotos,
+     * fragt die App, ob die neuen Fotos dazu sollen. Typischer Fall: Vorher-
+     * Fotos gemacht, zur Startseite zurück (oder App beim Striegeln beendet),
+     * danach wieder "Kamera" für die Nachher-Fotos.
+     */
+    private void offerResumeIfPossible() {
+        final String last = SessionStore.getResumableSession(requireContext());
+        if (last == null || last.equals(sessionDirName)) return;
+        File lastDir = new File(SessionStore.getBaseDir(requireContext()), last);
+        int nBefore = SessionStore.countImages(new File(lastDir, SessionStore.BEFORE_DIR_NAME));
+        int nAfter = SessionStore.countImages(new File(lastDir, SessionStore.AFTER_DIR_NAME));
+        activeDialog = new android.app.AlertDialog.Builder(requireContext())
+                .setTitle(R.string.camera_resume_title)
+                .setMessage(getString(R.string.camera_resume_message, last, nBefore, nAfter))
+                .setPositiveButton(R.string.camera_resume_continue, (d, w) -> {
+                    if (isAdded()) applySession(last);
+                })
+                .setNegativeButton(R.string.camera_resume_new, null)
+                .show();
     }
 
     private boolean hasCameraPermission() {
@@ -251,6 +299,9 @@ public class CameraFragment extends Fragment {
         File targetDir = isBefore ? beforeDir : afterDir;
         if (!targetDir.exists()) targetDir.mkdirs();
         File photoFile = new File(targetDir, filename);
+        // Session-Name JETZT festhalten: Der Callback läuft asynchron, die
+        // Session kann bis dahin (Fortsetzen-Dialog) gewechselt haben
+        final String sessionName = sessionDirName;
         ImageCapture.OutputFileOptions outputOptions = new ImageCapture.OutputFileOptions.Builder(photoFile).build();
 
         String label = getString(isBefore ? R.string.label_before : R.string.label_after);
@@ -258,7 +309,7 @@ public class CameraFragment extends Fragment {
         // nicht auf requireContext() eines evtl. schon abgelösten Fragments zugreifen.
         final Context appContext = requireContext().getApplicationContext();
         final String toastText = getString(R.string.toast_photo_saved, label,
-                MediaExport.galleryPath(sessionDirName + "/" + subfolder));
+                MediaExport.galleryPath(sessionName + "/" + subfolder));
 
         imageCapture.takePicture(
                 outputOptions,
@@ -268,7 +319,9 @@ public class CameraFragment extends Fragment {
                     public void onImageSaved(@NonNull ImageCapture.OutputFileResults outputFileResults) {
                         // Foto zusätzlich in die Galerie exportieren (Hintergrund)
                         IO_EXECUTOR.execute(() -> MediaExport.exportToGallery(
-                                appContext, photoFile, sessionDirName + "/" + subfolder));
+                                appContext, photoFile, sessionName + "/" + subfolder));
+                        // v1.9: als aktive Session merken (zum Fortsetzen)
+                        SessionStore.rememberActiveSession(appContext, sessionName);
 
                         Toast.makeText(appContext, toastText, Toast.LENGTH_SHORT).show();
                         // UI-Feedback nur, wenn die View noch lebt — auf dem Button,
@@ -336,7 +389,8 @@ public class CameraFragment extends Fragment {
         }
         if (okUris.isEmpty()) return;
 
-        final String gallerySub = sessionDirName + "/" + targetDir.getName();
+        final String sessionName = sessionDirName;
+        final String gallerySub = sessionName + "/" + targetDir.getName();
         final String galleryPath = MediaExport.galleryPath(gallerySub);
         final String singleFmt = okUris.size() == 1
                 ? getString(R.string.toast_image_imported, galleryPath, okNames.get(0)) : null;
@@ -376,6 +430,7 @@ public class CameraFragment extends Fragment {
                     Log.e("Import", "Fehler beim Kopieren: " + name, e);
                 }
             }
+            if (copied > 0) SessionStore.rememberActiveSession(appContext, sessionName);
             final int fCopied = copied;
             final int fFailed = failed;
             ContextCompat.getMainExecutor(appContext).execute(() -> {

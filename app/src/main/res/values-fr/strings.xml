@@ -40,7 +40,7 @@
         <item quantity="other">%1$d images déplacées vers la corbeille</item>
     </plurals>
     <string name="btn_discard_analysis">Supprimer cette analyse</string>
-    <string name="analysis_discard_confirm_message">Les images de résultat générées seront déplacées vers la corbeille.</string>
+    <string name="analysis_discard_confirm_message">L\'analyse est déplacée vers la corbeille et retirée de la galerie.</string>
 
     <!-- Second Fragment (Camera) -->
     <string name="camera_preview_desc">Aperçu de la caméra</string>
@@ -279,5 +279,42 @@
         <item quantity="one">%1$d image n\'a pas pu être enregistrée dans la galerie – elle reste dans le stockage de l\'application.</item>
         <item quantity="many">%1$d images n\'ont pas pu être enregistrées dans la galerie – elles restent dans le stockage de l\'application.</item>
         <item quantity="other">%1$d images n\'ont pas pu être enregistrées dans la galerie – elles restent dans le stockage de l\'application.</item>
+    </plurals>
+
+    <!-- v1.9 -->
+    <string name="notification_channel_analysis">Analyse en cours</string>
+    <string name="notification_analysis_title">SmartWeed analyse</string>
+    <string name="notification_analysis_text">Les images sont en cours d\'évaluation. Touchez pour revenir à l\'application.</string>
+    <string name="progress_frame_search">Recherche du cadre de comptage : image %1$d sur %2$d …</string>
+    <string name="warning_frame_ignored">Cadre de comptage détecté sur une partie des images seulement – toutes les images ont été analysées en entier afin que les valeurs restent comparables.</string>
+    <string name="label_excluded_from_mean">Hors moyenne (aucun cadre de comptage détecté)</string>
+    <string name="label_frame_ignored">Cadre de comptage détecté mais non utilisé – image entière</string>
+    <string name="error_no_readable_images">Aucune image avant ou après lisible</string>
+    <string name="overview_pages_info">Image d\'ensemble : %1$d pages (toutes dans la galerie)</string>
+    <string name="output_csv_path">Tableau (CSV) : %1$s</string>
+    <string name="session_delete_also_gallery">Supprimer aussi de la galerie</string>
+    <string name="camera_resume_title">Poursuivre l\'enregistrement ?</string>
+    <string name="camera_resume_message">Dernier enregistrement : \"%1$s\" (%2$d avant, %3$d après). Y ajouter les nouvelles photos ?</string>
+    <string name="camera_resume_continue">Poursuivre</string>
+    <string name="camera_resume_new">Nouvel enregistrement</string>
+    <string name="camera_session_label">Enregistrement : %1$s</string>
+    <string name="session_add_photos">Ajouter des photos</string>
+    <string name="session_show_results">Résultats (%1$d)</string>
+    <string name="session_results_title">Résultats enregistrés</string>
+    <string name="toast_result_not_readable">Le résultat enregistré n\'a pas pu être chargé.</string>
+    <plurals name="warning_frame_excluded">
+        <item quantity="one">%1$d image sans cadre de comptage a été analysée mais n\'entre pas dans la moyenne.</item>
+        <item quantity="many">%1$d images sans cadre de comptage ont été analysées mais n\'entrent pas dans la moyenne.</item>
+        <item quantity="other">%1$d images sans cadre de comptage ont été analysées mais n\'entrent pas dans la moyenne.</item>
+    </plurals>
+    <plurals name="warning_images_skipped">
+        <item quantity="one">%1$d image n\'a pas pu être lue et a été ignorée : %2$s</item>
+        <item quantity="many">%1$d images n\'ont pas pu être lues et ont été ignorées : %2$s</item>
+        <item quantity="other">%1$d images n\'ont pas pu être lues et ont été ignorées : %2$s</item>
+    </plurals>
+    <plurals name="trash_folder_item">
+        <item quantity="one">%2$s (%1$d image)</item>
+        <item quantity="many">%2$s (%1$d images)</item>
+        <item quantity="other">%2$s (%1$d images)</item>
     </plurals>
 </resources>

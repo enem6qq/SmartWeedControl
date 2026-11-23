@@ -830,34 +830,47 @@ def _detect_portrait(bgr, debug=False):
 MAX_OUTSIDE_FRACTION = 0.002
 
 
-def crop_to_frame(bgr, margin=0.0):
-    """Square perspective warp of the frame interior (side = mean corner distance,
-    i.e. original resolution), cropped by `margin` x side on every edge.
-    Returns (crop or None, detect_frame result).
+def crop_with_corners(bgr, corners, margin=0.0):
+    """Square perspective warp of the area inside the given corners (TL,TR,BR,BL in
+    px of `bgr`), cropped by `margin` x side on every edge. Used by crop_to_frame and
+    (v1.9) by analysis.py to crop with corners found in an earlier pass, without
+    running the detector again.
+    Returns (crop or None, info): info is {} on success, else dict(reason=...,
+    [outside_fraction=...]).
 
-    A frame that reaches past the photo (e.g. open side cut off; detect_frame then
-    still reports ok=True with inside=False) is REJECTED here: warpPerspective would
-    fill the missing part with black, which counts as soil in the coverage
-    denominator and shifts the soilref soil reference. The check warps a validity
-    mask with the same homography, so it is exact for the cropped area."""
-    r = detect_frame(bgr)
-    if not r["ok"]:
-        return None, r
-    quad = r["corners"].astype(np.float32)
+    A frame that reaches past the photo is REJECTED: warpPerspective would fill the
+    missing part with black, which counts as soil in the coverage denominator and
+    shifts the soilref soil reference. The check warps a validity mask with the same
+    homography, so it is exact for the cropped area."""
+    quad = np.asarray(corners, np.float32).reshape(4, 2)
     side = int(round(np.mean([np.linalg.norm(quad[i] - quad[(i + 1) % 4]) for i in range(4)])))
     m = int(side * margin)
     if side - 2 * m < 16:
-        r = dict(r, ok=False, reason="frame too small after margin")
-        return None, r
+        return None, dict(reason="frame too small after margin")
     dst = np.array([[0, 0], [side, 0], [side, side], [0, side]], np.float32)
     H = cv2.getPerspectiveTransform(quad, dst)
     valid = cv2.warpPerspective(np.full(bgr.shape[:2], 255, np.uint8), H, (side, side),
                                 flags=cv2.INTER_NEAREST, borderValue=0)
     outside = float(np.mean(valid[m:side - m, m:side - m] == 0))
     if outside > MAX_OUTSIDE_FRACTION:
-        r = dict(r, ok=False, outside_fraction=round(outside, 4),
-                 reason="frame partly outside image (%.1f %% of the interior missing)"
-                        % (outside * 100))
-        return None, r
+        return None, dict(outside_fraction=round(outside, 4),
+                          reason="frame partly outside image (%.1f %% of the interior missing)"
+                                 % (outside * 100))
     warp = cv2.warpPerspective(bgr, H, (side, side))
-    return np.ascontiguousarray(warp[m:side - m, m:side - m]), r
+    return np.ascontiguousarray(warp[m:side - m, m:side - m]), {}
+
+
+def crop_to_frame(bgr, margin=0.0):
+    """Square perspective warp of the frame interior (side = mean corner distance,
+    i.e. original resolution), cropped by `margin` x side on every edge.
+    Returns (crop or None, detect_frame result).
+
+    A frame that reaches past the photo (e.g. open side cut off; detect_frame then
+    still reports ok=True with inside=False) is REJECTED here, see crop_with_corners."""
+    r = detect_frame(bgr)
+    if not r["ok"]:
+        return None, r
+    roi, why = crop_with_corners(bgr, r["corners"], margin)
+    if roi is None:
+        return None, dict(r, ok=False, **why)
+    return roi, r

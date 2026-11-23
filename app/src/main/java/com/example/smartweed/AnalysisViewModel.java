@@ -10,6 +10,11 @@ public class AnalysisViewModel extends ViewModel {
     public final MutableLiveData<String>  error      = new MutableLiveData<>();
     public final MutableLiveData<Boolean> weedFilter = new MutableLiveData<>(false);
 
-    /** Fortschritt der laufenden Analyse: {aktuelles Paar (1-basiert), Gesamtanzahl} */
+    /** Phase der laufenden Analyse (drittes Element von {@link #progress}) */
+    public static final int PHASE_FRAME_SEARCH = 0;
+    public static final int PHASE_ANALYSIS = 1;
+
+    /** Fortschritt der laufenden Analyse:
+     *  {aktuelles Bild (1-basiert), Gesamtanzahl, Phase (PHASE_*)} */
     public final MutableLiveData<int[]>   progress   = new MutableLiveData<>();
 }

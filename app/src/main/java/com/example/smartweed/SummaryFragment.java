@@ -46,6 +46,10 @@ public class SummaryFragment extends Fragment {
 
     private String lastOriginalPath = null;
 
+    /** v1.9: Zusatzzeilen unter dem Galerie-Pfad (aus dem Ergebnis): Ablageort
+     *  der CSV-Tabelle und Seitenzahl des Übersichtsbilds */
+    private String outputExtraInfo = "";
+
     /** Verwerfen erst anbieten, wenn ein Ausgabeordner existiert UND die
      *  Analyse nicht mehr läuft (sonst Race mit dem Python-Thread). */
     private void updateDiscardButton() {
@@ -94,13 +98,9 @@ public class SummaryFragment extends Fragment {
         });
 
         analysisVM.outDir.observe(getViewLifecycleOwner(), path -> {
-            if (!TextUtils.isEmpty(path)) {
-                // Statt des internen App-Pfads (Android/data/..., für Nutzer
-                // praktisch unauffindbar) den Galerie-Ordner zeigen, in den
-                // Übersicht und Auswertungsbilder exportiert werden.
-                binding.tvOutDir.setText(getString(R.string.output_gallery_path,
-                        MediaExport.galleryPath(MediaExport.analysisSubPath(new File(path)))));
-            }
+            // Neue Analyse / anderes Ergebnis: Zusatzzeilen des alten verwerfen
+            outputExtraInfo = "";
+            updateOutputInfo();
             updateDiscardButton();
         });
 
@@ -132,7 +132,17 @@ public class SummaryFragment extends Fragment {
                         final android.content.Context appCtx = requireContext().getApplicationContext();
                         binding.btnDiscardAnalysis.setEnabled(false);
                         new Thread(() -> {
-                            int moved = new TrashManager(appCtx).moveDirectoryToTrash(new File(path));
+                            File dir = new File(path);
+                            String gallerySub = MediaExport.analysisSubPath(dir);
+                            int moved = new TrashManager(appCtx).moveDirectoryToTrash(dir);
+                            // v1.9: auch die Galerie-Kopien dieser Analyse und
+                            // ihre Tabelle entfernen (bis v1.8 blieben sie
+                            // liegen). Erst nach dem erfolgreichen Verschieben;
+                            // beim Wiederherstellen aus dem Papierkorb werden
+                            // sie neu in die Galerie gelegt.
+                            if (!dir.exists()) {
+                                MediaExport.deleteGalleryFolder(appCtx, gallerySub);
+                            }
                             // getActivity() EINMAL holen statt isAdded()+requireActivity():
                             // zwischen Check und Aufruf könnte das Fragment sonst
                             // detached werden (IllegalStateException)
@@ -171,8 +181,11 @@ public class SummaryFragment extends Fragment {
 
         // Fortschritt ("Analysiere Bild 2 von 12 …")
         analysisVM.progress.observe(getViewLifecycleOwner(), p -> {
-            if (p != null && p.length == 2 && Boolean.TRUE.equals(analysisVM.running.getValue())) {
-                binding.tvStatus.setText(getString(R.string.progress_image, p[0], p[1]));
+            if (p != null && p.length >= 2 && Boolean.TRUE.equals(analysisVM.running.getValue())) {
+                // v1.9: zwei Phasen — erst Zählrahmen suchen, dann auswerten
+                boolean frameSearch = p.length >= 3 && p[2] == AnalysisViewModel.PHASE_FRAME_SEARCH;
+                binding.tvStatus.setText(getString(frameSearch
+                        ? R.string.progress_frame_search : R.string.progress_image, p[0], p[1]));
             }
         });
 
@@ -203,6 +216,20 @@ public class SummaryFragment extends Fragment {
                 if (binding.tvPairsHeader != null) binding.tvPairsHeader.setVisibility(View.GONE);
             }
         });
+    }
+
+    /** Zeile "Gespeichert in der Galerie: …" plus Zusatzzeilen (CSV, Seitenzahl). */
+    private void updateOutputInfo() {
+        if (binding == null) return;
+        String path = analysisVM.outDir.getValue();
+        if (TextUtils.isEmpty(path)) return;
+        // Statt des internen App-Pfads (Android/data/..., für Nutzer
+        // praktisch unauffindbar) den Galerie-Ordner zeigen, in den
+        // Übersicht und Auswertungsbilder exportiert werden.
+        String text = getString(R.string.output_gallery_path,
+                MediaExport.galleryPath(MediaExport.analysisSubPath(new File(path))));
+        if (!TextUtils.isEmpty(outputExtraInfo)) text = text + "\n" + outputExtraInfo;
+        binding.tvOutDir.setText(text);
     }
 
     // ==================================================================
@@ -353,6 +380,25 @@ public class SummaryFragment extends Fragment {
             warn.append(getResources().getQuantityString(R.plurals.warning_frame_missing,
                     frameMissing, frameMissing));
         }
+        // v1.9: einheitliche Rahmen-Auswertung (analysis.plan_frame_use) —
+        // Bilder ohne Rahmen zählen nicht mit, bzw. alle als ganzes Bild
+        int frameExcluded = root.optInt("excluded_count", 0);
+        if (frameExcluded > 0) {
+            if (warn.length() > 0) warn.append("\n");
+            warn.append(getResources().getQuantityString(R.plurals.warning_frame_excluded,
+                    frameExcluded, frameExcluded));
+        }
+        if (root.optInt("frame_ignored_count", 0) > 0) {
+            if (warn.length() > 0) warn.append("\n");
+            warn.append(getString(R.string.warning_frame_ignored));
+        }
+        // v1.9: nicht lesbare Bilder wurden übersprungen (statt Abbruch)
+        int skippedCount = root.optInt("skipped_count", 0);
+        if (skippedCount > 0) {
+            if (warn.length() > 0) warn.append("\n");
+            warn.append(getResources().getQuantityString(R.plurals.warning_images_skipped,
+                    skippedCount, skippedCount, joinNames(root.optJSONArray("skipped_files"), 5)));
+        }
         // v1.8: unplausible Bedeckung (< 3 % oder > 80 %) — im Feldversuch
         // waren genau solche Werte Messfehler der alten Segmentierung
         JSONArray itemsArr = root.optJSONArray("items");
@@ -401,6 +447,20 @@ public class SummaryFragment extends Fragment {
         } else {
             binding.tvFrameInfo.setVisibility(View.GONE);
         }
+
+        // v1.9: Zusatzzeilen zum Ablageort — CSV-Tabelle und Seitenzahl der Übersicht
+        StringBuilder extra = new StringBuilder();
+        String csvPath = root.optString("csv_path", "");
+        if (!TextUtils.isEmpty(csvPath)) {
+            extra.append(getString(R.string.output_csv_path, csvPath));
+        }
+        int overviewPages = ResultStore.overviewPages(root).size();
+        if (overviewPages > 1) {
+            if (extra.length() > 0) extra.append("\n");
+            extra.append(getString(R.string.overview_pages_info, overviewPages));
+        }
+        outputExtraInfo = extra.toString();
+        updateOutputInfo();
 
         // Übersichtsbild (Vorher-Zeile / Nachher-Zeile)
         JSONObject combo = root.optJSONObject("combo");
@@ -472,7 +532,13 @@ public class SummaryFragment extends Fragment {
             // Zählrahmen-Status nur, wenn der Zuschnitt angefordert war
             if (it.has("frame_found")) {
                 int frameLabel;
-                if (!it.optBoolean("frame_found", false)) {
+                if (it.has("excluded_from_mean")) {
+                    // v1.9: Bild ohne Rahmen in einer Gruppe, die mit Rahmen rechnet
+                    frameLabel = R.string.label_excluded_from_mean;
+                } else if (it.optBoolean("frame_ignored", false)) {
+                    // v1.9: Rahmen gefunden, aber die Gruppe rechnet einheitlich ganz
+                    frameLabel = R.string.label_frame_ignored;
+                } else if (!it.optBoolean("frame_found", false)) {
                     frameLabel = R.string.label_frame_missing;
                 } else if ("u_frame".equals(it.optString("frame_kind", ""))) {
                     frameLabel = R.string.label_frame_found_u;
@@ -526,6 +592,18 @@ public class SummaryFragment extends Fragment {
             case "control_after":  return R.string.label_control_after;
             default:               return R.string.label_before;
         }
+    }
+
+    /** Die ersten max Namen, kommagetrennt; weitere als "…" angedeutet. */
+    private static String joinNames(JSONArray names, int max) {
+        if (names == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < names.length() && i < max; i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(names.optString(i, ""));
+        }
+        if (names.length() > max) sb.append(", …");
+        return sb.toString();
     }
 
     private static int countItemsWithKey(JSONArray items, String key) {

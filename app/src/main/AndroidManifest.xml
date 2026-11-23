@@ -14,6 +14,18 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
+    <!-- v1.9: Die Analyse läuft während der Auswertung als Vordergrund-Dienst
+         (AnalysisKeepAliveService), damit Android sie nicht pausiert oder
+         beendet, wenn das Display ausgeht oder die App kurz verlassen wird.
+         - FOREGROUND_SERVICE(_DATA_SYNC): Vordergrund-Dienst (Typ ab Android 14 Pflicht)
+         - WAKE_LOCK: CPU bleibt bei ausgeschaltetem Display wach
+         - POST_NOTIFICATIONS: Hinweis "Analyse läuft" (ab Android 13 nur mit
+           Zustimmung sichtbar; der Dienst läuft auch ohne sie) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- allowBackup=false: Ohne Ausschlüsse ließe sich sonst per adb backup/
          restore das is_admin-Flag aus den SharedPreferences setzen und der
          Admin-Login ganz ohne Passwort umgehen. Nutzdaten (Fotos/Analysen)
@@ -47,6 +59,12 @@
             android:name=".Login"
             android:exported="false"
             android:theme="@style/Theme.SmartWeed" />
+
+        <!-- v1.9: hält die App während einer laufenden Analyse am Leben -->
+        <service
+            android:name=".AnalysisKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- AppCompat per-app language support service -->
         <service

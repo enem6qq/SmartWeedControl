@@ -53,23 +53,46 @@ public class AnalysisFragment extends Fragment {
 
     private FragmentAnalysisBinding binding;
 
-    // Bildgruppen (Index in TAGS/GROUP_DIRS/GALLERY_PREFIX)
-    private static final int GROUP_BEFORE = 0;
-    private static final int GROUP_AFTER = 1;
+    // Bildgruppen (Index in TAGS/GROUP_DIRS) — Namen und Ordner zentral in AnalysisFiles
+    private static final int GROUP_BEFORE = AnalysisFiles.GROUP_BEFORE;
+    private static final int GROUP_AFTER = AnalysisFiles.GROUP_AFTER;
     /** v1.8: optionale, unbehandelte Kontrollfläche (gleiches Licht) */
-    private static final int GROUP_CONTROL_BEFORE = 2;
-    private static final int GROUP_CONTROL_AFTER = 3;
-    private static final int GROUP_COUNT = 4;
+    private static final int GROUP_CONTROL_BEFORE = AnalysisFiles.GROUP_CONTROL_BEFORE;
+    private static final int GROUP_CONTROL_AFTER = AnalysisFiles.GROUP_CONTROL_AFTER;
+    private static final int GROUP_COUNT = AnalysisFiles.GROUP_COUNT;
 
-    /** Tags für analyze_image/build_group_summary (müssen zu analysis.py passen) */
-    private static final String[] TAGS = {"before", "after", "control_before", "control_after"};
-    /** Unterordner im Analyse-Ordner (App-Speicher und Galerie) */
-    private static final String[] GROUP_DIRS = {
-            SessionStore.ANALYSIS_BEFORE_DIR, SessionStore.ANALYSIS_AFTER_DIR,
-            SessionStore.ANALYSIS_CONTROL_BEFORE_DIR, SessionStore.ANALYSIS_CONTROL_AFTER_DIR};
-    /** Präfix der Auswertungsbilder in der Galerie (Vorher_01_Auswertung.jpg …) */
-    private static final String[] GALLERY_PREFIX = {
-            "Vorher", "Nachher", "Kontrolle_Vorher", "Kontrolle_Nachher"};
+    private static final String[] TAGS = AnalysisFiles.TAGS;
+    private static final String[] GROUP_DIRS = AnalysisFiles.GROUP_DIRS;
+
+    /**
+     * v1.9: Formate, die die Analyse (OpenCV) nicht lesen kann. Bis v1.8 ließ
+     * der Bild-Picker sie zu — ein einziges HEIC-Foto brach dann nach Minuten
+     * Rechenzeit die GANZE Analyse ab. Jetzt werden sie schon bei der Auswahl
+     * abgelehnt; was trotzdem unlesbar ist (defekte Datei, exotisches Format),
+     * wird während der Analyse einzeln übersprungen und gemeldet.
+     */
+    private static final java.util.Set<String> UNSUPPORTED_MIME = new java.util.HashSet<>(
+            java.util.Arrays.asList("image/heic", "image/heif", "image/heic-sequence",
+                    "image/heif-sequence", "image/avif", "image/gif", "image/svg+xml",
+                    "image/x-adobe-dng"));
+
+    /** Ein Bild der laufenden Analyse (Arbeitskopie im Analyse-Ordner) */
+    private static final class Img {
+        final int group;
+        final int index;      // Position in der Auswahl seiner Gruppe (0-basiert)
+        final File file;
+        final String name;
+        String frame = "";    // Ergebnis von analysis.find_frame (JSON) oder ""
+        String decision = ""; // "crop" | "full" | "exclude" oder "" (keine Rahmen-Auswertung)
+
+        Img(int group, int index, File file, String name) {
+            this.group = group;
+            this.index = index;
+            this.file = file;
+            this.name = name;
+        }
+    }
+
     private static final String[] STATE_KEYS = {
             "beforeUris", "afterUris", "controlBeforeUris", "controlAfterUris"};
     private static final String STATE_CONTROL_EXPANDED = "controlExpanded";
@@ -144,12 +167,34 @@ public class AnalysisFragment extends Fragment {
         // Bilder lassen sich über das ✕ auf der Kachel wieder entfernen, die
         // ganze Gruppe über "Alle entfernen".
         List<Uri> target = urisFor(group);
+        int unsupported = 0;
         for (Uri u : uris) {
             if (target.contains(u)) continue;
+            if (!isSupportedImage(u)) {
+                unsupported++;
+                continue;
+            }
             takePersistable(u);
             target.add(u);
         }
+        if (unsupported > 0) {
+            Toast.makeText(requireContext(), R.string.toast_import_unsupported_format,
+                    Toast.LENGTH_LONG).show();
+        }
         renderSelectedImages(group);
+    }
+
+    /** v1.9: HEIC/HEIF & Co. schon bei der Auswahl ablehnen (siehe UNSUPPORTED_MIME). */
+    private boolean isSupportedImage(Uri uri) {
+        String type = null;
+        try {
+            type = requireContext().getContentResolver().getType(uri);
+        } catch (RuntimeException ignored) {
+            // Provider weg / Grant entzogen: dann entscheidet der Dateiname
+        }
+        if (type != null && UNSUPPORTED_MIME.contains(type.toLowerCase(Locale.ROOT))) return false;
+        String name = getDisplayName(uri).toLowerCase(Locale.ROOT);
+        return !(name.endsWith(".heic") || name.endsWith(".heif") || name.endsWith(".avif"));
     }
 
     private void removeFromSelection(Uri uri, int group) {
@@ -425,12 +470,14 @@ public class AnalysisFragment extends Fragment {
         final Context appContext = requireContext().getApplicationContext();
         final String errPython = getString(R.string.error_python, "%s");
         final String errAnalysis = getString(R.string.error_analysis_failed, "%s");
+        final String errNoImages = getString(R.string.error_no_readable_images);
         final AnalysisSettings settings = new AnalysisSettings(appContext);
         final int minSize = settings.getMinSize();
         final int hueLow  = settings.getHueLow();
         final int hueHigh = settings.getHueHigh();
         final String method = settings.getMethod();
         final boolean frameCrop = settings.getFrameCrop();
+        final String mode = rowMode ? "C" : (weedFilter ? "B" : "A");
 
         // Unveränderliche KOPIEN der Auswahllisten: Der Nutzer kann während der
         // Analyse zurück navigieren und neue Bilder wählen (clear() auf dem
@@ -452,19 +499,31 @@ public class AnalysisFragment extends Fragment {
             inDirs[g] = new File(outDir, GROUP_DIRS[g]);
         }
 
+        // v1.9: App am Leben halten, solange gerechnet wird (Vordergrund-Dienst
+        // + WakeLock). Gestoppt wird im finally des Hintergrund-Threads.
+        AnalysisKeepAliveService.start(appContext);
+
         bgExecutor.execute(() -> {
             try {
-                // 1) Eingangsbilder in den Analyse-Ordner kopieren (lokal, schnell)
-                List<List<File>> inputs = new ArrayList<>();
-                int total = 0;
+                // 1) Eingangsbilder in den Analyse-Ordner kopieren (lokal, schnell).
+                //    v1.9: Ein nicht lesbares Bild bricht nicht mehr die ganze
+                //    Analyse ab — es wird übersprungen und auf der Ergebnisseite
+                //    genannt (gilt für alle Schritte unten).
+                List<Img> imgs = new ArrayList<>();
+                JSONArray skipped = new JSONArray();
+                String lastError = null;
                 for (int g = 0; g < GROUP_COUNT; g++) {
-                    List<File> files = new ArrayList<>();
                     List<Uri> snap = snapshots.get(g);
                     for (int i = 0; i < snap.size(); i++) {
-                        files.add(copyUriToDir(appContext, snap.get(i), inDirs[g], names.get(g).get(i)));
+                        String name = names.get(g).get(i);
+                        try {
+                            imgs.add(new Img(g, i, copyUriToDir(appContext, snap.get(i), inDirs[g], name), name));
+                        } catch (IOException | RuntimeException e) {
+                            Log.w(TAG, "Bild nicht kopierbar, übersprungen: " + name, e);
+                            skipped.put(name);
+                            lastError = firstLine(e.getMessage());
+                        }
                     }
-                    inputs.add(files);
-                    total += files.size();
                 }
 
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(appContext));
@@ -472,8 +531,43 @@ public class AnalysisFragment extends Fragment {
                 PyObject module = py.getModule("analysis");
                 try { module.callAttr("chaquopy_probe"); } catch (Exception ignored) {}
 
-                // 2) Jedes Bild einzeln analysieren (Fortschritt "Bild i von n")
-                //    und SOFORT in die Galerie legen (Original + Auswertungsbild).
+                // 2) v1.9: Zählrahmen zuerst in ALLEN Bildern suchen, dann
+                //    einheitlich entscheiden (analysis.plan_frame_use): Rahmen-
+                //    Ausschnitte und ganze Bilder kommen nie in denselben
+                //    Mittelwert. Die Suche ist der teure Teil der Analyse; sie
+                //    läuft weiterhin genau einmal je Bild.
+                if (frameCrop && !imgs.isEmpty()) {
+                    JSONArray entries = new JSONArray();
+                    List<Img> readable = new ArrayList<>();
+                    int total = imgs.size();
+                    int done = 0;
+                    for (Img img : imgs) {
+                        analysisVM.progress.postValue(
+                                new int[]{++done, total, AnalysisViewModel.PHASE_FRAME_SEARCH});
+                        try {
+                            img.frame = module.callAttr("find_frame", img.file.getAbsolutePath()).toString();
+                            boolean found = new JSONObject(img.frame).optBoolean("found", false);
+                            entries.put(new JSONObject().put("tag", TAGS[img.group]).put("found", found));
+                            readable.add(img);
+                        } catch (PyException e) {
+                            lastError = firstLine(e.getMessage());
+                            skipImage(img, e, skipped);
+                        }
+                    }
+                    imgs = readable;
+                    if (!imgs.isEmpty()) {
+                        JSONObject plan = new JSONObject(
+                                module.callAttr("plan_frame_use", entries.toString()).toString());
+                        JSONArray decisions = plan.optJSONArray("decisions");
+                        for (int k = 0; k < imgs.size(); k++) {
+                            imgs.get(k).decision = (decisions != null)
+                                    ? decisions.optString(k, "full") : "full";
+                        }
+                    }
+                }
+
+                // 3) Jedes Bild einzeln analysieren (Fortschritt "Bild i von n")
+                //    und SOFORT in die Galerie legen (Arbeitskopie + Auswertungsbild).
                 //    Bis v1.7.2 lief der Galerie-Export erst NACH der Ergebnis-
                 //    meldung: Die App ging dann meist in den Hintergrund (Nutzer
                 //    schaut in die Galerie / tippt "Fertig") und Android fror
@@ -481,56 +575,98 @@ public class AnalysisFragment extends Fragment {
                 //    erste MediaStore-Insert hatte die Ordner Vorher/Nachher
                 //    aber schon angelegt, die Bilder darin blieben unsichtbar
                 //    (IS_PENDING) — "Ordner da, Bilder nicht".
+                //    v1.9: shrink_input=true verkleinert die Arbeitskopie auf die
+                //    Analyse-Auflösung, BEVOR sie in die Galerie geht — ein
+                //    12-MP-Foto belegte sonst je Lauf zweimal 4-5 MB.
                 String gallerySub = MediaExport.analysisSubPath(outDir);
+                int total = imgs.size();
                 int done = 0;
                 int exportFailed = 0;
+                int[] analysed = new int[GROUP_COUNT];
                 JSONArray items = new JSONArray();
-                for (int g = 0; g < GROUP_COUNT; g++) {
-                    List<File> files = inputs.get(g);
-                    for (int i = 0; i < files.size(); i++) {
-                        analysisVM.progress.postValue(new int[]{++done, total});
-                        File input = files.get(i);
+                for (Img img : imgs) {
+                    analysisVM.progress.postValue(
+                            new int[]{++done, total, AnalysisViewModel.PHASE_ANALYSIS});
+                    JSONObject item;
+                    try {
                         PyObject r = module.callAttr("analyze_image",
-                                input.getAbsolutePath(), outDir.getAbsolutePath(), TAGS[g], i,
-                                weedFilter, rowMode, minSize, hueLow, hueHigh, method, frameCrop);
-                        JSONObject item = new JSONObject(r.toString());
-                        items.put(item);
+                                img.file.getAbsolutePath(), outDir.getAbsolutePath(),
+                                TAGS[img.group], img.index,
+                                weedFilter, rowMode, minSize, hueLow, hueHigh, method,
+                                false, img.frame, img.decision, true);
+                        item = new JSONObject(r.toString());
+                    } catch (PyException e) {
+                        lastError = firstLine(e.getMessage());
+                        skipImage(img, e, skipped);
+                        continue;
+                    }
+                    items.put(item);
+                    analysed[img.group]++;
 
-                        if (!MediaExport.exportToGallery(appContext, input,
-                                gallerySub + "/" + GROUP_DIRS[g])) {
-                            exportFailed++;
-                        }
-                        JSONObject outputs = item.optJSONObject("outputs");
-                        String panel = (outputs != null) ? outputs.optString("panel", "") : "";
-                        if (!panel.isEmpty() && !MediaExport.exportToGallery(appContext,
-                                new File(panel), gallerySub, galleryPanelName(g, i))) {
-                            exportFailed++;
-                        }
+                    if (!MediaExport.exportToGallery(appContext, img.file,
+                            gallerySub + "/" + GROUP_DIRS[img.group])) {
+                        exportFailed++;
+                    }
+                    JSONObject outputs = item.optJSONObject("outputs");
+                    String panel = (outputs != null) ? outputs.optString("panel", "") : "";
+                    if (!panel.isEmpty() && !MediaExport.exportToGallery(appContext,
+                            new File(panel), gallerySub, AnalysisFiles.panelName(img.group, img.index))) {
+                        exportFailed++;
                     }
                 }
                 analysisVM.progress.postValue(null);
+
+                // Ohne mindestens ein lesbares Vorher- UND Nachher-Bild gibt es
+                // nichts zu vergleichen — dann ehrlich fehlschlagen
+                if (analysed[GROUP_BEFORE] == 0 || analysed[GROUP_AFTER] == 0) {
+                    throw new IOException(lastError != null ? errNoImages + " (" + lastError + ")" : errNoImages);
+                }
 
                 PyObject summary = module.callAttr("build_group_summary",
                         items.toString(), outDir.getAbsolutePath());
                 JSONObject result = new JSONObject(summary.toString());
 
-                // 3) Übersichtsbild — die führende "00_" sortiert es im
-                //    Galerie-Ordner an den Anfang
-                JSONObject combo = result.optJSONObject("combo");
-                String overview = (combo != null) ? combo.optString("overview", "") : "";
-                if (!overview.isEmpty()) {
-                    File session = outDir.getParentFile();
-                    String sessionName = session != null ? session.getName() : outDir.getName();
-                    if (!MediaExport.exportToGallery(appContext, new File(overview), gallerySub,
-                            "00_Uebersicht_" + sessionName + ".jpg")) {
+                // 4) Übersichtsbild (v1.9: bei vielen Bildern mehrere Seiten)
+                File session = outDir.getParentFile();
+                String sessionName = session != null ? session.getName() : outDir.getName();
+                List<String> pages = ResultStore.overviewPages(result);
+                for (int p = 0; p < pages.size(); p++) {
+                    if (!MediaExport.exportToGallery(appContext, new File(pages.get(p)), gallerySub,
+                            AnalysisFiles.overviewName(sessionName, p + 1))) {
                         exportFailed++;
                     }
                 }
                 // Fehlgeschlagene Galerie-Exporte sichtbar machen (Ergebnisseite)
                 // statt still leere Ordner zu hinterlassen
                 if (exportFailed > 0) result.put("gallery_export_failed", exportFailed);
+                if (skipped.length() > 0) {
+                    result.put("skipped_count", skipped.length());
+                    result.put("skipped_files", skipped);
+                }
+
+                // 5) v1.9: Ergebnis dauerhaft ablegen — bis v1.8 lebten die
+                //    Zahlen nur im ViewModel und waren nach "Fertig" weg.
+                JSONObject meta = new JSONObject();
+                meta.put("app_version", BuildConfig.VERSION_NAME);
+                meta.put("created", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new Date()));
+                meta.put("session", sessionName);
+                meta.put("analysis", outDir.getName());
+                meta.put("mode", mode);
+                meta.put("method", method);
+                meta.put("min_size", minSize);
+                meta.put("frame_crop", frameCrop);
+                result.put("meta", meta);
+
+                File csv = ResultStore.writeCsv(outDir, result);
+                String csvName = ResultStore.csvDisplayName(outDir);
+                if (csv != null && MediaExport.exportDocument(appContext, csv, gallerySub, csvName)) {
+                    result.put("csv_path", MediaExport.documentsPath(gallerySub) + "/" + csvName);
+                }
 
                 final String json = result.toString();
+                if (!ResultStore.save(outDir, json)) {
+                    Log.w(TAG, "Ergebnis konnte nicht gespeichert werden: " + outDir);
+                }
                 // Volles Ergebnis-JSON (inkl. aller Ausgabepfade) nur im
                 // Debug-Build loggen — im Release reicht die Erfolgsmeldung
                 if (BuildConfig.DEBUG) {
@@ -546,6 +682,7 @@ public class AnalysisFragment extends Fragment {
                 analysisVM.running.postValue(false);
 
             } catch (PyException pyEx) {
+                analysisVM.progress.postValue(null);
                 analysisVM.error.postValue(String.format(errPython, firstLine(pyEx.getMessage())));
                 analysisVM.running.postValue(false);
                 cleanupFailedOutDir(outDir);
@@ -556,23 +693,25 @@ public class AnalysisFragment extends Fragment {
                 // weitere Analyse bis zum App-Neustart und die Ergebnisseite
                 // zeigte endlos "Analyse läuft".
                 Log.e(TAG, "Analyse fehlgeschlagen", e);
+                analysisVM.progress.postValue(null);
                 analysisVM.error.postValue(String.format(errAnalysis, firstLine(e.getMessage())));
                 analysisVM.running.postValue(false);
                 cleanupFailedOutDir(outDir);
+            } finally {
+                AnalysisKeepAliveService.stop();
             }
         });
     }
 
-    /**
-     * Galerie-Name eines Auswertungsbildes:
-     *   Pictures/SmartWeed/&lt;Session&gt;/&lt;Analyse_HH-mm-ss&gt;/
-     *     00_Uebersicht_&lt;Session&gt;.jpg
-     *     Vorher_01_Auswertung.jpg, Nachher_01_Auswertung.jpg,
-     *     Kontrolle_Vorher_01_Auswertung.jpg, ...
-     * Masken und Zwischenbilder bleiben versteckt im details/-Ordner der App.
-     */
-    private static String galleryPanelName(int group, int index) {
-        return String.format(Locale.US, "%s_%02d_Auswertung.jpg", GALLERY_PREFIX[group], index + 1);
+    /** v1.9: Ein nicht auswertbares Bild überspringen — Arbeitskopie entfernen
+     *  (sie soll nicht als "ausgewertetes Bild" im Analyse-Ordner liegen) und
+     *  den Namen für die Ergebnisseite merken. */
+    private static void skipImage(Img img, Throwable cause, JSONArray skipped) {
+        Log.w(TAG, "Bild übersprungen: " + img.name + " (" + firstLine(cause.getMessage()) + ")");
+        skipped.put(img.name);
+        if (img.file.exists() && !img.file.delete()) {
+            Log.w(TAG, "Arbeitskopie nicht löschbar: " + img.file);
+        }
     }
 
     /** Nach fehlgeschlagener Analyse keinen Analyse-Ordner ohne Ergebnis
